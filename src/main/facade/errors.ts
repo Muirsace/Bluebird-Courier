@@ -1,4 +1,5 @@
 import { GitHubRequestError } from '../core/github/port';
+import { SecureStorageUnavailableError } from '../core/cipher/cipher-box';
 import type { NormalizedError } from '../../shared/types';
 
 /**
@@ -7,6 +8,15 @@ import type { NormalizedError } from '../../shared/types';
  */
 export function normalizeError(error: unknown, fullName?: string): NormalizedError {
   const context = fullName === undefined ? {} : { fullName };
+
+  // 系统钥匙串不可用：非抓取失败，但必须让用户看到真实原因
+  if (error instanceof SecureStorageUnavailableError) {
+    return {
+      kind: 'unknown',
+      message: '系统安全存储不可用，无法保存访问令牌',
+      ...context,
+    };
+  }
 
   if (error instanceof GitHubRequestError) {
     if (error.status === 401) {
@@ -39,6 +49,15 @@ export function normalizeError(error: unknown, fullName?: string): NormalizedErr
     };
   }
 
+  // 请求被中止：AbortSignal.timeout 触发的超时（DOMException: TimeoutError）
+  if (isAbortFailure(error)) {
+    return {
+      kind: 'network',
+      message: '网络请求超时，请检查网络后重试',
+      ...context,
+    };
+  }
+
   // 与 fetch 的网络层失败一致（TypeError: fetch failed）
   if (error instanceof TypeError) {
     return {
@@ -53,6 +72,13 @@ export function normalizeError(error: unknown, fullName?: string): NormalizedErr
     message: '发生未知错误',
     ...context,
   };
+}
+
+/** 请求中止判定：AbortSignal 触发的超时/取消（DOMException 或任意带 name 的 Error）。 */
+function isAbortFailure(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = (error as { name?: unknown }).name;
+  return name === 'AbortError' || name === 'TimeoutError';
 }
 
 /** 限流判定：429，或 403 且配额耗尽/带 Retry-After。 */

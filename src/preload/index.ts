@@ -24,6 +24,7 @@ const CHANNELS: IpcChannelMap = {
   removeRepository: 'octo:removeRepository',
   refreshGlance: 'octo:refreshGlance',
   fetchDetail: 'octo:fetchDetail',
+  openGitHubExternal: 'octo:openGitHubExternal',
 };
 
 const bridge: OctoBridge = {
@@ -37,6 +38,7 @@ const bridge: OctoBridge = {
   removeRepository: (repositoryId) => ipcRenderer.invoke(CHANNELS.removeRepository, repositoryId),
   refreshGlance: () => ipcRenderer.invoke(CHANNELS.refreshGlance),
   fetchDetail: (repositoryId) => ipcRenderer.invoke(CHANNELS.fetchDetail, repositoryId),
+  openGitHubExternal: (target) => ipcRenderer.invoke(CHANNELS.openGitHubExternal, target),
 };
 
 contextBridge.exposeInMainWorld('octo', bridge);

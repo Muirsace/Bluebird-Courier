@@ -3,12 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Glance, AccessTokenState } from '../shared/types';
 import { getApi } from './lib/api';
 import { ErrorBar } from './components/ErrorBar';
-import { EmptyState } from './components/EmptyState';
 import { Spinner } from './components/Spinner';
 import { DetailPage } from './pages/DetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WatchlistPage } from './pages/WatchlistPage';
 
+/** 顶级页面只有两个：监控清单（含仓库详情这一层）与设置。 */
 type View = 'watchlist' | 'detail' | 'settings';
 
 interface SelectedRepo {
@@ -17,17 +17,16 @@ interface SelectedRepo {
 }
 
 function navButtonClass(active: boolean, disabled: boolean): string {
-  const base = 'rounded-md px-3 py-1.5 text-sm transition-colors';
-  if (disabled) return `${base} cursor-not-allowed text-slate-600`;
-  if (active) return `${base} bg-slate-800 text-emerald-300`;
-  return `${base} text-slate-300 hover:bg-slate-800/70 active:bg-slate-800`;
+  const base = 'inline-flex h-9 items-center rounded-md px-3 text-sm transition-colors duration-150 ease-out';
+  if (disabled) return `${base} cursor-not-allowed text-muted`;
+  if (active) return `${base} bg-surface-raised text-accent active:bg-surface-active`;
+  return `${base} text-secondary hover:bg-surface-hover hover:text-primary active:bg-surface-active`;
 }
 
 export function App() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<View>('watchlist');
   const [selected, setSelected] = useState<SelectedRepo | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   // 启动即查询访问令牌状态：未配置时先进设置页
   const accessTokenStateQuery = useQuery({
@@ -41,17 +40,11 @@ export function App() {
     if (state && !state.configured) setView('settings');
   }, [accessTokenStateQuery.data]);
 
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 4000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
-  function handleAccessTokenSaved(message?: string): void {
+  // 令牌保存成功的提示由设置页就地给出，这里只负责跳回清单（同一提示不重复出现）
+  function handleAccessTokenSaved(): void {
     const next: AccessTokenState = { configured: true };
     queryClient.setQueryData(['accessTokenState'], next);
     void queryClient.invalidateQueries({ queryKey: ['accessTokenState'] });
-    setNotice(message ?? '访问令牌已保存并验证通过');
     setView('watchlist');
   }
 
@@ -61,16 +54,19 @@ export function App() {
   }
 
   const activeView: View = configured ? view : 'settings';
+  // 读不到任何状态才整页阻断；已有缓存时后台刷新失败不应把界面清空
+  const tokenStateFailed = accessTokenStateQuery.isError;
+  const hasTokenState = accessTokenStateQuery.data !== undefined;
 
   let content;
   if (accessTokenStateQuery.isPending) {
     content = (
-      <div className="flex items-center justify-center gap-2 py-20 text-sm text-slate-400">
+      <div className="flex items-center justify-center gap-2 py-20 text-sm text-secondary">
         <Spinner />
         正在启动…
       </div>
     );
-  } else if (accessTokenStateQuery.isError) {
+  } else if (tokenStateFailed && !hasTokenState) {
     content = (
       <div className="mx-auto max-w-xl space-y-3 py-10">
         <ErrorBar
@@ -81,17 +77,15 @@ export function App() {
     );
   } else if (activeView === 'settings') {
     // 未配置访问令牌时 activeView 恒为设置页（启动闸门）
-    content = <SettingsPage onSaved={handleAccessTokenSaved} onGoWatchlist={() => setView('watchlist')} />;
-  } else if (activeView === 'detail') {
-    content = selected ? (
+    content = <SettingsPage onSaved={handleAccessTokenSaved} />;
+  } else if (activeView === 'detail' && selected) {
+    content = (
       <DetailPage
         repositoryId={selected.id}
         fullName={selected.fullName}
         onBack={() => setView('watchlist')}
         onGoSettings={() => setView('settings')}
       />
-    ) : (
-      <EmptyState title="先在监控清单中选择一个监控仓库" hint="点击清单中的任意一行即可查看全量信息" />
     );
   } else {
     content = (
@@ -100,36 +94,32 @@ export function App() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col">
-      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 px-4 py-3">
+    <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col">
+      <header className="sticky top-0 z-10 border-b border-subtle bg-app/95 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/15 font-mono text-xs font-bold text-emerald-400">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-soft font-mono text-xs font-bold text-accent">
               OCTO
             </span>
-            <h1 className="text-base font-semibold tracking-wide text-slate-100">OCTO 仓库监控器</h1>
+            <h1 className="text-base font-semibold tracking-wide text-primary">OCTO 仓库监控器</h1>
           </div>
           <nav className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               onClick={() => setView('watchlist')}
               disabled={!configured}
-              className={navButtonClass(activeView === 'watchlist', !configured)}
+              aria-current={activeView === 'watchlist' || activeView === 'detail' ? 'page' : undefined}
+              className={navButtonClass(
+                activeView === 'watchlist' || activeView === 'detail',
+                !configured,
+              )}
             >
               监控清单
             </button>
             <button
               type="button"
-              onClick={() => setView('detail')}
-              disabled={!configured || selected === null}
-              title={selected === null ? '先在清单中选择一个监控仓库' : undefined}
-              className={navButtonClass(activeView === 'detail', !configured || selected === null)}
-            >
-              全量信息
-            </button>
-            <button
-              type="button"
               onClick={() => setView('settings')}
+              aria-current={activeView === 'settings' ? 'page' : undefined}
               className={navButtonClass(activeView === 'settings', false)}
             >
               设置
@@ -139,12 +129,12 @@ export function App() {
       </header>
 
       <main className="flex-1 px-4 py-5">
-        {notice ? (
-          <div
-            role="status"
-            className="mb-4 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
-          >
-            {notice}
+        {tokenStateFailed && hasTokenState ? (
+          <div className="mb-4">
+            <ErrorBar
+              error={{ kind: 'unknown', message: '访问令牌状态刷新失败，正在沿用上次读取的状态' }}
+              action={{ label: '重试', onClick: () => void accessTokenStateQuery.refetch() }}
+            />
           </div>
         ) : null}
         {content}

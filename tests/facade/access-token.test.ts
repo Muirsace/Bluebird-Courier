@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { createSafeStorageCipherBox } from '../../src/main/core/cipher/cipher-box';
 import { createHarness, type Harness } from '../helpers/harness';
 import { fixtures } from '../helpers/fake-github';
 
@@ -75,5 +76,25 @@ describe('访问令牌校验与保存', () => {
       .db.prepare("SELECT value FROM setting WHERE key = 'access_token'")
       .get() as { value: string };
     expect(h().cipher.decrypt(row.value)).toBe('ghp_replaced_token');
+  });
+
+  it('系统安全存储不可用时保存失败并明示原因，且不落库', async () => {
+    harness = createHarness({
+      cipher: createSafeStorageCipherBox({
+        isEncryptionAvailable: () => false,
+        encryptString: () => Buffer.from('unused'),
+        decryptString: () => '',
+      }),
+    });
+
+    const result = await h().facade.saveAccessToken('ghp_valid_token');
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({
+      kind: 'unknown',
+      message: '系统安全存储不可用，无法保存访问令牌',
+    });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    expect(h().db.prepare("SELECT value FROM setting WHERE key = 'access_token'").get()).toBeUndefined();
   });
 });

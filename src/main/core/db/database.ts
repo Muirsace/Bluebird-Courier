@@ -91,6 +91,9 @@ function migrate(db: Database.Database): void {
 export function openDatabase(pathname: string): Database.Database {
   const db = new Database(pathname);
   db.pragma('foreign_keys = ON');
+  // 写锁冲突时等一会儿再放弃，而不是立刻抛 SQLITE_BUSY；WAL 让读不阻塞写
+  db.pragma('busy_timeout = 5000');
+  db.pragma('journal_mode = WAL');
   migrate(db);
   return db;
 }

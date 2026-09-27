@@ -36,6 +36,7 @@ export interface BuildRun {
  * 全量 = listReleases + listCommits + listIssues + getLatestBuild（构建取最近一次结论，无则空态）。
  *
  * HTTP 层错误抛 GitHubRequestError；网络失败抛 TypeError（与 fetch 一致）；
+ * 请求超时抛 TimeoutError（同为 DOMException），两者都由错误归一映射为"网络失败"；
  * 其余意外错误原样抛出，由错误归一映射为"未知"。
  */
 export interface GitHubPort {

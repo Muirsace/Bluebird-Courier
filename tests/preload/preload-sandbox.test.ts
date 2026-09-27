@@ -34,7 +34,11 @@ const GATEWAY_METHODS = [
   'removeRepository',
   'refreshGlance',
   'fetchDetail',
+  'openGitHubExternal',
 ] as const;
+
+/** 渲染层不得具备的任意能力：通用外链、任意通道、Node / Electron 本体。 */
+const FORBIDDEN_METHODS = ['openExternal', 'shell', 'execute', 'send', 'sendSync', 'invoke', 'require', 'ipcRenderer'];
 
 interface LoadedPreload {
   exposed: Array<{ name: string; api: Record<string, () => unknown> }>;
@@ -93,6 +97,15 @@ describe('preload 沙箱自包含（启动即报"无法读取访问令牌状态"
     expect(exposed).toHaveLength(1);
     expect(exposed[0]?.name).toBe('octo');
     expect(Object.keys(exposed[0]?.api ?? {}).sort()).toEqual([...GATEWAY_METHODS].sort());
+  });
+
+  it('网关不暴露通用外链 / 任意通道 / Electron 本体（只有 openGitHubExternal 这一条窄口）', () => {
+    const { exposed, loadError } = loadPreloadUnderSandbox();
+    expect(loadError).toBeNull();
+    const api = exposed[0]?.api ?? {};
+    for (const forbidden of FORBIDDEN_METHODS) {
+      expect(api, `网关不应暴露 ${forbidden}`).not.toHaveProperty(forbidden);
+    }
   });
 
   it('网关每个方法调用的 IPC 通道与 shared/ipc.ts 逐字一致（防内联字面量漂移）', () => {

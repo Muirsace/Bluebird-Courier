@@ -59,8 +59,11 @@ export function applyGlanceValues(
   values: GlanceValues,
 ): Glance {
   const capturedAt = clock.now();
-  updateRepositoryGlance(db, repositoryId, values, capturedAt.toISOString());
-  recordSnapshot(db, repositoryId, values, capturedAt);
+  // 展示字段与当日快照必须同进同退，否则会留下"已标记抓取成功、当日却缺一档"的中间态
+  db.transaction(() => {
+    updateRepositoryGlance(db, repositoryId, values, capturedAt.toISOString());
+    recordSnapshot(db, repositoryId, values, capturedAt);
+  })();
   return rowToGlance(mustFindRepositoryRow(db, repositoryId));
 }
 
@@ -149,19 +152,22 @@ export function applyDetailValues(
 
   const capturedAt = clock.now();
   const latestReleaseTag = values.releases[0]?.tagName ?? null;
-  updateRepositoryLatestRelease(db, repositoryId, latestReleaseTag, capturedAt.toISOString());
-  recordSnapshot(
-    db,
-    repositoryId,
-    {
-      stars: row.stars,
-      forks: row.forks,
-      openIssues: row.open_issues,
-      latestReleaseTag,
-      pushedAt: row.pushed_at,
-    },
-    capturedAt,
-  );
+  // 同 applyGlanceValues：标签与快照同进同退
+  db.transaction(() => {
+    updateRepositoryLatestRelease(db, repositoryId, latestReleaseTag, capturedAt.toISOString());
+    recordSnapshot(
+      db,
+      repositoryId,
+      {
+        stars: row.stars,
+        forks: row.forks,
+        openIssues: row.open_issues,
+        latestReleaseTag,
+        pushedAt: row.pushed_at,
+      },
+      capturedAt,
+    );
+  })();
 
   return {
     repository: rowToGlance(mustFindRepositoryRow(db, repositoryId)),

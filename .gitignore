@@ -8,3 +8,19 @@ release/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# 环境变量（示例文件除外）
+.env*
+!.env.example
+
+# 仅本地保留，不入库
+.agents/
+.scratch/
+skills-lock.json
+/github_pulse_repository_monitor.html
+/octo_nexus_github_personal_center.html
+
+# 操作系统杂项
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -158,5 +158,33 @@ export interface OctoFacade {
   fetchDetail(repositoryId: number): Promise<DetailResult>;
 }
 
+// ---------- 桌面集成：在 GitHub 打开 ----------
+
+/**
+ * 外链目标：渲染层只描述"要打开哪个 GitHub 实体"，URL 一律由主进程构造。
+ * 唯一例外是 build——GitHub Actions 页面地址由接口直接给出（BuildInfo 里没有 run id 可构造）。
+ */
+export type GitHubExternalTarget =
+  | { kind: 'repository'; owner: string; name: string }
+  | { kind: 'release'; owner: string; name: string; tagName: string }
+  | { kind: 'commit'; owner: string; name: string; sha: string }
+  | { kind: 'issue'; owner: string; name: string; number: number }
+  | { kind: 'pull'; owner: string; name: string; number: number }
+  | { kind: 'build'; url: string };
+
+/** 外链打开结果：要么目标被主进程守卫拒绝，要么系统打不开，不存在"假装成功"。 */
+export interface OpenExternalResult {
+  ok: boolean;
+  reason: 'invalid_target' | 'open_failed' | null;
+}
+
+/**
+ * 桌面集成窄接口：渲染层唯一能触碰系统浏览器的入口。
+ * 没有 shell / ipcRenderer / 任意协议 / 任意 URL 的通用通道，目标由主进程再次校验。
+ */
+export interface ExternalLinkBridge {
+  openGitHubExternal(target: GitHubExternalTarget): Promise<OpenExternalResult>;
+}
+
 /** preload 暴露到 window.octo 的通道白名单。 */
-export type OctoBridge = OctoFacade;
+export type OctoBridge = OctoFacade & ExternalLinkBridge;

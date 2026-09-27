@@ -2,11 +2,11 @@ import type { NormalizedError } from '../../shared/types';
 import { describeError } from '../lib/errors';
 
 const KIND_STYLES: Record<NormalizedError['kind'], string> = {
-  access_token_invalid: 'border-red-500/40 bg-red-500/10 text-red-200',
-  rate_limited: 'border-amber-500/40 bg-amber-500/10 text-amber-200',
-  not_found: 'border-sky-500/40 bg-sky-500/10 text-sky-200',
-  network: 'border-orange-500/40 bg-orange-500/10 text-orange-200',
-  unknown: 'border-slate-600 bg-slate-800/80 text-slate-300',
+  access_token_invalid: 'border-danger/40 bg-danger-soft text-danger',
+  rate_limited: 'border-warning/40 bg-warning-soft text-warning',
+  not_found: 'border-info/40 bg-info-soft text-info',
+  network: 'border-warning/40 bg-warning-soft text-warning',
+  unknown: 'border-strong bg-surface-raised text-secondary',
 };
 
 interface ErrorBarProps {
@@ -32,7 +32,7 @@ export function ErrorBar({ error, onGoSettings, action }: ErrorBarProps) {
         <button
           type="button"
           onClick={action.onClick}
-          className="shrink-0 rounded border border-white/20 px-2 py-0.5 text-xs opacity-90 transition-colors hover:bg-white/10 active:bg-white/15"
+          className="inline-flex h-8 shrink-0 items-center rounded border border-default bg-surface/60 px-2 text-xs transition-colors duration-150 ease-out hover:bg-surface active:bg-surface-active"
         >
           {action.label}
         </button>
@@ -41,7 +41,7 @@ export function ErrorBar({ error, onGoSettings, action }: ErrorBarProps) {
         <button
           type="button"
           onClick={onGoSettings}
-          className="shrink-0 rounded border border-white/20 px-2 py-0.5 text-xs opacity-90 transition-colors hover:bg-white/10 active:bg-white/15"
+          className="inline-flex h-8 shrink-0 items-center rounded border border-default bg-surface/60 px-2 text-xs transition-colors duration-150 ease-out hover:bg-surface active:bg-surface-active"
         >
           去设置
         </button>

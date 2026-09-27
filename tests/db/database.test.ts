@@ -55,6 +55,12 @@ describe('数据库建表与迁移', () => {
     expect(tableNames(db)).toEqual(expect.arrayContaining(['repository', 'snapshot', 'setting']));
   });
 
+  it('启用 WAL 与 busy_timeout（写锁冲突时等待而不是立刻抛 SQLITE_BUSY）', () => {
+    const db = open(tempDbPath());
+    expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
+    expect(db.pragma('busy_timeout', { simple: true })).toBe(5000);
+  });
+
   it('对缺表的旧库补齐新表与缺失列（升级迁移）', () => {
     const pathname = tempDbPath();
     const legacy = new Database(pathname);

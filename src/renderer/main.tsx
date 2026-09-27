@@ -1,12 +1,17 @@
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
+import { ThemeProvider } from './lib/theme';
 import './styles.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: false,
+      // 窗口重新获焦或页面来回切换不该触发重抓：详情页一次全量 = 4 次 GitHub 调用 + 写当日快照。
+      // 需要新数据时由用户显式触发（重新抓取），或在增删后 invalidateQueries。
+      refetchOnWindowFocus: false,
+      staleTime: 60_000,
     },
   },
 });
@@ -18,6 +23,8 @@ if (!container) {
 
 createRoot(container).render(
   <QueryClientProvider client={queryClient}>
-    <App />
+    <ThemeProvider>
+      <App />
+    </ThemeProvider>
   </QueryClientProvider>,
 );

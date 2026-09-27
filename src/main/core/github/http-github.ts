@@ -11,6 +11,9 @@ const API_BASE = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 const USER_AGENT = 'octo-monitor';
 
+/** 单次请求上限：连接挂起时必须中止，否则整个抓取批次都不再 settle。 */
+const REQUEST_TIMEOUT_MS = 10_000;
+
 /** GitHub REST 的原始应答（只声明用到的字段）。 */
 interface RawRepo {
   full_name: string;
@@ -63,12 +66,13 @@ function toReleaseItem(release: RawRelease): ReleaseItem {
 
 /**
  * GitHub REST 适配器（生产实现）。
- * 请求一律带访问令牌与固定 API 版本号；HTTP 错误抛 GitHubRequestError，
- * 网络层失败原样抛 TypeError（错误归一映射为"网络失败"）。
+ * 请求一律带访问令牌与固定 API 版本号；单次请求有超时，超时以 TimeoutError 中止。
+ * HTTP 错误抛 GitHubRequestError，网络层失败原样抛 TypeError（错误归一映射为"网络失败"）。
  */
-export function createHttpGitHub(fetchImpl: typeof fetch = fetch): GitHubPort {
+export function createHttpGitHub(fetchImpl: typeof fetch = fetch, timeoutMs = REQUEST_TIMEOUT_MS): GitHubPort {
   async function request<T>(accessToken: string, path: string, map: (json: unknown) => T): Promise<T> {
     const response = await fetchImpl(`${API_BASE}${path}`, {
+      signal: AbortSignal.timeout(timeoutMs),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: 'application/vnd.github+json',

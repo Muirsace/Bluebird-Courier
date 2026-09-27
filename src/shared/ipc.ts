@@ -11,6 +11,7 @@ export const IPC_CHANNELS = {
   removeRepository: 'octo:removeRepository',
   refreshGlance: 'octo:refreshGlance',
   fetchDetail: 'octo:fetchDetail',
+  openGitHubExternal: 'octo:openGitHubExternal',
 } as const;
 
 export type IpcChannelMap = typeof IPC_CHANNELS;

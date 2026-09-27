@@ -2,6 +2,117 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * 语义 Design Token。
+ *
+ * 颜色变量一律写成「空格分隔的 RGB 通道」，这样 Tailwind 侧可以拼成
+ * rgb(var(--x) / <alpha-value>)，`/40` 这类透明度修饰符照常可用。
+ * 例外是 --chart-*：Chart.js 只吃完整色值，不能是通道三元组。
+ *
+ * 主题由 <html data-theme="light|dark"> 决定，值由渲染层集中设置（见 src/renderer/lib/theme.tsx）。
+ * 组件只写语义类（bg-surface / text-muted / border-default），不再关心当前是哪个主题。
+ */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surface */
+  --color-app: 245 247 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 248 250 252;
+  --color-surface-hover: 241 245 249;
+  --color-surface-active: 226 232 240;
+
+  /* Border */
+  --color-border: 220 226 234;
+  --color-border-subtle: 233 237 242;
+  --color-border-strong: 195 204 217;
+
+  /* Text */
+  --color-text: 23 32 51;
+  --color-text-secondary: 93 105 122;
+  --color-text-muted: 102 114 133;
+
+  /* Accent：浅色下压深一档，保证浅底上的对比度 */
+  --color-accent: 4 120 87;
+  --color-accent-hover: 5 150 105;
+  --color-accent-soft: 236 253 245;
+  --color-accent-solid: 4 120 87;
+  --color-accent-solid-hover: 5 150 105;
+  --color-accent-contrast: 255 255 255;
+
+  /* Semantic */
+  --color-success: 4 120 87;
+  --color-success-soft: 224 250 240;
+  --color-warning: 180 83 9;
+  --color-warning-soft: 254 246 224;
+  --color-danger: 185 28 28;
+  --color-danger-soft: 254 235 235;
+  --color-danger-solid: 185 28 28;
+  --color-danger-solid-hover: 220 38 38;
+  --color-danger-contrast: 255 255 255;
+  --color-info: 3 105 161;
+  --color-info-soft: 232 245 254;
+
+  /* Chart（完整色值，供 Chart.js 读取） */
+  --chart-grid: rgba(203, 213, 225, 0.55);
+  --chart-label: #5d697a;
+  --chart-tooltip: #ffffff;
+  --chart-tooltip-text: #172033;
+  --chart-star: #047857;
+  --chart-fork: #0369a1;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surface：保留原来的冷深蓝黑，不改成纯黑 */
+  --color-app: 2 6 23;
+  --color-surface: 15 23 42;
+  --color-surface-raised: 30 41 59;
+  --color-surface-hover: 30 41 59;
+  --color-surface-active: 51 65 85;
+
+  /* Border */
+  --color-border: 30 41 59;
+  --color-border-subtle: 23 32 51;
+  --color-border-strong: 51 65 85;
+
+  /* Text */
+  --color-text: 241 245 249;
+  --color-text-secondary: 148 163 184;
+  --color-text-muted: 123 135 152;
+
+  /* Accent */
+  --color-accent: 52 211 153;
+  --color-accent-hover: 110 231 183;
+  --color-accent-soft: 6 46 36;
+  --color-accent-solid: 4 120 87;
+  --color-accent-solid-hover: 5 150 105;
+  --color-accent-contrast: 255 255 255;
+
+  /* Semantic */
+  --color-success: 52 211 153;
+  --color-success-soft: 6 46 36;
+  --color-warning: 252 211 77;
+  --color-warning-soft: 58 40 12;
+  --color-danger: 252 165 165;
+  --color-danger-soft: 60 20 22;
+  --color-danger-solid: 220 38 38;
+  --color-danger-solid-hover: 239 68 68;
+  --color-danger-contrast: 255 255 255;
+  --color-info: 125 211 252;
+  --color-info-soft: 12 40 58;
+
+  /* Chart（完整色值，供 Chart.js 读取） */
+  --chart-grid: rgba(51, 65, 85, 0.38);
+  --chart-label: #94a3b8;
+  --chart-tooltip: rgba(15, 23, 42, 0.95);
+  --chart-tooltip-text: #e2e8f0;
+  --chart-star: #34d399;
+  --chart-fork: #38bdf8;
+}
+
 html,
 body,
 #root {
@@ -9,11 +120,78 @@ body,
 }
 
 body {
-  @apply bg-slate-950 text-slate-200 antialiased;
+  @apply bg-app text-primary antialiased;
+  font-family: system-ui, "Segoe UI", sans-serif;
 }
 
-/* 输入框与按钮的统一聚焦轮廓 */
+button:enabled {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Chromium/Electron scrollbar stays visible but uses the active semantic palette. */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(var(--color-app));
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid rgb(var(--color-app));
+  border-radius: 9999px;
+  background: rgb(var(--color-border-strong));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-surface-active));
+}
+
+/* Small entrance only: mounted menus and popovers do not shift surrounding layout. */
+.overlay-enter {
+  animation: overlay-enter 140ms ease-out both;
+  transform-origin: top right;
+}
+
+@keyframes overlay-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Keep the row quiet while its own menu / confirmation surface is open. */
+.repo-row:has(.repo-actions-trigger[aria-expanded='true']):hover {
+  border-color: rgb(var(--color-border-subtle));
+  background-color: rgb(var(--color-surface));
+}
+
+/* 输入框与按钮的统一聚焦轮廓（两种主题下都用强调色） */
 *:focus-visible {
-  outline: 2px solid rgb(52 211 153 / 0.6);
+  outline: 2px solid rgb(var(--color-accent) / 0.7);
   outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .overlay-enter {
+    animation: none;
+    transform: none;
+  }
 }

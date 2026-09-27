@@ -15,6 +15,7 @@ import type {
   AccessTokenState,
 } from '../../shared/types';
 import { normalizeError } from './errors';
+import { normalizeThemePreference, THEME_PREFERENCE_KEY } from '../../shared/theme';
 import { parseRepoInput } from '../features/repo-input';
 import {
   readAccessToken,
@@ -44,6 +45,25 @@ export interface FacadeDeps {
 const GLANCE_CONCURRENCY = 5;
 
 /**
+ * 监控仓库标识：IPC 入参在运行期不可信（类型擦除后什么都可能传进来），
+ * 非正整数一律按"没有这个仓库"处理，绝不让它落到 SQLite 的绑定参数上。
+ */
+function isRepositoryId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+/** 偏好项补丁：值必须是字符串；有任何一个不合法就整批拒绝，不做部分写入。 */
+function requirePreferences(patch: unknown): Record<string, string> | null {
+  if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) return null;
+  const cleaned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (typeof value !== 'string') return null;
+    cleaned[key] = value;
+  }
+  return cleaned;
+}
+
+/**
  * 用例门面：渲染层唯一入口。清单增删与列举、轻量/全量抓取、访问令牌校验保存、设置读写。
  * 一切行为都在这里对外可见，测试只测这个边界。
  */
@@ -62,8 +82,13 @@ export function createFacade(deps: FacadeDeps): OctoFacade {
   }
 
   function settingsView(): SettingsView {
+    const preferences = readPreferences(db);
+    // 主题值只可能是三档之一：库里若有脏值，读出来也按 system 呈现
+    if (THEME_PREFERENCE_KEY in preferences) {
+      preferences[THEME_PREFERENCE_KEY] = normalizeThemePreference(preferences[THEME_PREFERENCE_KEY]);
+    }
     return {
-      preferences: readPreferences(db),
+      preferences,
       accessTokenConfigured: readAccessToken(db, cipher) !== null,
     };
   }
@@ -92,21 +117,36 @@ export function createFacade(deps: FacadeDeps): OctoFacade {
     async saveAccessToken(accessToken: string): Promise<AccessTokenResult> {
       const result = await validateAccessToken(accessToken);
       if (!result.ok) return result;
-      // 校验通过才落库（密文），重复保存即覆盖旧令牌
-      writeAccessToken(db, cipher, accessToken);
+      try {
+        // 校验通过才落库（密文），重复保存即覆盖旧令牌
+        writeAccessToken(db, cipher, accessToken);
+      } catch (error) {
+        // 系统钥匙串不可用等落库失败：必须报错，不能让用户以为已保存
+        logger.error('访问令牌保存失败', error);
+        return { ok: false, error: normalizeError(error) };
+      }
       return { ok: true, error: null };
     },
     getSettings(): Promise<SettingsView> {
       return Promise.resolve(settingsView());
     },
-    updateSettings(patch: Record<string, string>): Promise<SettingsView> {
-      writePreferences(db, patch);
+    updateSettings(patch: unknown): Promise<SettingsView> {
+      const cleaned = requirePreferences(patch);
+      if (cleaned === null) {
+        logger.error('忽略格式非法的偏好项补丁（值必须是字符串）', patch);
+        return Promise.resolve(settingsView());
+      }
+      // 主题值限定为 system/light/dark，非法值回退 system，不让脏值落库
+      if (THEME_PREFERENCE_KEY in cleaned) {
+        cleaned[THEME_PREFERENCE_KEY] = normalizeThemePreference(cleaned[THEME_PREFERENCE_KEY]);
+      }
+      writePreferences(db, cleaned);
       return Promise.resolve(settingsView());
     },
     listRepositories(): Promise<Glance[]> {
       return Promise.resolve(listRepositoryRows(db).map(rowToGlance));
     },
-    async addRepository(input: string): Promise<AddRepositoryResult> {
+    async addRepository(input: unknown): Promise<AddRepositoryResult> {
       const fail = (
         kind: 'access_token_invalid' | 'not_found' | 'unknown',
         message: string,
@@ -117,8 +157,10 @@ export function createFacade(deps: FacadeDeps): OctoFacade {
         error: { kind, message, fullName },
       });
 
-      const parsed = parseRepoInput(input);
-      if (!parsed.ok) return fail('not_found', parsed.message, input.trim());
+      // 非字符串入参按格式错误拒绝（否则 input.trim() 会抛原始 TypeError）
+      const raw = typeof input === 'string' ? input : '';
+      const parsed = parseRepoInput(raw);
+      if (!parsed.ok) return fail('not_found', parsed.message, raw.trim());
       const fullName = `${parsed.owner}/${parsed.name}`;
       if (findRepositoryByFullName(db, fullName)) {
         return fail('unknown', '该仓库已在监控清单中', fullName);
@@ -139,8 +181,10 @@ export function createFacade(deps: FacadeDeps): OctoFacade {
         return { ok: false, repository: null, error: normalizeError(error, fullName) };
       }
     },
-    removeRepository(repositoryId: number): Promise<void> {
-      deleteRepositoryRow(db, repositoryId);
+    removeRepository(repositoryId: unknown): Promise<void> {
+      // 非法标识不触碰数据库：删除不存在的仓库本就是空操作，但要让日志留下痕迹
+      if (isRepositoryId(repositoryId)) deleteRepositoryRow(db, repositoryId);
+      else logger.error('忽略非法的监控仓库标识，未删除任何行', repositoryId);
       return Promise.resolve();
     },
     async refreshGlance(): Promise<RefreshGlanceResult> {
@@ -180,7 +224,11 @@ export function createFacade(deps: FacadeDeps): OctoFacade {
       }
       return { repositories: listRepositoryRows(db).map(rowToGlance), errors };
     },
-    async fetchDetail(repositoryId: number): Promise<DetailResult> {
+    async fetchDetail(repositoryId: unknown): Promise<DetailResult> {
+      // 非法标识按"没有这个仓库"处理，不落到 SQLite 绑定参数上
+      if (!isRepositoryId(repositoryId)) {
+        return { detail: null, error: { kind: 'not_found', message: '监控仓库不存在' } };
+      }
       const row = findRepositoryRow(db, repositoryId);
       if (!row) {
         return { detail: null, error: { kind: 'not_found', message: '监控仓库不存在' } };

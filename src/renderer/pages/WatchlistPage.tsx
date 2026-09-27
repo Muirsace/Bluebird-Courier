@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
@@ -8,9 +7,9 @@ import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
 import { Loading } from '../components/Loading';
 import { RepoRow } from '../components/RepoRow';
-import { Spinner } from '../components/Spinner';
+import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
 
-/** 启动时自动抓取一次轻量信息（整个会话一次；重新抓取走"重新抓取"按钮）。 */
+/** 启动时自动抓取一次轻量信息（整个会话一次；之后走「全部刷新」）。 */
 let startupRefreshed = false;
 
 interface WatchlistPageProps {
@@ -25,14 +24,12 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     queryFn: () => getApi().listRepositories(),
   });
 
-  const [newFullName, setNewFullName] = useState('');
   const [adding, setAdding] = useState(false);
   const [actionError, setActionError] = useState<NormalizedError | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshErrors, setRefreshErrors] = useState<NormalizedError[]>([]);
-  const [removingId, setRemovingId] = useState<number | null>(null);
 
-  // 重新抓取轻量信息；完成后刷新清单查询
+  // 刷新全部轻量信息；完成后重读清单查询
   async function runRefresh(): Promise<void> {
     setRefreshing(true);
     try {
@@ -54,74 +51,45 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleAdd(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    const fullName = newFullName.trim();
-    if (!fullName) return;
+  /** 加入成功返回 true（表单据此清空输入框）；失败沿用页头错误条。 */
+  async function handleAdd(fullName: string): Promise<boolean> {
     setAdding(true);
     setActionError(null);
     try {
       const result = await getApi().addRepository(fullName);
-      if (result.ok) {
-        setNewFullName('');
-        await queryClient.invalidateQueries({ queryKey: ['repositories'] });
-      } else {
+      if (!result.ok) {
         setActionError(result.error ?? { kind: 'unknown', message: '加入清单失败，请稍后重试' });
+        return false;
       }
+      await queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      return true;
     } catch {
       setActionError({ kind: 'unknown', message: '加入清单失败，请稍后重试' });
+      return false;
     } finally {
       setAdding(false);
     }
   }
 
+  /** 移除失败必须抛出：确认 Popover 保持打开并就地提示，用户可重试。 */
   async function handleRemove(repositoryId: number): Promise<void> {
-    setRemovingId(repositoryId);
-    setActionError(null);
-    try {
-      await getApi().removeRepository(repositoryId);
-      await queryClient.invalidateQueries({ queryKey: ['repositories'] });
-    } catch {
-      setActionError({ kind: 'unknown', message: '删除失败，请稍后重试' });
-    } finally {
-      setRemovingId(null);
-    }
+    await getApi().removeRepository(repositoryId);
+    await queryClient.invalidateQueries({ queryKey: ['repositories'] });
   }
 
   const repositories: Glance[] = listQuery.data ?? [];
+  /** 加载失败且没有任何缓存数据：只显示错误条，不能再显示空态（否则被误读成清单被清空）。 */
+  const listUnavailable = listQuery.isError && !listQuery.data;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-slate-100">监控清单</h1>
-        <button
-          type="button"
-          onClick={() => void runRefresh()}
-          disabled={refreshing}
-          className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-300 transition-colors hover:bg-emerald-500/20 active:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}
-          {refreshing ? '抓取中…' : '重新抓取'}
-        </button>
-      </div>
-
-      <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          value={newFullName}
-          onChange={(event) => setNewFullName(event.target.value)}
-          placeholder="owner/repo 或 GitHub 网址"
-          aria-label="监控仓库（owner/repo 或 GitHub 网址）"
-          className="w-full min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none sm:max-w-72"
-        />
-        <button
-          type="submit"
-          disabled={adding}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {adding ? '加入中…' : '加入清单'}
-        </button>
-      </form>
+      <WatchlistHeader
+        repositoryCount={listQuery.data ? repositories.length : null}
+        adding={adding}
+        onAdd={handleAdd}
+        refreshing={refreshing}
+        onRefresh={() => void runRefresh()}
+      />
 
       {actionError ? <ErrorBar error={actionError} onGoSettings={onGoSettings} /> : null}
       {refreshErrors.map((error, index) => (
@@ -141,20 +109,23 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
 
       {listQuery.isPending && !listQuery.data ? (
         <Loading label="正在加载监控清单…" />
-      ) : repositories.length === 0 ? (
-        <EmptyState title="还没有监控仓库，输入 owner/repo 或 GitHub 网址开始跟踪" />
+      ) : listUnavailable ? null : repositories.length === 0 ? (
+        <EmptyState
+          title="还没有监控仓库"
+          hint="添加一个 GitHub 仓库，OCTO 会帮你跟踪发版、提交、Issue、构建和趋势。"
+        />
       ) : (
-        <div className={`space-y-2 transition-opacity ${listQuery.isFetching || refreshing ? 'opacity-60' : ''}`}>
+        <ul className="space-y-2">
           {repositories.map((repo) => (
             <RepoRow
               key={repo.id}
               repo={repo}
               onOpen={onOpenDetail}
               onRemove={handleRemove}
-              removing={removingId === repo.id}
+              refreshing={refreshing}
             />
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

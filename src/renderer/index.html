@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OCTO 仓库监控器</title>
+    <script>
+      // 首屏主题：bundle 到达之前先按系统主题定下 data-theme，避免先白后黑。
+      // 偏好是 system/light/dark 三档，主进程已把 themeSource 设成用户的偏好，
+      // 所以这里读到的 prefers-color-scheme 对三种模式都是对的；随后 React 侧再对齐一次。
+      (function () {
+        try {
+          var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
