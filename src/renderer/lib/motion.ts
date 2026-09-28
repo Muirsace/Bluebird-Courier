@@ -59,3 +59,36 @@ export const OVERLAY_MOTION = {
   /** 菜单 → 确认：外壳宽高连续过渡 + 内容交叉淡化。 */
   swapMs: 170,
 } as const;
+
+/**
+ * Detail Reveal：首次抓取完成后，Loading「解锁」成完整详情的时长。同样与 styles.css 一一对应。
+ *
+ * 语义是"数据就绪"而不是"新页面弹出"，所以不用 spring：只有 opacity 与几像素的 Y。
+ * 各层是错峰而不是串行——相邻两层只差 30～40ms，最晚那条也在 400ms 内结束。
+ * 这里只管"内容怎么进来"；Loading 自己的退出（100ms）与指标值的交叉淡化（140ms）另算。
+ */
+export const DETAIL_REVEAL_MOTION = {
+  /** Loading 卡退出：Spinner 轻微缩小、文案上移，一起淡出。 */
+  loadingExitMs: 100,
+  /** 表头指标值：— → 真实值的短交叉淡化（不做 CountUp）。 */
+  metricMs: 140,
+  /** 抓取按钮文案：抓取中… → 重新抓取。 */
+  refetchLabelMs: 120,
+  /** Tabs 先于内容进入。 */
+  tabsDelayMs: 80,
+  tabsMs: 160,
+  tabsShiftPx: 4,
+  /** 概览各 Section：只做 Section 级错峰，绝不逐行 stagger。 */
+  buildDelayMs: 100,
+  buildMs: 210,
+  buildShiftPx: 6,
+  releaseDelayMs: 135,
+  issueDelayMs: 165,
+  trendDelayMs: 195,
+  sectionMs: 200,
+  sectionShiftPx: 5,
+} as const;
+
+/** 从 fetch 成功到整屏稳定：取最晚结束的那一条（趋势），其余都在它之前收尾。 */
+export const DETAIL_REVEAL_TOTAL_MS =
+  DETAIL_REVEAL_MOTION.trendDelayMs + DETAIL_REVEAL_MOTION.sectionMs;

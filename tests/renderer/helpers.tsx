@@ -110,6 +110,8 @@ export interface StubHandle {
   holdNextAdd(): () => void;
   /** 让下一次 openGitHubExternal 挂起，返回放行函数。 */
   holdNextOpen(): () => void;
+  /** 让下一次 fetchDetail 挂起，返回放行函数。 */
+  holdNextDetail(): () => void;
 }
 
 export interface StubOptions {
@@ -131,6 +133,8 @@ export interface StubOptions {
   detail?: Partial<Detail>;
   /** openGitHubExternal 的返回（默认成功）。 */
   openExternalResult?: OpenExternalResult;
+  /** fetchDetail 返回失败 envelope（detail 为 null + error）：首次抓取失败的语义。 */
+  detailFails?: boolean;
 }
 
 export function makeGlance(id: number, fullName: string): Glance {
@@ -190,6 +194,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
   let removeGate: Promise<void> | null = null;
   let addGate: Promise<void> | null = null;
   let openGate: Promise<void> | null = null;
+  let detailGate: Promise<void> | null = null;
   const calls: StubCalls = {
     accessTokenState: 0,
     saveAccessToken: 0,
@@ -260,6 +265,10 @@ export function createStub(options: StubOptions = {}): StubHandle {
     },
     async fetchDetail(repositoryId) {
       calls.fetchDetail += 1;
+      if (detailGate) await detailGate;
+      if (options.detailFails) {
+        return { detail: null, error: { kind: 'unknown', message: '抓取全量信息失败，请稍后重试' } };
+      }
       const repository = repositories.find((item) => item.id === repositoryId);
       if (!repository) return { detail: null, error: null };
       return { detail: makeDetail(repository, options.detail), error: null };
@@ -329,6 +338,16 @@ export function createStub(options: StubOptions = {}): StubHandle {
       openGate = new Promise<void>((resolve) => {
         release = () => {
           openGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    holdNextDetail() {
+      let release = (): void => {};
+      detailGate = new Promise<void>((resolve) => {
+        release = () => {
+          detailGate = null;
           resolve();
         };
       });
@@ -463,6 +482,25 @@ export async function settleMotion(ms = 500): Promise<void> {
  */
 export async function settleOverlayClose(): Promise<void> {
   await settleMotion(400);
+}
+
+/** 详情首次抓取的揭示容器；`data-reveal` 就是 loading / revealing / ready 三个阶段。 */
+export function detailReveal(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.detail-reveal');
+}
+
+export function revealPhase(): string | null {
+  return detailReveal()?.dataset.reveal ?? null;
+}
+
+/** Loading 卡：抓取中在文档流里（visible），数据到达后原地淡出（exiting）。 */
+export function loadingSlot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.detail-loading-slot');
+}
+
+/** 表头四条指标里正在交叉淡化的"旧值"层（只在揭示窗口内存在）。 */
+export function factSwaps(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('.detail-fact-from')];
 }
 
 /** `···` 操作入口。 */

@@ -443,9 +443,15 @@ button:disabled {
   animation: view-enter-x-back 180ms var(--motion-ease-out);
 }
 
-/* 详情内部 Tab 内容是同级视图切换：不给方向，只做很轻的 Y */
+/*
+ * 详情内部 Tab 内容是同级视图切换：不给方向，只做很轻的 Y。
+ *
+ * 注意它**不是**淡入：旧内容随重挂载立即消失，新内容从 0.98 起手。
+ * 从 0 淡入会让整块内容区在整段动画里接近透明——浅色主题下白卡片消失、灰底暴露，
+ * 看起来就是"闪一下"。0.98 → 1 的亮度差人眼不可辨，落位感完全交给那 2px。
+ */
 .tab-panel-enter {
-  animation: tab-content-enter 150ms var(--motion-ease-out);
+  animation: tab-panel-soft-enter 140ms var(--motion-ease-out) backwards;
 }
 
 @keyframes view-enter-y {
@@ -484,10 +490,10 @@ button:disabled {
   }
 }
 
-@keyframes tab-content-enter {
+@keyframes tab-panel-soft-enter {
   from {
-    opacity: 0;
-    transform: translateY(3px);
+    opacity: 0.98;
+    transform: translateY(2px);
   }
 
   to {
@@ -512,6 +518,148 @@ button:disabled {
   transition:
     transform 180ms var(--motion-ease-out),
     width 180ms var(--motion-ease-out);
+}
+
+/**
+ * Detail Reveal Motion：首次抓取完成，界面从 Loading「解锁」成完整详情。
+ *
+ * 语义是"数据就绪"，不是"新页面弹出"：只用 opacity 与几像素的 Y，不用 spring、不放大、
+ * 更不做整页高度补间（那会让页面像手风琴一样被拉长）。真内容在数据到达那一帧就挂载完毕，
+ * Loading 只是同时原地淡出，所以不会出现"空白帧"。
+ */
+.detail-reveal {
+  /* Loading 卡退出时脱离文档流，需要它当包含块 */
+  position: relative;
+}
+
+/* 数据到达：Loading 卡不再推开下面的内容，就地淡出。 */
+.detail-loading-slot[data-state='exiting'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  /* 淡出期间不吃点击：界面在数据到达那一刻就已经可以用了 */
+  pointer-events: none;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-panel {
+  animation: detail-loading-panel-out 100ms var(--motion-ease-in) forwards;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-spinner {
+  animation: detail-loading-spinner-out 100ms var(--motion-ease-in) forwards;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-text {
+  animation: detail-loading-text-out 100ms var(--motion-ease-in) forwards;
+}
+
+/*
+ * 错峰揭示：每个层级自带 --reveal-delay / --reveal-ms / --reveal-shift，
+ * 且只在 revealing 窗口里挂动画。窗口一过（ready），节点即使因切 Tab 重挂也不会再播。
+ * backwards 让它在延迟期间就停在起点，不会先闪一帧最终态。
+ *
+ * 注意：这里只挂错峰动画，不要去"抑制" tab-panel-enter——抑制规则一旦失效，
+ * 已经挂载的面板会当场重播一次进场（实测就是内容展开后闪一下）。
+ * 首屏不播 tab-panel-enter 这件事由 DetailPage 在切 Tab 那一刻决定。
+ */
+.detail-reveal[data-reveal='revealing'] .detail-reveal-item {
+  animation: detail-item-reveal var(--reveal-ms, 200ms) var(--motion-ease-out) var(--reveal-delay, 0ms)
+    backwards;
+}
+
+/* 表头指标值：`—` 绝对定位淡出（不参与布局），真实值原位淡入。不做数字滚动。 */
+.detail-fact-from {
+  pointer-events: none;
+  animation: detail-fact-out 140ms var(--motion-ease-in) forwards;
+}
+
+.detail-fact-to {
+  animation: detail-fact-in 140ms var(--motion-ease-out) backwards;
+}
+
+/* 抓取按钮文案：抓取中… → 重新抓取。按钮宽度由 min-width 定住，这里只换文案。 */
+.detail-refetch-label {
+  animation: detail-refetch-in 120ms var(--motion-ease-out) backwards;
+}
+
+@keyframes detail-item-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--reveal-shift, 5px));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detail-loading-panel-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes detail-loading-spinner-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes detail-loading-text-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes detail-fact-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes detail-fact-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detail-refetch-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 /**
@@ -930,5 +1078,21 @@ button:disabled {
   .repository-action-content-out,
   .repository-action-content-out + .repository-action-content-in {
     animation: none !important;
+  }
+
+  /* 详情揭示：不做错峰 / 位移 / 交叉淡化，数据到达那一刻直接就是最终样子。
+     JS 侧同样不会进入 revealing（useDetailReveal 看到开关就直接 ready），这里是第二道保险。 */
+  .detail-reveal-item,
+  .detail-loading-slot[data-state='exiting'] .loading-panel,
+  .detail-loading-slot[data-state='exiting'] .loading-spinner,
+  .detail-loading-slot[data-state='exiting'] .loading-text,
+  .detail-fact-to,
+  .detail-refetch-label {
+    animation: none !important;
+  }
+
+  /* 不做交叉淡化，旧值就没有存在意义：别让它盖在真值上 */
+  .detail-fact-from {
+    display: none;
   }
 }
