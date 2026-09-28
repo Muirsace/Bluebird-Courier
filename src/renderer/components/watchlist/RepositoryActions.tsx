@@ -63,6 +63,9 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
     function handleKeyDown(event: KeyboardEvent): void {
       if (closing) return;
       if (event.key === 'Escape' && !busy) {
+        // 消费掉这次按键：更外层的导航（例如详情页的 Esc 返回，挂在 window 上、冒泡更晚）
+        // 靠 defaultPrevented 判断"浮层先拿了这次 Esc"，就不该再切页
+        event.preventDefault();
         dismiss();
         return;
       }

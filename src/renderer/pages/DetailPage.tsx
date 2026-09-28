@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Detail, DetailResult } from '../../shared/types';
 import { getApi } from '../lib/api';
@@ -20,8 +20,17 @@ import { TrendTab } from '../components/detail/TrendTab';
 interface DetailPageProps {
   repositoryId: number;
   fullName: string;
+  /** 上报"页面顶部那块 Repository Header 是否已滚出视口"，由 App 决定顶部栏要不要接管仓库名。 */
+  onRepositoryContextChange: (visible: boolean) => void;
   onBack: () => void;
   onGoSettings: () => void;
+}
+
+/** 焦点在可编辑控件里：那里 Esc 的语义是"取消本次输入"，不该被当成导航。 */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
 }
 
 function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
@@ -43,7 +52,13 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
   }
 }
 
-export function DetailPage({ repositoryId, fullName, onBack, onGoSettings }: DetailPageProps) {
+export function DetailPage({
+  repositoryId,
+  fullName,
+  onRepositoryContextChange,
+  onBack,
+  onGoSettings,
+}: DetailPageProps) {
   const detailQuery = useQuery({
     queryKey: ['detail', repositoryId],
     queryFn: async (): Promise<DetailResult> => {
@@ -73,6 +88,56 @@ export function DetailPage({ repositoryId, fullName, onBack, onGoSettings }: Det
 
   // 详情内部导航：默认概览
   const [activeTab, setActiveTab] = useState<DetailTabId>('overview');
+
+  /**
+   * Repository Header 是否已经滚出视口 → 顶部栏要不要接管"当前仓库"。
+   *
+   * 哨兵是横贯表头的一张极窄色带（位置由 CSS 按顶部栏实测高度算）：它整体离开视口顶端，
+   * 说明表头不仅越了界、还多走了约 10px；它重新完整进来，说明表头还剩约 4px 就要露头。
+   * 中间那 6px 保持现状——这就是迟滞区间，临界点上下轻滚不会反复闪。
+   * threshold [0, 1] 让一个观察器同时给出两个边界，不需要监听滚动、也不需要第二个阈值。
+   */
+  const repoContextSentinelRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const sentinel = repoContextSentinelRef.current;
+    // 没有布局引擎（测试环境）时不装观察器：顶部栏保持不接管
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.intersectionRatio === 0) onRepositoryContextChange(true);
+        else if (entry.intersectionRatio === 1) onRepositoryContextChange(false);
+      },
+      { threshold: [0, 1] },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onRepositoryContextChange]);
+  /**
+   * Tabs 吸附态。吸附线是"顶部栏下沿"，所以哨兵放在吸附线正上方一个顶部栏高度处：
+   * 它越过视口顶端的那一刻，正好就是 Tabs 抵达吸附线的那一刻。
+   * IntersectionObserver 只在穿越时回调，不做逐帧监听。
+   *
+   * 切 Tab 要不要重置纵向滚动，判据就是这里的真实吸附状态——不是 `scrollY > 某个阈值`。
+   */
+  const tabsSentinelRef = useRef<HTMLSpanElement>(null);
+  const [tabsStuck, setTabsStuck] = useState(false);
+
+  useEffect(() => {
+    const sentinel = tabsSentinelRef.current;
+    // 没有布局引擎（测试环境）时不装观察器：stuck 恒为 false，不影响语义与 ARIA
+    if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setTabsStuck(!entry.isIntersecting);
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
   /**
    * 记下"这一次 Tab 切换要播内容进场"。
    *
@@ -85,14 +150,62 @@ export function DetailPage({ repositoryId, fullName, onBack, onGoSettings }: Det
    * 点一下当前的「概览」就会把它翻成 'overview'，给已挂载的面板补上类名、重播一次进场。
    */
   const [tabContentSwitched, setTabContentSwitched] = useState<DetailTabId | null>(null);
+
+  /** 当前 Tab 内容的起点：已吸附时切 Tab 的滚动落点就是它。 */
+  const tabContentTopRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * 这一次切 Tab 要不要把内容起点滚到位？取决于**用户触发切换那一刻** Tabs 是否已经吸附。
+   *
+   * 必须在 setActiveTab 之前记下来：新旧 Tab 的高度可能差很多，commit 之后浏览器会重排，
+   * 新 Tab 更矮时还会把 scrollY 直接夹掉，那时再读 tabsStuck 已经不是触发切换时的状态了。
+   */
+  const resetTabScrollRef = useRef(false);
+
   const selectTab = useCallback(
     (id: DetailTabId): void => {
       if (id === activeTab) return;
       setTabContentSwitched(id);
+      resetTabScrollRef.current = tabsStuck;
       setActiveTab(id);
     },
-    [activeTab],
+    [activeTab, tabsStuck],
   );
+
+  /**
+   * 已吸附时切 Tab：把内容起点落到 Sticky Tabs 下沿（偏移由 .detail-tab-content-anchor 的
+   * scroll-margin-top 给出），新 Tab 从自己的开头显示，而不是继承旧 Tab 的深度位置。
+   *
+   * 未吸附时（页面还在顶部 / 只是轻微滚动）什么都不做：scrollY 原地不动，Repository Header
+   * 与 Tabs 继续待在原处——用户没往下滚，切个 Tab 不该把它们主动送出视口。
+   *
+   * 标记读过立刻清掉，之后任何重渲染（数据更新 / 主题 / resize）都不会再滚一次；首屏它本来
+   * 就是 false，所以 mount 也不会误滚。必须是 layout effect：晚一帧用户就会先看见新内容
+   * 停在旧深度上，再被拽到起点。
+   */
+  useLayoutEffect(() => {
+    if (!resetTabScrollRef.current) return;
+    resetTabScrollRef.current = false;
+    tabContentTopRef.current?.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' });
+  }, [activeTab]);
+
+  /**
+   * Esc = 点「← 返回监控清单」：共用同一个 onBack，所以返回动画与清单滚动恢复全部一致。
+   *
+   * 挂在 window 而不是 document：冒泡路径上 document 先于 window，浮层（现有几处都挂在
+   * document 上）永远先拿到 Esc；它们消费掉这次按键后 preventDefault，这里据此让路——
+   * 优先级不依赖两者谁先注册。
+   */
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Escape') return;
+      if (event.defaultPrevented || event.isComposing) return;
+      if (isEditableTarget(event.target)) return;
+      onBack();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onBack]);
 
   const fetchedDetail = detailQuery.data?.detail ?? null;
   const keptDetail = lastDetail && lastDetail.id === repositoryId ? lastDetail.detail : null;
@@ -108,14 +221,21 @@ export function DetailPage({ repositoryId, fullName, onBack, onGoSettings }: Det
 
   return (
     <div className="space-y-4">
-      <RepositoryHeader
-        fullName={fullName}
-        repository={repository}
-        fetching={detailQuery.isFetching}
-        revealing={reveal === 'revealing'}
-        onBack={onBack}
-        onRefetch={() => void detailQuery.refetch()}
-      />
+      {/*
+        表头与它的哨兵同属一个定位容器：哨兵的落点由 CSS 按顶部栏实测高度从这块区域的下沿往上量，
+        所以包装层只提供包含块，不参与视觉（表头仍是这一个，没有复制）。
+      */}
+      <div className="repo-context-scope">
+        <RepositoryHeader
+          fullName={fullName}
+          repository={repository}
+          fetching={detailQuery.isFetching}
+          revealing={reveal === 'revealing'}
+          onBack={onBack}
+          onRefetch={() => void detailQuery.refetch()}
+        />
+        <span ref={repoContextSentinelRef} aria-hidden="true" className="repo-context-sentinel" />
+      </div>
 
       {fetchError ? <ErrorBar error={fetchError} onGoSettings={onGoSettings} /> : null}
       {detailQuery.isError ? (
@@ -132,6 +252,12 @@ export function DetailPage({ repositoryId, fullName, onBack, onGoSettings }: Det
         页面高度该多高就是多高，不做整页高度补间，也不会出现"空白一帧"。
       */}
       <div className="detail-reveal" data-reveal={reveal}>
+        {/*
+          吸附哨兵：绝对定位、不占位，因此不会给 space-y-4 多塞一个子项、也不会挪动 Tabs。
+          它的位置由 CSS 按顶部栏实测高度算（吸附线正上方一个顶部栏高度）。
+        */}
+        <span ref={tabsSentinelRef} aria-hidden="true" className="detail-tabs-sentinel" />
+
         {pending || reveal === 'revealing' ? (
           <div className="detail-loading-slot" data-state={pending ? 'visible' : 'exiting'}>
             <Loading label="正在抓取全量信息…" />
@@ -141,25 +267,32 @@ export function DetailPage({ repositoryId, fullName, onBack, onGoSettings }: Det
         {detail ? (
           <div className="space-y-4">
             <RevealItem
+              className="detail-tabs-sticky"
               delayMs={DETAIL_REVEAL_MOTION.tabsDelayMs}
               durationMs={DETAIL_REVEAL_MOTION.tabsMs}
               shiftPx={DETAIL_REVEAL_MOTION.tabsShiftPx}
             >
-              <DetailTabs active={activeTab} onChange={selectTab} />
+              <DetailTabs active={activeTab} onChange={selectTab} stuck={tabsStuck} />
             </RevealItem>
             {/*
-              刷新期间旧数据仍然有效：不灰化、不遮罩，只由表头的按钮与「正在更新…」表态。
-              key 只认 activeTab：数据更新不会换节点，也就不会把这一屏内容重新播一遍进场；
-              内容进场动画也只属于真正切过 Tab 的那一屏（见 selectTab）。
+              内容起点：切 Tab 的滚动落点。它只是给滚动定位用的普通 div（没有 role / tabIndex），
+              不是第二套语义——tabpanel 还是同一个，aria-controls / aria-labelledby 关系不变。
             */}
-            <div
-              key={activeTab}
-              role="tabpanel"
-              id={`detail-panel-${activeTab}`}
-              aria-labelledby={`detail-tab-${activeTab}`}
-              className={tabContentSwitched === activeTab ? 'tab-panel-enter' : undefined}
-            >
-              <TabPanel tab={activeTab} detail={detail} />
+            <div ref={tabContentTopRef} className="detail-tab-content-anchor">
+              {/*
+                刷新期间旧数据仍然有效：不灰化、不遮罩，只由表头的按钮与「正在更新…」表态。
+                key 只认 activeTab：数据更新不会换节点，也就不会把这一屏内容重新播一遍进场；
+                内容进场动画也只属于真正切过 Tab 的那一屏（见 selectTab）。
+              */}
+              <div
+                key={activeTab}
+                role="tabpanel"
+                id={`detail-panel-${activeTab}`}
+                aria-labelledby={`detail-tab-${activeTab}`}
+                className={tabContentSwitched === activeTab ? 'tab-panel-enter' : undefined}
+              >
+                <TabPanel tab={activeTab} detail={detail} />
+              </div>
             </div>
           </div>
         ) : pending ? null : (

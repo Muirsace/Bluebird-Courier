@@ -14,10 +14,12 @@ const TABS: ReadonlyArray<{ id: DetailTabId; label: string }> = [
 interface DetailTabsProps {
   active: DetailTabId;
   onChange: (id: DetailTabId) => void;
+  /** 已吸附到顶部栏下沿：只把分隔线加深一档，不参与任何几何计算。 */
+  stuck?: boolean;
 }
 
 /** 仓库详情内部的二级导航；窄窗口下横向滚动，不换行挤压标题。 */
-export function DetailTabs({ active, onChange }: DetailTabsProps) {
+export function DetailTabs({ active, onChange, stuck }: DetailTabsProps) {
   const listRef = useRef<HTMLDivElement>(null);
   /** 下划线的实测几何。首次量到之前不渲染，避免它从 0 滑到第一个 Tab。 */
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
@@ -26,6 +28,10 @@ export function DetailTabs({ active, onChange }: DetailTabsProps) {
     const list = listRef.current;
     const target = list?.querySelector<HTMLElement>(`#detail-tab-${active}`);
     if (!list || !target) return;
+    // 实测高度写成 CSS 变量：切 Tab 时内容起点的 scroll-margin 要靠它让开 Tabs。
+    // 吸附容器（Detail 里那一层 RevealItem）只包着这条 tablist，不加 padding / 边框，
+    // 所以它的高度就是这里量到的值；挂载 / 换 Tab / 窗口尺寸变化都会重跑，不会留旧值。
+    document.documentElement.style.setProperty('--detail-tabs-height', `${list.offsetHeight}px`);
     // offsetLeft/offsetWidth 是布局值，不受滚动位置影响，正好当 tablist 的坐标系用。
     // 顺带把激活 Tab 带进可视区：窄窗口下它可能被裁在外面（最典型的是窗口变窄后仍停在最右侧的
     // Tab）。直接写 scrollLeft——瞬时、不平滑，不会和 indicator 那 180ms 叠成双重运动。
@@ -59,6 +65,7 @@ export function DetailTabs({ active, onChange }: DetailTabsProps) {
       role="tablist"
       aria-label="仓库详情分区"
       aria-orientation="horizontal"
+      data-stuck={stuck ? 'true' : undefined}
       className="relative flex gap-2 overflow-x-auto overflow-y-hidden border-b border-subtle"
     >
       {TABS.map((tab) => {

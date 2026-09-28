@@ -4,6 +4,7 @@ import type { Glance, AccessTokenState } from '../shared/types';
 import lightBrandMark from './assets/bluebird-mark-light.svg';
 import darkBrandMark from './assets/bluebird-mark-dark.svg';
 import { getApi } from './lib/api';
+import { CompactRepositoryContext } from './components/CompactRepositoryContext';
 import { ErrorBar } from './components/ErrorBar';
 import { PageTransition } from './components/PageTransition';
 import type { PageMotion } from './components/PageTransition';
@@ -52,6 +53,13 @@ export function App() {
   const watchlistScrollRef = useRef(0);
   /** 上一次真正渲染的视图；null 表示还没渲染过（首屏不是导航，不写滚动位置）。 */
   const previousViewRef = useRef<View | null>(null);
+  /** 顶部栏本体：详情里的 Tabs 吸附时要停在它下沿。 */
+  const headerRef = useRef<HTMLElement>(null);
+  /**
+   * 详情里的 Repository Header 是否已经滚出视口（由 DetailPage 的哨兵报告）。
+   * 为 true 时顶部栏在品牌右侧接管当前仓库名——只在详情里成立，离开详情即回到 false。
+   */
+  const [repoContextVisible, setRepoContextVisible] = useState(false);
 
   // 启动即查询访问令牌状态：未配置时先进设置页
   const accessTokenStateQuery = useQuery({
@@ -74,6 +82,9 @@ export function App() {
     if (activeView === 'watchlist' && to !== 'watchlist') {
       watchlistScrollRef.current = window.scrollY;
     }
+    // 每次导航都从"隐藏"起步：刚进详情时 Repository Header 还在顶部，仓库身份由它自己交代；
+    // 离开详情时也不让它留在顶部栏里。
+    setRepoContextVisible(false);
     setMotion(motionFor(view, to));
     setView(to);
   }
@@ -114,6 +125,32 @@ export function App() {
     });
   }, [activeView, hasTokenState]);
 
+  /**
+   * 顶部栏实测高度写成 CSS 变量：详情里的 Tabs 吸附时停在它下沿，哨兵也靠它定落点。
+   *
+   * 不能硬编码：顶部栏是 flex-wrap，窄窗口下导航会换行、高度不是常量。
+   * 变量缺失时 CSS 里那条 `top: var(--app-header-height)` 整体失效 → 不吸附，
+   * 也就是宁可不动，也绝不把 Tabs 塞进顶部栏底下。
+   */
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const root = document.documentElement;
+    const apply = (): void => {
+      root.style.setProperty('--app-header-height', `${header.getBoundingClientRect().height}px`);
+    };
+    apply();
+    if (typeof ResizeObserver === 'undefined') {
+      return () => root.style.removeProperty('--app-header-height');
+    }
+    const observer = new ResizeObserver(apply);
+    observer.observe(header);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--app-header-height');
+    };
+  }, []);
+
   let content;
   if (accessTokenStateQuery.isPending) {
     content = (
@@ -139,6 +176,7 @@ export function App() {
       <DetailPage
         repositoryId={selected.id}
         fullName={selected.fullName}
+        onRepositoryContextChange={setRepoContextVisible}
         onBack={() => navigate('watchlist')}
         onGoSettings={() => navigate('settings')}
       />
@@ -151,14 +189,24 @@ export function App() {
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col">
-      <header className="sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
+      <header ref={headerRef} className="sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="app-brand-mark" aria-hidden="true">
               <img src={lightBrandMark} alt="" className="app-brand-mark-light" />
               <img src={darkBrandMark} alt="" className="app-brand-mark-dark" />
             </span>
-            <h1 className="text-base font-semibold tracking-wide text-primary">青鸟信使</h1>
+            <h1 className="shrink-0 text-base font-semibold tracking-wide text-primary">青鸟信使</h1>
+            {/*
+              当前仓库上下文：只在详情里出现，且只在页面顶部那块表头滚走之后才显示。
+              它始终占位（宽度与可见性无关），所以出现 / 消失不会推动品牌与右侧导航。
+            */}
+            {activeView === 'detail' && selected ? (
+              <CompactRepositoryContext
+                fullName={selected.fullName}
+                visible={repoContextVisible}
+              />
+            ) : null}
           </div>
           <nav className="flex flex-wrap items-center gap-1">
             <button

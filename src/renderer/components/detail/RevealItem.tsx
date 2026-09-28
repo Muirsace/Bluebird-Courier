@@ -7,6 +7,8 @@ interface RevealItemProps {
   durationMs: number;
   /** 起始下移量；只影响绘制，不参与布局。 */
   shiftPx: number;
+  /** 这一层额外的类名（例如让整个层级参与吸附）。 */
+  className?: string;
   children: ReactNode;
 }
 
@@ -17,7 +19,7 @@ interface RevealItemProps {
  * 动画由 `.detail-reveal[data-reveal='revealing']` 下的那条规则统一挂上，
  * 所以揭示窗口一过（ready），节点即使因为切 Tab 重挂也不会再播一遍。
  */
-export function RevealItem({ delayMs, durationMs, shiftPx, children }: RevealItemProps) {
+export function RevealItem({ delayMs, durationMs, shiftPx, className, children }: RevealItemProps) {
   const style = {
     '--reveal-delay': `${delayMs}ms`,
     '--reveal-ms': `${durationMs}ms`,
@@ -25,7 +27,7 @@ export function RevealItem({ delayMs, durationMs, shiftPx, children }: RevealIte
   } as CSSProperties;
 
   return (
-    <div className="detail-reveal-item" style={style}>
+    <div className={`detail-reveal-item${className ? ` ${className}` : ''}`} style={style}>
       {children}
     </div>
   );

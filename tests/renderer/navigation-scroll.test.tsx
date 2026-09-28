@@ -179,7 +179,7 @@ describe('导航滚动 · 与导航无关的变化一律不动滚动', () => {
     expect(scrollCalls).toHaveLength(before);
   });
 
-  it('切 Tab 不改变详情滚动位置', async () => {
+  it('切 Tab 的滚动落点归 Detail 自己：导航层不写 scroll', async () => {
     await mount();
     await openDetail();
     const before = scrollCalls.length;
@@ -188,8 +188,11 @@ describe('导航滚动 · 与导航无关的变化一律不动滚动', () => {
     await click(tab('发版'));
     await settle();
 
-    expect(scrollY()).toBe(180);
+    // 切 Tab 不是页面导航：App 的导航收尾（window.scrollTo）不参与。
+    // 新 Tab 落到"内容起点"这件事由 DetailPage 自己用 scrollIntoView 完成，
+    // 见 tests/renderer/tab-content-scroll.test.tsx。
     expect(scrollCalls).toHaveLength(before);
+    expect(scrollY()).toBe(180);
   });
 
   it('主题切换不改变滚动位置', async () => {
