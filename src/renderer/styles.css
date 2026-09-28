@@ -113,7 +113,12 @@
   --chart-fork: #38bdf8;
 }
 
-html,
+html {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
 body,
 #root {
   height: 100%;
