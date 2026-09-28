@@ -1,6 +1,6 @@
 import type { Glance } from '../../shared/types';
 import { formatCount } from '../lib/format';
-import { formatRelativeTime, isWithinDays } from '../lib/time';
+import { formatRelativeTime } from '../lib/time';
 import { GlanceFact } from './GlanceFact';
 import { RepositoryActions } from './watchlist/RepositoryActions';
 
@@ -36,7 +36,6 @@ export function RepoRow({ repo, onOpen, onRemove, refreshing }: RepoRowProps) {
             <GlanceFact
               label="最近活动"
               value={repo.pushedAt ? formatRelativeTime(repo.pushedAt) : '—'}
-              accent={isWithinDays(repo.pushedAt, 7)}
             />
             <GlanceFact
               label="最新版本"

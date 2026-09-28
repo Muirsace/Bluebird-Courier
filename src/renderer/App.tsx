@@ -21,7 +21,7 @@ interface SelectedRepo {
 function navButtonClass(active: boolean, disabled: boolean): string {
   const base = 'inline-flex h-9 items-center rounded-md px-3 text-sm transition-colors duration-150 ease-out';
   if (disabled) return `${base} cursor-not-allowed text-muted`;
-  if (active) return `${base} bg-surface-raised text-accent active:bg-surface-active`;
+  if (active) return `${base} bg-accent-soft text-accent active:bg-accent-soft`;
   return `${base} text-secondary hover:bg-surface-hover hover:text-primary active:bg-surface-active`;
 }
 
@@ -97,7 +97,7 @@ export function App() {
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col">
-      <header className="sticky top-0 z-10 border-b border-subtle bg-app/95 px-4 py-3">
+      <header className="sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex items-center gap-2">
             <span className="app-brand-mark" aria-hidden="true">

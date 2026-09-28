@@ -34,7 +34,7 @@ export function WatchlistHeader({
           onClick={onRefresh}
           disabled={refreshing}
           aria-busy={refreshing}
-          className="ml-auto flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent/40 bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent/70 hover:bg-accent-soft/70 active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60"
+          className="ml-auto flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
         >
           {refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}
           {refreshing ? '刷新中…' : '全部刷新'}

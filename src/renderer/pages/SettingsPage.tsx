@@ -154,7 +154,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                 onChange={(event) => setAccessToken(event.target.value)}
                 placeholder="ghp_…"
                 autoComplete="off"
-                className="h-[38px] w-full min-w-0 flex-1 rounded-md border border-strong bg-app px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:border-accent"
+                className="h-[38px] w-full min-w-0 flex-1 rounded-md border border-strong bg-app px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:border-focus"
               />
               <button
                 type="button"
@@ -176,7 +176,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
               type="submit"
               disabled={saving}
               aria-busy={saving}
-              className="flex h-9 min-w-28 items-center justify-center gap-2 rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast transition-colors duration-150 ease-out hover:bg-accent-solid-hover active:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 min-w-28 items-center justify-center gap-2 rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast transition-colors duration-150 ease-out hover:bg-accent-solid-hover active:bg-accent-solid-pressed disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? <Spinner className="h-3.5 w-3.5" /> : null}
               {saving ? '保存中…' : '保存并验证'}

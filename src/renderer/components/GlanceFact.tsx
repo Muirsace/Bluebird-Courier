@@ -2,13 +2,12 @@ interface GlanceFactProps {
   label: string;
   value: string;
   mono?: boolean;
-  accent?: boolean;
   muted?: boolean;
 }
 
 /** 轻量信息 / 全量信息表头里的一条"标签 + 值"事实。 */
-export function GlanceFact({ label, value, mono = false, accent = false, muted = false }: GlanceFactProps) {
-  const valueColor = accent ? 'text-accent' : muted ? 'text-muted' : 'text-primary';
+export function GlanceFact({ label, value, mono = false, muted = false }: GlanceFactProps) {
+  const valueColor = muted ? 'text-muted' : 'text-primary';
   return (
     <div className="flex min-w-0 items-baseline gap-2">
       <span className="shrink-0 text-xs text-muted">{label}</span>

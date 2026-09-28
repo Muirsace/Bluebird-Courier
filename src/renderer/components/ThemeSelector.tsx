@@ -35,7 +35,7 @@ export function ThemeSelector() {
                 onClick={() => setPreference(value)}
                 className={`h-8 rounded px-3 text-sm transition-colors duration-150 ease-out ${
                   active
-                    ? 'bg-surface font-medium text-accent active:bg-surface-active'
+                    ? 'bg-accent-soft font-medium text-accent active:bg-accent-soft'
                     : 'text-secondary hover:bg-surface-hover hover:text-primary active:bg-surface-active'
                 }`}
               >

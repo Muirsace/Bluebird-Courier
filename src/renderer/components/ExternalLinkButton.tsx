@@ -24,7 +24,7 @@ export function ExternalLinkButton({ target, label, className, children }: Exter
         aria-label={label}
         title={label}
         onClick={() => void open(target)}
-        className={`focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${className}`}
+        className={`focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${className}`}
       >
         {children}
       </button>

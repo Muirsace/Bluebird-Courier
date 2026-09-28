@@ -30,10 +30,14 @@ module.exports = {
           DEFAULT: 'rgb(var(--color-accent) / <alpha-value>)',
           hover: 'rgb(var(--color-accent-hover) / <alpha-value>)',
           soft: 'rgb(var(--color-accent-soft) / <alpha-value>)',
+          border: 'rgb(var(--color-accent-border) / <alpha-value>)',
           solid: 'rgb(var(--color-accent-solid) / <alpha-value>)',
           'solid-hover': 'rgb(var(--color-accent-solid-hover) / <alpha-value>)',
+          'solid-pressed': 'rgb(var(--color-accent-solid-pressed) / <alpha-value>)',
           contrast: 'rgb(var(--color-accent-contrast) / <alpha-value>)',
         },
+
+        focus: 'rgb(var(--color-focus-ring) / <alpha-value>)',
 
         success: {
           DEFAULT: 'rgb(var(--color-success) / <alpha-value>)',

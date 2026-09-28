@@ -33,13 +33,16 @@
   --color-text-secondary: 93 105 122;
   --color-text-muted: 102 114 133;
 
-  /* Accent：浅色下压深一档，保证浅底上的对比度 */
-  --color-accent: 4 120 87;
-  --color-accent-hover: 5 150 105;
-  --color-accent-soft: 236 253 245;
-  --color-accent-solid: 4 120 87;
-  --color-accent-solid-hover: 5 150 105;
+  /* Brand accent：蓝色仅用于操作、选中、链接与焦点；成功状态独立使用绿色。 */
+  --color-accent: 29 78 216;
+  --color-accent-hover: 30 64 175;
+  --color-accent-soft: 239 246 255;
+  --color-accent-border: 191 219 254;
+  --color-accent-solid: 37 99 235;
+  --color-accent-solid-hover: 29 78 216;
+  --color-accent-solid-pressed: 30 64 175;
   --color-accent-contrast: 255 255 255;
+  --color-focus-ring: 37 99 235;
 
   /* Semantic */
   --color-success: 4 120 87;
@@ -84,12 +87,15 @@
   --color-text-muted: 123 135 152;
 
   /* Accent */
-  --color-accent: 52 211 153;
-  --color-accent-hover: 110 231 183;
-  --color-accent-soft: 6 46 36;
-  --color-accent-solid: 4 120 87;
-  --color-accent-solid-hover: 5 150 105;
+  --color-accent: 147 197 253;
+  --color-accent-hover: 191 219 254;
+  --color-accent-soft: 23 37 65;
+  --color-accent-border: 48 70 110;
+  --color-accent-solid: 29 78 216;
+  --color-accent-solid-hover: 37 99 235;
+  --color-accent-solid-pressed: 30 64 175;
   --color-accent-contrast: 255 255 255;
+  --color-focus-ring: 96 165 250;
 
   /* Semantic */
   --color-success: 52 211 153;
@@ -203,9 +209,9 @@ button:disabled {
   background-color: rgb(var(--color-surface));
 }
 
-/* 输入框与按钮的统一聚焦轮廓（两种主题下都用强调色） */
+/* 输入框与按钮的统一聚焦轮廓（两种主题下都使用独立的焦点色） */
 *:focus-visible {
-  outline: 2px solid rgb(var(--color-accent) / 0.7);
+  outline: 2px solid rgb(var(--color-focus-ring));
   outline-offset: 1px;
 }
 

@@ -12,8 +12,8 @@ const STATE_STYLES = {
 export type ItemKind = 'issue' | 'pull';
 
 const KIND_STYLES: Record<ItemKind, { label: string; tone: string }> = {
-  issue: { label: 'Issue', tone: 'border-info/40 bg-info-soft text-info' },
-  pull: { label: 'PR', tone: 'border-accent/40 bg-accent-soft text-accent' },
+  issue: { label: 'Issue', tone: 'border-strong bg-surface-raised text-secondary' },
+  pull: { label: 'PR', tone: 'border-strong bg-surface-raised text-secondary' },
 };
 
 /** 外链文案要说清打开的是议题还是合并请求（两者路径不同）。 */
@@ -36,7 +36,7 @@ function KindBadge({ kind }: { kind: ItemKind }) {
 export function IssueEmptyState() {
   return (
     <div className="flex min-h-[88px] items-center gap-3 rounded-md bg-surface-raised px-4 py-3 text-sm text-secondary">
-      <span aria-hidden="true" className="shrink-0 font-medium text-success">
+      <span aria-hidden="true" className="shrink-0 font-medium text-secondary">
         ✓
       </span>
       {' '}

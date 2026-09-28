@@ -1,6 +1,6 @@
 import type { Glance } from '../../../shared/types';
 import { formatCount } from '../../lib/format';
-import { formatRelativeTime, isWithinDays } from '../../lib/time';
+import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
 import { GlanceFact } from '../GlanceFact';
 import { Spinner } from '../Spinner';
@@ -59,7 +59,7 @@ export function RepositoryHeader({
               onClick={onRefetch}
               disabled={fetching}
               aria-busy={fetching}
-              className="flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent/40 bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent/70 hover:bg-accent-soft/70 active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
             >
               {fetching ? <Spinner className="h-3.5 w-3.5" /> : null}
               {fetching ? '抓取中…' : '重新抓取'}
@@ -73,7 +73,6 @@ export function RepositoryHeader({
           <GlanceFact
             label="最近活动"
             value={repository?.pushedAt ? formatRelativeTime(repository.pushedAt) : '—'}
-            accent={isWithinDays(repository?.pushedAt ?? null, 7)}
           />
           <GlanceFact
             label="最新版本"
