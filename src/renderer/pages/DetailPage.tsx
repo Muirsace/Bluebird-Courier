@@ -32,7 +32,7 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
     case 'issues':
       return <IssuesTab issues={detail.issues} pullRequests={detail.pullRequests} owner={owner} name={name} />;
     case 'build':
-      return <BuildTab build={detail.build} />;
+      return <BuildTab build={detail.build} owner={owner} name={name} />;
     case 'trend':
       return <TrendTab trend={detail.trend} />;
     default:

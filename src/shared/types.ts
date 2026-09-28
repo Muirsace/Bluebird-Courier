@@ -162,7 +162,7 @@ export interface OctoFacade {
 
 /**
  * 外链目标：渲染层只描述"要打开哪个 GitHub 实体"，URL 一律由主进程构造。
- * 唯一例外是 build——GitHub Actions 页面地址由接口直接给出（BuildInfo 里没有 run id 可构造）。
+ * build 携带接口提供的 Actions 地址和仓库身份，主进程会校验它们指向同一个 Actions run。
  */
 export type GitHubExternalTarget =
   | { kind: 'repository'; owner: string; name: string }
@@ -170,7 +170,7 @@ export type GitHubExternalTarget =
   | { kind: 'commit'; owner: string; name: string; sha: string }
   | { kind: 'issue'; owner: string; name: string; number: number }
   | { kind: 'pull'; owner: string; name: string; number: number }
-  | { kind: 'build'; url: string };
+  | { kind: 'build'; owner: string; name: string; url: string };
 
 /** 外链打开结果：要么目标被主进程守卫拒绝，要么系统打不开，不存在"假装成功"。 */
 export interface OpenExternalResult {

@@ -66,7 +66,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
   return (
     <div className="space-y-4">
       <Section title="构建状态">
-        <BuildStatusPanel build={build} />
+        <BuildStatusPanel build={build} owner={owner} name={name} />
       </Section>
 
       {/* min-w-0：提交消息是 truncate（nowrap）的，网格项默认 min-width:auto 会被它撑宽整列 */}
