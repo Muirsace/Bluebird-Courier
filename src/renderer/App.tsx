@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Glance, AccessTokenState } from '../shared/types';
 import lightBrandMark from './assets/bluebird-mark-light.svg';
@@ -43,6 +43,15 @@ export function App() {
   const [selected, setSelected] = useState<SelectedRepo | null>(null);
   /** 上一次导航的方向；null 表示还没导航过（首屏不播切换动画）。 */
   const [motion, setMotion] = useState<PageMotion | null>(null);
+  /**
+   * 滚动位置归属清单：只有清单会被恢复，其余页面一律从头开始。
+   *
+   * 全应用共用同一个 window 滚动条，所以离开清单时就得把位置记下来——DOM 一换，
+   * 浏览器马上按新页面的高度把 scrollY 夹掉，等到 layout effect 里再读只剩被夹过的值。
+   */
+  const watchlistScrollRef = useRef(0);
+  /** 上一次真正渲染的视图；null 表示还没渲染过（首屏不是导航，不写滚动位置）。 */
+  const previousViewRef = useRef<View | null>(null);
 
   // 启动即查询访问令牌状态：未配置时先进设置页
   const accessTokenStateQuery = useQuery({
@@ -57,8 +66,14 @@ export function App() {
     if (state && !state.configured) setView('settings');
   }, [accessTokenStateQuery.data]);
 
-  /** 用户导航的唯一入口：方向与视图在同一次批处理里落地，新内容才拿得到正确的层级动画。 */
+  /**
+   * 用户导航的唯一入口：方向与视图在同一次批处理里落地，新内容才拿得到正确的层级动画。
+   * 离开清单前顺手记住滚动位置，等这个视图真的换掉就来不及了。
+   */
   function navigate(to: View): void {
+    if (activeView === 'watchlist' && to !== 'watchlist') {
+      watchlistScrollRef.current = window.scrollY;
+    }
     setMotion(motionFor(view, to));
     setView(to);
   }
@@ -80,6 +95,24 @@ export function App() {
   // 读不到任何状态才整页阻断；已有缓存时后台刷新失败不应把界面清空
   const tokenStateFailed = accessTokenStateQuery.isError;
   const hasTokenState = accessTokenStateQuery.data !== undefined;
+
+  /**
+   * 导航的滚动收尾，必须赶在浏览器 paint 前：晚一帧用户就会先看见详情的中段，
+   * 再被拽到顶部——规格里明令禁止的"先错位、再跳到正确位置"。
+   * 这里写的是确切的 scrollY，不用 scrollIntoView（那会把目标卡片贴顶或重新居中）。
+   */
+  useLayoutEffect(() => {
+    // 令牌状态还没到：这一屏只是启动占位，不是用户导航出来的视图，不能当成"从设置页回来"
+    if (!hasTokenState) return;
+    const previous = previousViewRef.current;
+    previousViewRef.current = activeView;
+    // 首屏（previous 还是 null）不做任何滚动改写；同一个视图重复进入也不该动滚动位置
+    if (previous === null || previous === activeView) return;
+    window.scrollTo({
+      top: activeView === 'watchlist' ? watchlistScrollRef.current : 0,
+      behavior: 'auto',
+    });
+  }, [activeView, hasTokenState]);
 
   let content;
   if (accessTokenStateQuery.isPending) {
