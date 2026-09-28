@@ -34,6 +34,7 @@ export function DetailTabs({ active, onChange }: DetailTabsProps) {
             tabIndex={selected ? 0 : -1}
             aria-selected={selected}
             aria-controls={`detail-panel-${tab.id}`}
+            data-button-motion="compact"
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => {
               const currentIndex = TABS.findIndex((item) => item.id === tab.id);

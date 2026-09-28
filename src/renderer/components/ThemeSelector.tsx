@@ -32,6 +32,7 @@ export function ThemeSelector() {
                 key={value}
                 type="button"
                 aria-pressed={active}
+                data-button-motion="compact"
                 onClick={() => setPreference(value)}
                 className={`h-8 rounded px-3 text-sm transition-colors duration-150 ease-out ${
                   active

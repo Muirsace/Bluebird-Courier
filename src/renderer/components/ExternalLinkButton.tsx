@@ -7,6 +7,8 @@ interface ExternalLinkButtonProps {
   /** 无障碍名（同时作为悬停提示），要写清打开的是什么。 */
   label: string;
   className: string;
+  /** 纯文字链样式（列表里的提交 / 发版 / Issue 链接）：不参与按钮下压运动。 */
+  linkStyle?: boolean;
   children: ReactNode;
 }
 
@@ -14,7 +16,7 @@ interface ExternalLinkButtonProps {
  * 「在 GitHub 打开」控件：真 button + aria-label + focus-visible，打开失败就地报错。
  * 不导航当前 Electron 窗口，一切交给主进程的窄接口去调系统浏览器。
  */
-export function ExternalLinkButton({ target, label, className, children }: ExternalLinkButtonProps) {
+export function ExternalLinkButton({ target, label, className, linkStyle = false, children }: ExternalLinkButtonProps) {
   const { open, error } = useGitHubExternal();
 
   return (
@@ -23,6 +25,7 @@ export function ExternalLinkButton({ target, label, className, children }: Exter
         type="button"
         aria-label={label}
         title={label}
+        data-button-motion={linkStyle ? 'link' : undefined}
         onClick={() => void open(target)}
         className={`focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${className}`}
       >

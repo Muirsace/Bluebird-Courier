@@ -142,14 +142,17 @@ export function RepoRow({
       data-highlight={highlight ? 'true' : undefined}
     >
       <div className="repo-row-clip">
-        <div className="repo-row rounded-lg border border-subtle bg-surface transition-colors duration-150 ease-out hover:border-strong hover:bg-surface-hover">
+        <div className="repo-row rounded-lg border border-subtle bg-surface hover:border-strong hover:bg-surface-hover">
           <div className="flex items-start gap-2 p-4">
+            {/* 主点击区几乎铺满整张卡片：按下反馈由卡片整体承担（见 .repo-row:has([data-row-activator]:active)），按钮自己只做键盘焦点底色 */}
             <button
               type="button"
               onClick={() => onOpen(repo)}
               aria-label={`查看 ${repo.fullName} 详情`}
               title={repo.fullName}
-              className="min-w-0 flex-1 rounded-md text-left transition-colors duration-150 ease-out focus-visible:bg-surface-hover active:bg-surface-active"
+              data-button-motion="surface"
+              data-row-activator
+              className="min-w-0 flex-1 rounded-md text-left transition-colors duration-150 ease-out focus-visible:bg-surface-hover"
             >
               <span className="block min-w-0 truncate font-mono text-lg font-semibold leading-8 text-primary">
                 {repo.fullName}

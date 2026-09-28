@@ -60,7 +60,7 @@ export function RemoveRepositoryPopover({
           onClick={onConfirm}
           disabled={busy}
           aria-busy={busy}
-          className="flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-md bg-danger-solid px-3 text-sm font-medium text-danger-contrast transition-colors duration-150 ease-out hover:bg-danger-solid-hover active:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex h-9 min-w-[104px] items-center justify-center gap-2 rounded-md bg-danger-solid px-3 text-sm font-medium text-danger-contrast transition-colors duration-150 ease-out hover:bg-danger-solid-hover active:bg-danger-solid-pressed disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? <Spinner className="h-3.5 w-3.5" /> : null}
           {busy ? '移除中…' : '移除'}

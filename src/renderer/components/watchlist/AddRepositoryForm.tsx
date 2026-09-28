@@ -227,7 +227,7 @@ export function AddRepositoryForm({
         aria-hidden={expanded}
         tabIndex={expanded ? -1 : 0}
         aria-label="新增仓库"
-        className="watchlist-add-trigger inline-flex h-[38px] items-center justify-center rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast transition-colors duration-150 ease-out hover:bg-accent-solid-hover active:bg-accent-solid-pressed"
+        className="watchlist-add-trigger inline-flex h-[38px] items-center justify-center rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed"
       >
         ＋ 新增仓库
       </button>

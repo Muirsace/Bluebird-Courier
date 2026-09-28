@@ -60,6 +60,7 @@ export function NumberedItemRow({ item, kind, owner, name }: NumberedItemRowProp
       <ExternalLinkButton
         target={{ kind, owner, name, number: item.number }}
         label={`在 GitHub 打开${KIND_NAMES[kind]} #${item.number}`}
+        linkStyle
         className="font-mono text-xs text-muted transition-colors duration-150 ease-out hover:text-secondary hover:underline active:text-primary"
       >
         #{item.number}

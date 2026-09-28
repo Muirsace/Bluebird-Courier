@@ -140,6 +140,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
         aria-label={`${repo.fullName} 的仓库操作`}
         title={`${repo.fullName} 的仓库操作`}
         disabled={disabled}
+        data-button-motion="icon"
         onClick={() => setStage(stage === 'closed' ? 'menu' : 'closed')}
         className={`repo-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-lg transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-primary active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60 ${
           open ? 'bg-surface-active text-primary' : 'text-secondary'
@@ -162,6 +163,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
             tabIndex={0}
             role="menuitem"
             aria-label={`在 GitHub 打开 ${repo.fullName}`}
+            data-button-motion="surface"
             onClick={() => void handleOpenExternal()}
             disabled={busy}
             className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-sm text-primary transition-colors duration-150 ease-out hover:bg-surface-hover active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60"
@@ -175,6 +177,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
             type="button"
             tabIndex={-1}
             role="menuitem"
+            data-button-motion="surface"
             onClick={() => {
               setError(null);
               setStage('confirm');

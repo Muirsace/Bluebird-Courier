@@ -52,6 +52,7 @@ module.exports = {
           soft: 'rgb(var(--color-danger-soft) / <alpha-value>)',
           solid: 'rgb(var(--color-danger-solid) / <alpha-value>)',
           'solid-hover': 'rgb(var(--color-danger-solid-hover) / <alpha-value>)',
+          'solid-pressed': 'rgb(var(--color-danger-solid-pressed) / <alpha-value>)',
           contrast: 'rgb(var(--color-danger-contrast) / <alpha-value>)',
         },
         info: {
