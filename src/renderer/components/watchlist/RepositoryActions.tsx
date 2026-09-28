@@ -12,10 +12,12 @@ interface RepositoryActionsProps {
   repo: Glance;
   /** 移除失败时必须 reject，由本组件就地提示并允许重试。 */
   onRemove: (repositoryId: number) => Promise<void>;
+  /** 卡片正在退场：入口立即失效，不再接受任何操作。 */
+  disabled?: boolean;
 }
 
 /** 仓库的次要操作入口：`···` 菜单 + 移除确认 Popover，两者都从卡片主点击区里独立出来。 */
-export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
+export function RepositoryActions({ repo, onRemove, disabled = false }: RepositoryActionsProps) {
   const [stage, setStage] = useState<Stage>('closed');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,8 +139,9 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
         aria-controls={stage === 'confirm' ? popoverId : stage === 'menu' ? menuId : undefined}
         aria-label={`${repo.fullName} 的仓库操作`}
         title={`${repo.fullName} 的仓库操作`}
+        disabled={disabled}
         onClick={() => setStage(stage === 'closed' ? 'menu' : 'closed')}
-        className={`repo-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-lg transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-primary active:bg-surface-active ${
+        className={`repo-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-lg transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-primary active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60 ${
           open ? 'bg-surface-active text-primary' : 'text-secondary'
         }`}
       >

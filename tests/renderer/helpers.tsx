@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { vi } from 'vitest';
 import type { AddRepositoryResult, AccessTokenResult, Detail, Glance, GitHubExternalTarget, OctoBridge, OpenExternalResult, Snapshot } from '../../src/shared/types';
 import { App } from '../../src/renderer/App';
 import { ThemeProvider } from '../../src/renderer/lib/theme';
@@ -14,14 +15,21 @@ import { ThemeProvider } from '../../src/renderer/lib/theme';
 // ---------- 假系统主题：happy-dom 的 matchMedia 恒为浅色，这里换成可控的 ----------
 
 let systemTheme: 'light' | 'dark' = 'light';
+let reducedMotion = false;
 const mediaListeners = new Set<() => void>();
 
 function installMatchMedia(): void {
+  // 按查询串分别回答：主题读 prefers-color-scheme，动画降级读 prefers-reduced-motion。
   const matchMedia = (query: string): MediaQueryList => {
+    const matchesNow = (): boolean => {
+      if (query.includes('prefers-reduced-motion')) return reducedMotion;
+      if (query.includes('prefers-color-scheme')) return systemTheme === 'dark';
+      return false;
+    };
     const list = {
       media: query,
       get matches() {
-        return systemTheme === 'dark';
+        return matchesNow();
       },
       onchange: null,
       addEventListener: (_type: string, listener: () => void) => {
@@ -52,6 +60,15 @@ export function setSystemTheme(theme: 'light' | 'dark'): void {
 export function resetSystemTheme(): void {
   systemTheme = 'light';
   mediaListeners.clear();
+}
+
+/** 模拟系统"减少动态效果"开关（下一次挂载生效）。 */
+export function setReducedMotion(reduce: boolean): void {
+  reducedMotion = reduce;
+}
+
+export function resetReducedMotion(): void {
+  reducedMotion = false;
 }
 
 // ---------- 桩门面 ----------
@@ -361,6 +378,11 @@ export async function renderNode(stub: StubHandle, node: ReactNode): Promise<Ren
 export async function settle(rounds = 6): Promise<void> {
   for (let i = 0; i < rounds; i += 1) {
     await act(async () => {
+      // 装了假计时器时只推进"当前已排队的 0ms 任务"，不放过真实时间，动画窗口才可控
+      if (vi.isFakeTimers()) {
+        vi.advanceTimersByTime(0);
+        return;
+      }
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 0);
       });
@@ -405,6 +427,34 @@ export async function submitForm(form: HTMLFormElement): Promise<void> {
 /** 主区域（进详情）按钮。 */
 export function repoOpenButton(fullName: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`button[aria-label="查看 ${fullName} 详情"]`);
+}
+
+/** 仓库卡片的外层槽位（承载进出场状态与位置）。 */
+export function repoSlot(fullName: string): HTMLElement | null {
+  return repoOpenButton(fullName)?.closest<HTMLElement>('li') ?? null;
+}
+
+/** 卡片当前的动画阶段：idle / entering / exiting（卡片已不在 DOM 时返回 null）。 */
+export function repoMotion(fullName: string): string | null {
+  return repoSlot(fullName)?.dataset.motion ?? null;
+}
+
+/**
+ * 等卡片动画（含"animationend 没来"的兜底计时器）走完。
+ * happy-dom 不跑 CSS 动画、也不会派发 animationend，所以这里的等待就是兜底路径本身：
+ * fake timers 下推进虚拟时间，真实计时器下等真实时长。
+ */
+export async function settleMotion(ms = 500): Promise<void> {
+  await act(async () => {
+    if (vi.isFakeTimers()) {
+      vi.advanceTimersByTime(ms);
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  });
+  await settle();
 }
 
 /** `···` 操作入口。 */

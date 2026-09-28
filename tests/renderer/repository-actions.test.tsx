@@ -16,9 +16,11 @@ import {
   pressEscape,
   renderApp,
   repoActionsButton,
+  repoMotion,
   repoOpenButton,
   repoRows,
   settle,
+  settleMotion,
 } from './helpers';
 
 const FULL_NAME = 'octocat/Hello-World';
@@ -196,7 +198,7 @@ describe('仓库操作 · 移除确认 Popover', () => {
     expect(repoRows()).toHaveLength(1);
   });
 
-  it('确认移除：调用一次 removeRepository，成功后仓库从清单消失', async () => {
+  it('确认移除：调用一次 removeRepository，退场播完才从清单消失', async () => {
     await mount();
     await openConfirm();
     handle.setRepositories([]);
@@ -205,6 +207,11 @@ describe('仓库操作 · 移除确认 Popover', () => {
     await settle();
 
     expect(handle.calls.removeRepository).toBe(1);
+    // 后端已成功，但卡片先留在原位播退场
+    expect(repoMotion(FULL_NAME)).toBe('exiting');
+    expect(repoRows()).toHaveLength(1);
+
+    await settleMotion();
     expect(repoRows()).toHaveLength(0);
     expect(bodyText()).toContain('0 个仓库');
   });
@@ -221,11 +228,15 @@ describe('仓库操作 · 移除确认 Popover', () => {
     expect(buttonByText('取消')?.disabled).toBe(true);
     expect(buttonByText('移除中…')?.disabled).toBe(true);
     expect(repoRows()).toHaveLength(1);
+    expect(repoMotion(FULL_NAME)).toBe('idle');
 
     handle.setRepositories([]);
     release();
     await settle();
     expect(dialog()).toBeNull();
+    expect(repoMotion(FULL_NAME)).toBe('exiting');
+
+    await settleMotion();
     expect(repoRows()).toHaveLength(0);
   });
 

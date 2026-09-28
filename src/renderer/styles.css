@@ -209,6 +209,147 @@ button:disabled {
   background-color: rgb(var(--color-surface));
 }
 
+/**
+ * 监控清单卡片进出场。
+ *
+ * 分工固定：外层 li 只负责 0fr ↔ 1fr 的空间腾挪（非线性、绝不 overshoot），
+ * 内层卡片本体只做 opacity / transform。这样列表与其它卡片永远走正常文档流，
+ * 不会整列一起弹。
+ */
+.repo-list > li + li .repo-row {
+  /* 卡片间距挂在卡片自己身上：空间收回时它会跟着一起被裁掉，不留空隙。 */
+  margin-top: 0.5rem;
+}
+
+.repo-row-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.repo-row-clip {
+  /* 网格项默认 min-width/min-height: auto：不归零的话，超长仓库名会把卡片撑出容器宽度 */
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 只在动画期间裁剪：平时 overflow 必须可见，否则 ··· 菜单与确认 Popover 会被切掉。 */
+.repo-row-slot[data-motion='entering'] > .repo-row-clip,
+.repo-row-slot[data-motion='exiting'] > .repo-row-clip {
+  overflow: hidden;
+}
+
+/* 退场期间整张卡片不再接受鼠标操作（键盘侧由 inert 兜住）。 */
+.repo-row-slot[data-motion='exiting'] {
+  pointer-events: none;
+}
+
+/* 列表为新卡片腾出空间：0fr → 1fr。 */
+.repo-row-slot[data-motion='entering'] {
+  animation: repo-slot-expand 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 移除后收回空间：1fr → 0fr。可以和本体淡出重叠，让下面的卡片自然上移。 */
+.repo-row-slot[data-motion='exiting'] {
+  animation: repo-slot-collapse 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* 新卡片本体：淡入 + 轻轻落入。弹簧感只属于这一张。 */
+.repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+  animation: repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * 新增高亮：本体落位后进一次 accent，再自动回到普通 surface，只提示一次。
+ * 两条动画必须写在同一条 animation 声明里——分两条规则会让后出现的简写把前一条整条顶掉，
+ * 结果是卡片先"瞬间出现"、等高亮播完再重播一次进场。
+ */
+.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row {
+  animation:
+    repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
+}
+
+/* 移除本体：先轻微蓄力，随后快速淡出，不回弹（排在最后，退场优先于高亮）。 */
+.repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
+  animation: repo-card-exit 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes repo-slot-expand {
+  from {
+    grid-template-rows: 0fr;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+@keyframes repo-slot-collapse {
+  from {
+    grid-template-rows: 1fr;
+  }
+
+  to {
+    grid-template-rows: 0fr;
+  }
+}
+
+@keyframes repo-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+
+  68% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.004);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes repo-card-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  22% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.998);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes repo-card-highlight {
+  from {
+    border-color: rgb(var(--color-accent-border));
+    background-color: rgb(var(--color-accent-soft));
+  }
+
+  to {
+    border-color: rgb(var(--color-border-subtle));
+    background-color: rgb(var(--color-surface));
+  }
+}
+
+@keyframes repo-card-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 /* Keep the action slot reserved so editing never changes the input width. */
 .watchlist-add-form {
   position: relative;
@@ -378,5 +519,32 @@ button:disabled {
   .watchlist-add-action,
   .watchlist-inline-message {
     transform: none !important;
+  }
+
+  /* 新增：位移 / 缩放 / grid tween 全部关掉，卡片直接出现在最终位置与样式上。 */
+  .repo-row-slot[data-motion='entering'],
+  .repo-row-slot[data-motion='exiting'],
+  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+    animation: none !important;
+  }
+
+  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* 删除：空间立即收回，只留一次极短的透明度淡出。 */
+  .repo-row-slot[data-motion='exiting'] {
+    grid-template-rows: 0fr;
+  }
+
+  .repo-row-slot[data-motion='exiting'] > .repo-row-clip {
+    overflow: hidden;
+  }
+
+  .repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
+    animation: repo-card-fade-out 40ms linear forwards !important;
+    transform: none;
   }
 }

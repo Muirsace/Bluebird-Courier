@@ -1,0 +1,46 @@
+/**
+ * 监控清单卡片进出场的时长。数值与 styles.css 里的 keyframes 一一对应：
+ * 组件、测试与"animationend 没来"的兜底都读这里的常数，不把毫秒数散落到各处。
+ *
+ * 弹簧感只来自新增卡片的 keyframe（-8px → +1px → 0），列表空间与其它卡片永远只有
+ * 非线性缓动、没有 overshoot。
+ */
+export const REPO_MOTION = {
+  /** 列表腾出 / 收回空间：0fr ↔ 1fr。 */
+  layoutMs: 220,
+  /** 新卡片本体：淡入 + 轻轻落入。 */
+  enterMs: 260,
+  /** 新增高亮：紧跟本体之后，只提示一次。 */
+  highlightDelayMs: 240,
+  highlightMs: 560,
+  /** 移除：本体快速淡出、列表空间收回，两者允许重叠。 */
+  exitCardMs: 150,
+  exitLayoutMs: 200,
+  /** prefers-reduced-motion：只留一次极短的透明度淡出，不做位移 / 缩放 / grid tween。 */
+  reducedMs: 40,
+  /** animationend 没派发（元素提前卸载、引擎不支持该属性动画）时的兜底余量。 */
+  fallbackMs: 140,
+} as const;
+
+/** 进场阶段要等的最长一条动画结束：本体与高亮重叠，取高亮结束时刻。 */
+export const REPO_ENTER_TOTAL_MS =
+  REPO_MOTION.highlightDelayMs + REPO_MOTION.highlightMs;
+
+/** 退场阶段要等的最长一条动画结束：空间收回比本体淡出慢。 */
+export const REPO_EXIT_TOTAL_MS = Math.max(REPO_MOTION.exitCardMs, REPO_MOTION.exitLayoutMs);
+
+/**
+ * 兜底计时器的等待时长。正常模式下 animationend 才是主信号，这里只是"事件没来"时的余量；
+ * 降级模式下动画被关掉、永远等不到 animationend，所以它本身就是唯一信号，取值要短。
+ */
+export function motionCompletionMs(totalMs: number): number {
+  return prefersReducedMotion() ? REPO_MOTION.reducedMs : totalMs + REPO_MOTION.fallbackMs;
+}
+
+/** 读系统"减少动态效果"开关；动画开始前问一次，用来把动画降级成一次极短淡出。 */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
