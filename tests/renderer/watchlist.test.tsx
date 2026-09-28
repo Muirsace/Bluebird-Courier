@@ -1,14 +1,19 @@
 // @vitest-environment happy-dom
+import { act, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { AddRepositoryForm } from '../../src/renderer/components/watchlist/AddRepositoryForm';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
 import {
   alertTexts,
   bodyText,
+  buttonByLabel,
   buttonByText,
   click,
   createStub,
   makeGlance,
+  pressEscape,
   renderApp,
+  renderNode,
   repoOpenButton,
   repoRows,
   settle,
@@ -36,6 +41,36 @@ function addInput(): HTMLInputElement {
   const input = document.querySelector<HTMLInputElement>('input[aria-label^="监控仓库"]');
   if (!input) throw new Error('未找到添加仓库输入框');
   return input;
+}
+
+function addSubmitButton(): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>('.watchlist-add-form form > button');
+  if (!button) throw new Error('未找到加入仓库按钮');
+  return button;
+}
+
+function addStatus(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.watchlist-add-form [role="status"]');
+}
+
+function addError(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.watchlist-add-form [role="alert"]');
+}
+
+function activeAddButtonLabel(): string {
+  return addSubmitButton().querySelector('span')?.textContent?.trim() ?? '';
+}
+
+async function pointerDown(element: Element): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  });
+}
+
+async function expandAddForm(): Promise<HTMLInputElement> {
+  await click(buttonByLabel('新增仓库'));
+  await settle();
+  return addInput();
 }
 
 describe('监控清单 · 数量与状态', () => {
@@ -160,9 +195,191 @@ describe('监控清单 · 打开详情', () => {
 });
 
 describe('监控清单 · 添加仓库', () => {
-  it('加入成功：调用一次 addRepository 并清空输入框', async () => {
+  it('默认折叠：只显示新增仓库和全部刷新操作', async () => {
     await mount({ repositories: [] });
-    const input = addInput();
+    expect(buttonByLabel('新增仓库')).not.toBeNull();
+    expect(buttonByText('全部刷新')).not.toBeNull();
+    expect(buttonByLabel('加入仓库')).toBeNull();
+  });
+
+  it('默认 input 不渲染，不能进入 Tab 顺序', async () => {
+    await mount({ repositories: [] });
+    expect(document.querySelector('input[aria-label^="监控仓库"]')).toBeNull();
+  });
+
+  it('新增仓库入口是真实 button，点击后展开表单', async () => {
+    await mount({ repositories: [] });
+    const trigger = buttonByLabel('新增仓库');
+    expect(trigger?.tagName).toBe('BUTTON');
+    expect(trigger?.type).toBe('button');
+    await click(trigger);
+    expect(addInput().form).not.toBeNull();
+    expect(addSubmitButton().type).toBe('submit');
+  });
+
+  it('标题、添加区域和仓库列表共用页面内容容器，折叠和展开从添加区域起点开始', async () => {
+    await mount({ repositories: [makeGlance(1, 'octocat/Hello-World')] });
+    const list = repoRows()[0]?.parentElement;
+    const page = list?.parentElement;
+    const addArea = document.querySelector('.watchlist-add-form');
+    expect(page?.firstElementChild?.querySelector('h1')?.textContent).toBe('监控清单');
+    expect(page?.firstElementChild?.contains(addArea)).toBe(true);
+    expect(addArea?.firstElementChild).toBe(buttonByLabel('新增仓库'));
+    const input = await expandAddForm();
+    expect(addArea?.firstElementChild).toBe(input.form);
+    expect(input.parentElement).toBe(input.form?.firstElementChild);
+    expect(addSubmitButton().parentElement).toBe(input.form);
+  });
+
+  it('展开后 input 自动获得焦点', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('Escape 收起表单并把焦点交还新增入口', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    await pressEscape();
+    await settle();
+    expect(document.querySelector('input[aria-label^="监控仓库"]')).toBeNull();
+    expect(document.activeElement).toBe(buttonByLabel('新增仓库'));
+    await expandAddForm();
+    expect(addInput().value).toBe('');
+  });
+
+  it('空输入：加入按钮禁用且没有辅助信息', async () => {
+    await mount({ repositories: [] });
+    await expandAddForm();
+    expect(addSubmitButton().disabled).toBe(true);
+    expect(document.querySelector('.watchlist-add-form .add-repository-status')).toBeNull();
+  });
+
+  it('有效 owner/repo 和 GitHub URL 输入可提交', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'https://github.com/facebook/react.git');
+    expect(addSubmitButton().disabled).toBe(false);
+    expect(document.querySelector('.watchlist-add-form .add-repository-status')).toBeNull();
+  });
+
+  it('本地识别重复仓库：按钮显示已添加并禁用，不调用 addRepository', async () => {
+    await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
+    const listCalls = handle.calls.listRepositories;
+    const input = await expandAddForm();
+    await typeInto(input, 'https://github.com/DeepSeek-AI/DeepSeek-Harness.git');
+    expect(activeAddButtonLabel()).toBe('已添加');
+    expect(addSubmitButton().disabled).toBe(true);
+    expect(handle.calls.addRepository).toBe(0);
+    expect(handle.calls.listRepositories).toBe(listCalls);
+  });
+
+  it('重复状态是 inline status，不使用整宽错误 banner', async () => {
+    await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
+    const input = await expandAddForm();
+    await typeInto(input, 'deepseek-ai/deepseek-harness');
+    expect(addStatus()?.textContent).toContain('deepseek-ai/deepseek-harness');
+    expect(addStatus()?.textContent).toContain('已在监控清单中');
+    expect(addStatus()?.textContent).toContain('查看');
+    expect(addStatus()?.parentElement).toBe(input.parentElement);
+    expect(addSubmitButton().parentElement).toBe(input.form);
+    expect(addError()).toBeNull();
+    expect(alertTexts().join(' ')).not.toContain('该仓库已在监控清单中');
+  });
+
+  it('重复状态「查看」直接进入对应仓库 Detail', async () => {
+    await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
+    const input = await expandAddForm();
+    await typeInto(input, 'deepseek-ai/deepseek-harness');
+    await pointerDown(addStatus()!);
+    await click(buttonByText('查看'));
+    await settle();
+    expect(bodyText()).toContain('概览');
+    expect(bodyText()).toContain('deepseek-ai/deepseek-harness');
+    expect(handle.calls.fetchDetail).toBe(1);
+  });
+
+  it('修改重复输入后立即清除旧状态并重新计算按钮', async () => {
+    await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
+    const input = await expandAddForm();
+    await typeInto(input, 'deepseek-ai/deepseek-harness');
+    expect(addStatus()).not.toBeNull();
+    await typeInto(input, 'facebook/react');
+    expect(addStatus()).toBeNull();
+    expect(addSubmitButton().disabled).toBe(false);
+    expect(bodyText()).not.toContain('deepseek-ai/deepseek-harness 已在监控清单中');
+  });
+
+  it('Escape 清除重复状态及本次输入，重新展开后是空表单', async () => {
+    await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
+    const input = await expandAddForm();
+    await typeInto(input, 'deepseek-ai/deepseek-harness');
+    expect(addStatus()).not.toBeNull();
+    await pressEscape();
+    await expandAddForm();
+    expect(addInput().value).toBe('');
+    expect(addStatus()).toBeNull();
+    expect(addSubmitButton().disabled).toBe(true);
+  });
+
+  it('无效输入显示轻量校验并禁用加入', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'not a repository');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(addSubmitButton().disabled).toBe(true);
+    expect(document.querySelector('.watchlist-add-form .add-repository-status')?.textContent).toBe(
+      '请输入 owner/repo 或 GitHub 仓库地址',
+    );
+    expect(addError()).toBeNull();
+  });
+
+  it('无效输入即使触发表单 submit 也不会调用 addRepository', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'not a repository');
+    if (!input.form) throw new Error('输入框不在表单内');
+    await submitForm(input.form);
+    expect(handle.calls.addRepository).toBe(0);
+  });
+
+  it('后端重复响应映射到相同状态并刷新本地清单', async () => {
+    const repository = makeGlance(2, 'deepseek-ai/deepseek-harness');
+    await mount({
+      repositories: [],
+      addResult: {
+        ok: false,
+        repository: null,
+        error: { kind: 'unknown', message: '该仓库已在监控清单中', fullName: repository.fullName },
+      },
+    });
+    handle.setRepositories([repository]);
+    const input = await expandAddForm();
+    await typeInto(input, repository.fullName);
+    await submitForm(input.form!);
+    await settle();
+    expect(handle.calls.addRepository).toBe(1);
+    expect(addStatus()?.textContent).toContain(repository.fullName);
+    expect(addStatus()?.textContent).toContain('已在监控清单中');
+    expect(addError()).toBeNull();
+    expect(buttonByText('查看')?.disabled).toBe(false);
+  });
+
+  it('有效输入通过表单提交（Enter 使用相同 submit 行为）', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    if (!input.form) throw new Error('输入框不在表单内');
+    await submitForm(input.form);
+    await settle();
+    expect(handle.calls.addRepository).toBe(1);
+    expect(handle.addInputs).toEqual(['facebook/react']);
+  });
+
+  it('加入成功后清空输入并收起表单', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
     await typeInto(input, 'facebook/react');
     const form = input.form;
     if (!form) throw new Error('输入框不在表单内');
@@ -171,19 +388,21 @@ describe('监控清单 · 添加仓库', () => {
     await settle();
 
     expect(handle.calls.addRepository).toBe(1);
-    expect(addInput().value).toBe('');
+    expect(document.querySelector('input[aria-label^="监控仓库"]')).toBeNull();
+    expect(buttonByLabel('新增仓库')).not.toBeNull();
+    expect(bodyText()).toContain('1 个仓库');
   });
 
-  it('加入失败：页头错误条保留提示，输入内容不丢', async () => {
+  it('加入失败：错误在表单内显示，输入保留且不收起', async () => {
     await mount({
       repositories: [],
       addResult: {
         ok: false,
         repository: null,
-        error: { kind: 'unknown', message: '该仓库已在监控清单中' },
+        error: { kind: 'network', message: '连接中断' },
       },
     });
-    const input = addInput();
+    const input = await expandAddForm();
     await typeInto(input, 'facebook/react');
     const form = input.form;
     if (!form) throw new Error('输入框不在表单内');
@@ -191,7 +410,132 @@ describe('监控清单 · 添加仓库', () => {
     await submitForm(form);
     await settle();
 
-    expect(alertTexts().join(' ')).toContain('该仓库已在监控清单中');
+    expect(addError()?.textContent).toContain('网络失败');
     expect(addInput().value).toBe('facebook/react');
+    expect(addInput().disabled).toBe(false);
+    expect(buttonByLabel('加入仓库')).not.toBeNull();
+  });
+
+  it('Escape 清除本次加入错误，重新展开不显示残留错误', async () => {
+    await mount({
+      repositories: [],
+      addResult: { ok: false, repository: null, error: { kind: 'network', message: '连接中断' } },
+    });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    await submitForm(input.form!);
+    await settle();
+    expect(addError()).not.toBeNull();
+    await pressEscape();
+    await expandAddForm();
+    expect(addInput().value).toBe('');
+    expect(addError()).toBeNull();
+  });
+
+  it('添加中显示 spinner 文案并禁止重复提交', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    const release = handle.holdNextAdd();
+    if (!input.form) throw new Error('输入框不在表单内');
+    await submitForm(input.form);
+    await settle();
+    expect(activeAddButtonLabel()).toBe('加入中…');
+    expect(addSubmitButton().disabled).toBe(true);
+    await submitForm(input.form);
+    expect(handle.calls.addRepository).toBe(1);
+    release();
+    await settle();
+    expect(buttonByLabel('新增仓库')).not.toBeNull();
+  });
+
+  it('空输入点击外部收起，非空输入点击外部保留内容', async () => {
+    await mount({ repositories: [] });
+    let input = await expandAddForm();
+    await pointerDown(buttonByText('全部刷新')!);
+    expect(document.querySelector('input[aria-label^="监控仓库"]')).toBeNull();
+    input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    await pointerDown(buttonByText('全部刷新')!);
+    expect(addInput().value).toBe('facebook/react');
+  });
+
+  it('点击输入框或加入按钮属于表单内部，不触发 outside 收起', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await pointerDown(input);
+    expect(addInput()).toBe(input);
+    await typeInto(input, 'facebook/react');
+    await pointerDown(addSubmitButton());
+    await click(addSubmitButton());
+    await settle();
+    expect(handle.calls.addRepository).toBe(1);
+  });
+
+  it('提交中点击外部保持展开，提交完成后自然收起', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    const release = handle.holdNextAdd();
+    await submitForm(input.form!);
+    await settle();
+    await pointerDown(buttonByText('全部刷新')!);
+    expect(addInput().value).toBe('facebook/react');
+    release();
+    await settle();
+    expect(buttonByLabel('新增仓库')).not.toBeNull();
+  });
+
+  it('即使输入为空，只要正在提交，外部 pointerdown 也不收起', async () => {
+    let setAdding = (_next: boolean): void => {};
+    function Harness() {
+      const [adding, updateAdding] = useState(false);
+      setAdding = updateAdding;
+      return (
+        <>
+          <AddRepositoryForm
+            repositories={[]}
+            adding={adding}
+            onSubmit={async () => ({ ok: true, repository: null, error: null })}
+            onOpenRepository={() => {}}
+          />
+          <button type="button">外部区域</button>
+        </>
+      );
+    }
+    view = await renderNode(createStub(), <Harness />);
+    await expandAddForm();
+    await act(async () => setAdding(true));
+    await pointerDown(buttonByText('外部区域')!);
+    expect(addInput()).not.toBeNull();
+    await act(async () => setAdding(false));
+    await pointerDown(buttonByText('外部区域')!);
+    expect(document.querySelector('input[aria-label^="监控仓库"]')).toBeNull();
+  });
+
+  it('点击页面其他位置不会自动收起或丢弃非空输入', async () => {
+    await mount({ repositories: [] });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    await pointerDown(buttonByText('全部刷新')!);
+    await click(buttonByText('全部刷新'));
+    await settle();
+    expect(input.disabled).toBe(false);
+    expect(input.value).toBe('facebook/react');
+  });
+
+  it('展开后的 Tab 顺序是 Input、加入、全部刷新、仓库卡片', async () => {
+    await mount({ repositories: [makeGlance(1, 'octocat/Hello-World')] });
+    const input = await expandAddForm();
+    await typeInto(input, 'facebook/react');
+    const toolbar = document.querySelector('.watchlist-toolbar');
+    if (!toolbar) throw new Error('未找到 Watchlist Toolbar');
+    const controls = [...toolbar.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')]
+      .filter((control) => !control.disabled && !control.closest('[aria-hidden="true"]'))
+      .map((control) => control.getAttribute('aria-label') ?? control.textContent?.trim());
+    expect(controls[0]).toContain('监控仓库');
+    expect(controls[1]).toBe('加入仓库');
+    expect(controls[2]).toBe('全部刷新');
+    expect(repoOpenButton('octocat/Hello-World')).not.toBeNull();
   });
 });

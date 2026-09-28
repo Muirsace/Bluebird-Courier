@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Glance, NormalizedError } from '../../shared/types';
+import type { AddRepositoryResult, Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
@@ -25,7 +25,6 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   });
 
   const [adding, setAdding] = useState(false);
-  const [actionError, setActionError] = useState<NormalizedError | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshErrors, setRefreshErrors] = useState<NormalizedError[]>([]);
 
@@ -51,21 +50,25 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** 加入成功返回 true（表单据此清空输入框）；失败沿用页头错误条。 */
-  async function handleAdd(fullName: string): Promise<boolean> {
+  /** 新增失败由表单局部展示；重复响应刷新本地清单以提供对应仓库的「查看」入口。 */
+  async function handleAdd(fullName: string): Promise<AddRepositoryResult> {
     setAdding(true);
-    setActionError(null);
     try {
       const result = await getApi().addRepository(fullName);
       if (!result.ok) {
-        setActionError(result.error ?? { kind: 'unknown', message: '加入清单失败，请稍后重试' });
-        return false;
+        if (result.error?.message === '该仓库已在监控清单中') {
+          await queryClient.invalidateQueries({ queryKey: ['repositories'] });
+        }
+        return result;
       }
       await queryClient.invalidateQueries({ queryKey: ['repositories'] });
-      return true;
+      return result;
     } catch {
-      setActionError({ kind: 'unknown', message: '加入清单失败，请稍后重试' });
-      return false;
+      return {
+        ok: false,
+        repository: null,
+        error: { kind: 'unknown', message: '加入清单失败，请稍后重试' },
+      };
     } finally {
       setAdding(false);
     }
@@ -85,13 +88,14 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     <div className="space-y-4">
       <WatchlistHeader
         repositoryCount={listQuery.data ? repositories.length : null}
+        repositories={repositories}
         adding={adding}
         onAdd={handleAdd}
+        onOpenRepository={onOpenDetail}
         refreshing={refreshing}
         onRefresh={() => void runRefresh()}
       />
 
-      {actionError ? <ErrorBar error={actionError} onGoSettings={onGoSettings} /> : null}
       {refreshErrors.map((error, index) => (
         <ErrorBar
           key={`${error.kind}|${error.message}|${index}`}

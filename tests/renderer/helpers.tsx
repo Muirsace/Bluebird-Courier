@@ -79,6 +79,8 @@ export interface StubHandle {
   settingsPatches: Array<Record<string, string>>;
   /** 收到过的外链目标，按顺序（断言"点了哪条外链"）。 */
   externalTargets: GitHubExternalTarget[];
+  /** 收到过的新增仓库原始输入。 */
+  addInputs: string[];
   /** 下次 listRepositories 返回的清单（删除成功后用它模拟清单缩小）。 */
   setRepositories(repositories: Glance[]): void;
   /** 让下一次 listRepositories 挂起，返回放行函数。 */
@@ -87,6 +89,8 @@ export interface StubHandle {
   holdNextRefresh(): () => void;
   /** 让下一次 removeRepository 挂起，返回放行函数。 */
   holdNextRemove(): () => void;
+  /** 让下一次 addRepository 挂起，返回放行函数。 */
+  holdNextAdd(): () => void;
   /** 让下一次 openGitHubExternal 挂起，返回放行函数。 */
   holdNextOpen(): () => void;
 }
@@ -167,6 +171,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
   let listGate: Promise<void> | null = null;
   let gate: Promise<void> | null = null;
   let removeGate: Promise<void> | null = null;
+  let addGate: Promise<void> | null = null;
   let openGate: Promise<void> | null = null;
   const calls: StubCalls = {
     accessTokenState: 0,
@@ -182,6 +187,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
     openGitHubExternal: 0,
   };
   const externalTargets: GitHubExternalTarget[] = [];
+  const addInputs: string[] = [];
 
   const api: OctoBridge = {
     async accessTokenState() {
@@ -215,14 +221,14 @@ export function createStub(options: StubOptions = {}): StubHandle {
       }
       return repositories;
     },
-    async addRepository() {
+    async addRepository(fullName) {
       calls.addRepository += 1;
-      const result: AddRepositoryResult = options.addResult ?? {
-        ok: true,
-        repository: repositories[0] ?? null,
-        error: null,
-      };
-      return result;
+      addInputs.push(fullName);
+      if (addGate) await addGate;
+      if (options.addResult) return options.addResult;
+      const repository = makeGlance(repositories.length + 1, fullName);
+      repositories = [...repositories, repository];
+      return { ok: true, repository, error: null };
     },
     async removeRepository() {
       calls.removeRepository += 1;
@@ -257,6 +263,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
     },
     settingsPatches,
     externalTargets,
+    addInputs,
     setRepositories(next) {
       repositories = next;
     },
@@ -285,6 +292,16 @@ export function createStub(options: StubOptions = {}): StubHandle {
       removeGate = new Promise<void>((resolve) => {
         release = () => {
           removeGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    holdNextAdd() {
+      let release = (): void => {};
+      addGate = new Promise<void>((resolve) => {
+        release = () => {
+          addGate = null;
           resolve();
         };
       });

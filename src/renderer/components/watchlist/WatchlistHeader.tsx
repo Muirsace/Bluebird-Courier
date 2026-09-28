@@ -1,11 +1,14 @@
 import { AddRepositoryForm } from './AddRepositoryForm';
 import { Spinner } from '../Spinner';
+import type { AddRepositoryResult, Glance } from '../../../shared/types';
 
 interface WatchlistHeaderProps {
   /** 当前清单里的仓库数量；读取中为 null（此时不显示数量，避免先显示 0 再跳数）。 */
   repositoryCount: number | null;
+  repositories: Glance[];
   adding: boolean;
-  onAdd: (fullName: string) => Promise<boolean>;
+  onAdd: (fullName: string) => Promise<AddRepositoryResult>;
+  onOpenRepository: (repository: Glance) => void;
   refreshing: boolean;
   onRefresh: () => void;
 }
@@ -13,8 +16,10 @@ interface WatchlistHeaderProps {
 /** 清单页头与工具栏：标题 + 数量、添加仓库操作组、全部刷新。 */
 export function WatchlistHeader({
   repositoryCount,
+  repositories,
   adding,
   onAdd,
+  onOpenRepository,
   refreshing,
   onRefresh,
 }: WatchlistHeaderProps) {
@@ -27,8 +32,13 @@ export function WatchlistHeader({
         ) : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <AddRepositoryForm adding={adding} onSubmit={onAdd} />
+      <div className="watchlist-toolbar flex flex-wrap items-start gap-2">
+        <AddRepositoryForm
+          repositories={repositories}
+          adding={adding}
+          onSubmit={onAdd}
+          onOpenRepository={onOpenRepository}
+        />
         <button
           type="button"
           onClick={onRefresh}
