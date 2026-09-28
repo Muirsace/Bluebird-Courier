@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Glance, AccessTokenState } from '../shared/types';
+import lightBrandMark from './assets/bluebird-mark-light.svg';
+import darkBrandMark from './assets/bluebird-mark-dark.svg';
 import { getApi } from './lib/api';
 import { ErrorBar } from './components/ErrorBar';
 import { Spinner } from './components/Spinner';
@@ -98,10 +100,11 @@ export function App() {
       <header className="sticky top-0 z-10 border-b border-subtle bg-app/95 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-soft font-mono text-xs font-bold text-accent">
-              OCTO
+            <span className="app-brand-mark" aria-hidden="true">
+              <img src={lightBrandMark} alt="" className="app-brand-mark-light" />
+              <img src={darkBrandMark} alt="" className="app-brand-mark-dark" />
             </span>
-            <h1 className="text-base font-semibold tracking-wide text-primary">OCTO 仓库监控器</h1>
+            <h1 className="text-base font-semibold tracking-wide text-primary">青鸟信使</h1>
           </div>
           <nav className="flex flex-wrap items-center gap-1">
             <button

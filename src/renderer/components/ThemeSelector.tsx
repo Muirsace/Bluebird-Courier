@@ -57,7 +57,7 @@ export function ThemeSelector() {
         </p>
       ) : null}
       <p className="mt-2 text-xs text-muted">
-        跟随系统时，Windows 切换深色 / 浅色会立即反映到 OCTO。
+        跟随系统时，Windows 切换深色 / 浅色会立即反映到青鸟信使。
       </p>
     </div>
   );

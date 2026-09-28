@@ -4,7 +4,7 @@ import type { OpenExternalResult } from '../shared/types';
  * 在系统默认浏览器里打开 GitHub 页面。主进程是最终信任边界：
  * 渲染层送来的目标可能被篡改（类型在运行期被擦除），所以这里既构造 URL 也再校验一遍，
  * 只有 https + host 恰为 github.com 的地址才会交给 shell.openExternal。
- * 绝不让 BrowserWindow 自己导航——OCTO 窗口永远不离开应用。
+ * 绝不让 BrowserWindow 自己导航——应用窗口永远不离开应用。
  */
 const GITHUB_HOST = 'github.com';
 const GITHUB_ORIGIN = `https://${GITHUB_HOST}`;

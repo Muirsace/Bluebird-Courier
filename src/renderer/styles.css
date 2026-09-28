@@ -113,6 +113,28 @@
   --chart-fork: #38bdf8;
 }
 
+/* Same-size transparent brand mark; the resolved root theme selects its palette. */
+.app-brand-mark {
+  position: relative;
+  display: inline-block;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+}
+
+.app-brand-mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+[data-theme='light'] .app-brand-mark-dark,
+[data-theme='dark'] .app-brand-mark-light {
+  visibility: hidden;
+}
+
 html {
   height: 100%;
   overflow-y: auto;

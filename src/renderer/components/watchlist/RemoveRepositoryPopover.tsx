@@ -38,7 +38,7 @@ export function RemoveRepositoryPopover({
       <p className="text-sm font-medium text-primary">从监控清单移除？</p>
       <p className="mt-1 break-all font-mono text-xs text-secondary">{fullName}</p>
       <p className="mt-2 text-xs text-muted">
-        这不会删除 GitHub 仓库，只会停止在 OCTO 中监控。
+        这不会删除 GitHub 仓库，只会停止在青鸟信使中监控。
       </p>
       {error ? (
         <p role="alert" className="mt-2 text-xs text-danger">

@@ -112,7 +112,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
       ) : listUnavailable ? null : repositories.length === 0 ? (
         <EmptyState
           title="还没有监控仓库"
-          hint="添加一个 GitHub 仓库，OCTO 会帮你跟踪发版、提交、Issue、构建和趋势。"
+          hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
         />
       ) : (
         <ul className="space-y-2">

@@ -1,4 +1,4 @@
-# OCTO 仓库监控
+# 青鸟信使 Bluebird Courier
 
 跟踪用户关注的 GitHub 开源仓库的更新，并呈现这些仓库的现状与趋势。
 

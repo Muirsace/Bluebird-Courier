@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1280 1280" role="img" aria-labelledby="title desc">
+  <title id="title">青鸟信使浅色界面标志</title>
+  <desc id="desc">青鸟信使浅色界面使用的透明蓝色折纸飞鸟标志。</desc>
+  <defs>
+    <linearGradient id="body" x1="880" y1="480" x2="470" y2="1040" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B55D9"/>
+      <stop offset=".55" stop-color="#084FC8"/>
+      <stop offset="1" stop-color="#073FAF"/>
+    </linearGradient>
+    <linearGradient id="wing" x1="225" y1="225" x2="780" y2="661" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1879D3"/>
+      <stop offset="1" stop-color="#146ABF"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="260" y1="440" x2="715" y2="751" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#104ACB"/>
+      <stop offset="1" stop-color="#0B40B3"/>
+    </linearGradient>
+    <linearGradient id="beak" x1="1049" y1="532" x2="1133" y2="598" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#087A97"/>
+      <stop offset="1" stop-color="#0C657C"/>
+    </linearGradient>
+  </defs>
+  <!-- Beak sits behind the head, keeping the silhouette continuous. -->
+  <path fill="url(#beak)" d="M1042 527 L1128 575 Q1141 583 1125 593 L1056 624 Z"/>
+  <!-- Body and broad, tapered tail. -->
+  <path fill="url(#body)" d="M604 743
+    C658 723 707 648 755 574
+    C803 501 855 468 918 468
+    C1001 466 1059 514 1063 569
+    C1067 610 1036 639 1014 674
+    C986 719 981 782 947 836
+    C894 920 815 969 717 968
+    C663 968 626 946 580 954
+    C534 962 505 999 470 1032
+    C449 1053 429 1046 407 1037
+    C344 1010 287 976 226 939
+    C208 928 208 917 230 910
+    C356 872 483 822 604 743 Z"/>
+  <!-- Folded wing underside. -->
+  <path fill="url(#fold)" d="M205 390
+    L787 644 Q831 666 799 699
+    C769 729 707 746 646 748
+    C541 752 448 717 377 652
+    C305 587 252 493 205 390 Z"/>
+  <!-- Large clean upper wing, with the fold terminating at the tip. -->
+  <path fill="url(#wing)" d="M160 222
+    C252 231 387 266 517 299
+    C588 317 639 337 671 381
+    C700 421 717 480 744 534
+    L810 664
+    C697 609 582 554 472 504
+    C373 459 279 442 227 404
+    C178 367 151 307 139 245
+    Q134 220 160 222 Z"/>
+</svg>
