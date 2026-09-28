@@ -18,6 +18,7 @@ import {
   repoRows,
   settle,
   settleMotion,
+  settleOverlayClose,
   tab,
 } from './helpers';
 
@@ -116,6 +117,7 @@ describe('公共按钮交互层 · 各类按钮行为不变', () => {
 
     await click(buttonByText('取消'));
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(handle.calls.removeRepository).toBe(0);

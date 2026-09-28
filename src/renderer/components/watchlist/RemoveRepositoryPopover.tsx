@@ -12,7 +12,12 @@ interface RemoveRepositoryPopoverProps {
   onConfirm: () => void;
 }
 
-/** 移除监控仓库的轻量确认 Popover：无倒计时、无二次点击，取消 / Esc / 点外部都能退出。 */
+/**
+ * 移除监控仓库的确认内容：无倒计时、无二次点击，取消 / Esc / 点外部都能退出。
+ *
+ * 定位、尺寸与进出场动画都归外层 RepositoryActionSurface，这里只负责内容、语义与焦点：
+ * 挂载即把焦点交给「取消」，键盘用户不必再 Tab 找。
+ */
 export function RemoveRepositoryPopover({
   id,
   fullName,
@@ -23,18 +28,12 @@ export function RemoveRepositoryPopover({
 }: RemoveRepositoryPopoverProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  // 打开即把焦点移进 Popover，键盘用户不必再 Tab 找
   useEffect(() => {
     cancelRef.current?.focus();
   }, []);
 
   return (
-    <div
-      id={id}
-      role="dialog"
-      aria-label="从监控清单移除仓库"
-      className="overlay-enter absolute right-0 top-full z-20 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-strong bg-surface p-3 shadow-sm"
-    >
+    <div id={id} role="dialog" aria-label="从监控清单移除仓库" className="p-3">
       <p className="text-sm font-medium text-primary">从监控清单移除？</p>
       <p className="mt-1 break-all font-mono text-xs text-secondary">{fullName}</p>
       <p className="mt-2 text-xs text-muted">

@@ -21,6 +21,7 @@ import {
   repoRows,
   settle,
   settleMotion,
+  settleOverlayClose,
 } from './helpers';
 
 const FULL_NAME = 'octocat/Hello-World';
@@ -83,6 +84,7 @@ describe('仓库操作 · 入口', () => {
     await mount();
     await openMenu();
     await openMenu();
+    await settleOverlayClose();
     expect(menu()).toBeNull();
   });
 
@@ -90,6 +92,7 @@ describe('仓库操作 · 入口', () => {
     await mount();
     await openMenu();
     await pressEscape();
+    await settleOverlayClose();
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(repoActionsButton(FULL_NAME));
     expect(handle.calls.removeRepository).toBe(0);
@@ -120,6 +123,7 @@ describe('仓库操作 · 入口', () => {
     if (!openItem) throw new Error('菜单项未渲染');
 
     await pressKey(openItem, 'Tab');
+    await settleOverlayClose();
 
     expect(menu()).toBeNull();
     expect(handle.calls.fetchDetail).toBe(0);
@@ -129,6 +133,7 @@ describe('仓库操作 · 入口', () => {
     await mount();
     await openMenu();
     await pointerDownOutside(document.body);
+    await settleOverlayClose();
     expect(menu()).toBeNull();
   });
 
@@ -140,6 +145,7 @@ describe('仓库操作 · 入口', () => {
 
     await act(async () => repoButton.focus());
     await settle();
+    await settleOverlayClose();
 
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(repoButton);
@@ -167,6 +173,7 @@ describe('仓库操作 · 移除确认 Popover', () => {
 
     await click(buttonByText('取消'));
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(handle.calls.removeRepository).toBe(0);
@@ -179,6 +186,7 @@ describe('仓库操作 · 移除确认 Popover', () => {
 
     await pressEscape();
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(document.activeElement).toBe(repoActionsButton(FULL_NAME));
@@ -192,6 +200,7 @@ describe('仓库操作 · 移除确认 Popover', () => {
 
     await pointerDownOutside(document.body);
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(handle.calls.removeRepository).toBe(0);

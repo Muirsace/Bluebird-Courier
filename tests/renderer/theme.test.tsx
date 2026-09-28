@@ -10,6 +10,7 @@ import {
   click,
   createStub,
   makeGlance,
+  menu,
   navButton,
   pressEscape,
   renderApp,
@@ -21,6 +22,7 @@ import {
   segmentedButton,
   setSystemTheme,
   settle,
+  settleOverlayClose,
 } from './helpers';
 
 const REPO = 'octocat/Hello-World';
@@ -233,10 +235,10 @@ describe('双主题 · 关键界面可用性', () => {
     await settle();
     await click(repoActionsButton(REPO));
     await settle();
-    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(menu()).not.toBeNull();
     await pressEscape();
-    await settle();
-    expect(document.querySelector('[role="menu"]')).toBeNull();
+    await settleOverlayClose();
+    expect(menu()).toBeNull();
 
     // 迁移完成的护栏：业务组件不再直接写 slate-* / emerald-*
     expect(document.body.innerHTML).not.toMatch(/slate-|emerald-/);

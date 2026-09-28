@@ -37,6 +37,7 @@ export function motionCompletionMs(totalMs: number): number {
   return prefersReducedMotion() ? REPO_MOTION.reducedMs : totalMs + REPO_MOTION.fallbackMs;
 }
 
+
 /** 读系统"减少动态效果"开关；动画开始前问一次，用来把动画降级成一次极短淡出。 */
 export function prefersReducedMotion(): boolean {
   return (
@@ -44,3 +45,17 @@ export function prefersReducedMotion(): boolean {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
 }
+
+/**
+ * 仓库操作浮层（`···` 菜单 / 移除确认）的时长。同样与 styles.css 的 keyframes 一一对应。
+ *
+ * 这里没有弹簧：浮层是高频导航的一部分，只做"从触发器方向长出来"的轻微位移 + 缩放。
+ */
+export const OVERLAY_MOTION = {
+  /** 打开：淡入 + 轻微缩放 + 顺着触发器方向位移。 */
+  enterMs: 160,
+  /** 关闭：比打开更快，且不 overshoot。 */
+  exitMs: 120,
+  /** 菜单 → 确认：外壳宽高连续过渡 + 内容交叉淡化。 */
+  swapMs: 170,
+} as const;

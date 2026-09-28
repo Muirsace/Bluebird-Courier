@@ -457,25 +457,47 @@ export async function settleMotion(ms = 500): Promise<void> {
   await settle();
 }
 
+/**
+ * 等仓库操作浮层的关闭动画播完。happy-dom 不跑 CSS 动画、也不派发 animationend，
+ * 所以这里等的就是组件里那条兜底计时器（关闭 120ms + 余量），到点后外壳才卸载。
+ */
+export async function settleOverlayClose(): Promise<void> {
+  await settleMotion(400);
+}
+
 /** `···` 操作入口。 */
 export function repoActionsButton(fullName: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`button[aria-label="${fullName} 的仓库操作"]`);
 }
 
+/**
+ * 只取"当前生效"的那个节点：菜单 → 确认换内容时，旧菜单会带着 aria-hidden + inert
+ * 留在 out 层继续淡出，它不是用户此刻看到 / 能操作的菜单。
+ * 所有浮层查询都按这条过滤，断言才对应真实的界面状态。
+ */
+function liveQuery<T extends HTMLElement>(selector: string): T | null {
+  return (
+    [...document.querySelectorAll<T>(selector)].find(
+      (element) => element.closest('[aria-hidden="true"]') === null,
+    ) ?? null
+  );
+}
+
 export function menu(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[role="menu"]');
+  return liveQuery<HTMLElement>('[role="menu"]');
 }
 
 export function menuItem(text: string): HTMLButtonElement | null {
   return (
-    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes(text),
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (item) =>
+        item.closest('[aria-hidden="true"]') === null && (item.textContent?.includes(text) ?? false),
     ) ?? null
   );
 }
 
 export function dialog(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[role="dialog"]');
+  return liveQuery<HTMLElement>('[role="dialog"]');
 }
 
 export function buttonByText(text: string): HTMLButtonElement | null {

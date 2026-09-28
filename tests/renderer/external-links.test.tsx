@@ -18,6 +18,7 @@ import {
   repoActionsButton,
   repoRows,
   settle,
+  settleOverlayClose,
   tab,
 } from './helpers';
 
@@ -98,6 +99,7 @@ describe('监控清单 · 在 GitHub 打开', () => {
 
     await click(buttonByLabel(`在 GitHub 打开 ${FULL_NAME}`));
     await settle();
+    await settleOverlayClose();
 
     expect(handle.calls.openGitHubExternal).toBe(1);
     expect(handle.externalTargets).toEqual([{ kind: 'repository', owner: OWNER, name: NAME }]);
