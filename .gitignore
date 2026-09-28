@@ -17,6 +17,7 @@ release/
 .agents/
 .scratch/
 skills-lock.json
+/docs/ui-ux/
 /github_pulse_repository_monitor.html
 /octo_nexus_github_personal_center.html
 
