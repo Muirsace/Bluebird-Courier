@@ -318,7 +318,7 @@ describe('Detail Esc 返回 · 不该返回的情况', () => {
     const node = transitionNode();
     await pressEscapeOn(document);
     expect(transitionNode()).toBe(node);
-    expect(document.body.textContent).toContain('访问令牌');
+    expect(document.querySelector('#accessToken-input')).not.toBeNull();
   });
 
   it('浮层已经消费掉这次 Esc（defaultPrevented）时，详情不返回', async () => {

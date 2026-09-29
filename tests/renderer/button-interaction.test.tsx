@@ -131,11 +131,11 @@ describe('公共按钮交互层 · 各类按钮行为不变', () => {
     await click(navButton('设置'));
     await settle();
 
-    await click(buttonByText('显示'));
+    await click(buttonByLabel('显示令牌'));
     await settle();
     const input = document.querySelector<HTMLInputElement>('#accessToken-input');
     expect(input?.type).toBe('text');
-    expect(buttonByText('隐藏')).not.toBeNull();
+    expect(buttonByLabel('隐藏令牌')).not.toBeNull();
 
     await click(buttonByLabel('隐藏令牌'));
     await settle();

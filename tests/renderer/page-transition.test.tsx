@@ -88,7 +88,7 @@ describe('页面切换 · 顶级导航（监控清单 ↔ 设置）', () => {
     await click(navButton('设置'));
     await settle();
     expect(motionKind()).toBe('top');
-    expect(document.body.textContent).toContain('访问令牌');
+    expect(document.body.textContent).toContain('Personal Access Token');
     expect(navButton('监控清单')).not.toBeNull();
     expect(navButton('设置')).toBeNull();
     expect(document.querySelectorAll('header nav button')).toHaveLength(1);

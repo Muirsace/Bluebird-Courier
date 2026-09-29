@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NormalizedError, SettingsView } from '../../shared/types';
@@ -36,7 +36,7 @@ function useSystemTheme(): EffectiveTheme {
 interface ThemeContextValue {
   preference: ThemePreference;
   effective: EffectiveTheme;
-  saving: boolean;
+  initialized: boolean;
   error: NormalizedError | null;
   setPreference: (next: ThemePreference) => void;
 }
@@ -55,8 +55,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // 乐观值：切换立即生效；保存成功后交还给 settings 查询，失败则回滚到已保存值
   const [optimistic, setOptimistic] = useState<ThemePreference | null>(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<NormalizedError | null>(null);
+  const requestIdRef = useRef(0);
+  const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const preference = optimistic ?? savedPreference;
   const systemTheme = useSystemTheme();
@@ -69,31 +70,42 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setPreference = useCallback(
     (next: ThemePreference): void => {
+      // Selecting the current value is a true no-op: no state, persistence, or theme side effect.
+      if (next === preference) return;
+
+      const requestId = ++requestIdRef.current;
       setOptimistic(next);
-      setSaving(true);
       setError(null);
-      void (async () => {
-        try {
-          const view: SettingsView = await getApi().updateSettings({
-            [THEME_PREFERENCE_KEY]: next,
-          });
+      // Queue writes in selection order. Theme application stays immediate, while a delayed older
+      // IPC response can neither overwrite the latest query value nor leave an older preference last.
+      const save = persistenceQueueRef.current.then(() =>
+        getApi().updateSettings({ [THEME_PREFERENCE_KEY]: next }),
+      );
+      persistenceQueueRef.current = save.then(
+        () => undefined,
+        () => undefined,
+      );
+
+      void save.then(
+        (view: SettingsView) => {
+          if (requestIdRef.current !== requestId) return;
           queryClient.setQueryData(['settings'], view);
           setOptimistic(null);
-        } catch {
-          // 保存失败不能假装已经生效：回到已保存的偏好并报错
+        },
+        () => {
+          if (requestIdRef.current !== requestId) return;
+          // 保持现有语义：保存失败回滚到最近一次已保存的偏好并显示错误。
           setOptimistic(null);
           setError(SAVE_ERROR);
-        } finally {
-          setSaving(false);
-        }
-      })();
+        },
+      );
     },
-    [queryClient],
+    [preference, queryClient],
   );
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ preference, effective, saving, error, setPreference }),
-    [preference, effective, saving, error, setPreference],
+    () => ({ preference, effective, initialized: settingsQuery.isSuccess, error, setPreference }),
+    [preference, effective, settingsQuery.isSuccess, error, setPreference],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

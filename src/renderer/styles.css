@@ -149,6 +149,173 @@
   object-fit: contain;
 }
 
+/* Token validation is a local form result; it reveals below the actions without a card-wide alert. */
+.github-token-feedback {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition:
+    grid-template-rows 130ms var(--motion-ease-in),
+    opacity 130ms var(--motion-ease-in),
+    transform 130ms var(--motion-ease-in);
+}
+
+.github-token-feedback[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-duration: 170ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.github-token-feedback-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-inline-status,
+.github-token-feedback-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.125rem 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.settings-theme-error {
+  width: fit-content;
+}
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+}
+
+.settings-page > h1 {
+  margin-bottom: 0.125rem;
+}
+
+.settings-section-heading {
+  margin-bottom: 0.625rem;
+}
+
+.settings-section-card {
+  border-color: rgb(var(--color-border-subtle));
+}
+
+.settings-section:first-of-type .settings-section-card {
+  /* Preserve the row's top breathing room and trim 5px below its description. */
+  padding-bottom: 11px;
+}
+
+.settings-token-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings-token-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+.settings-row-label {
+  padding-top: 0.5rem;
+}
+
+.settings-row-control {
+  min-width: 0;
+}
+
+.theme-segmented-control {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  max-width: 100%;
+  height: 2.25rem;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 0.375rem;
+  background: rgb(var(--color-surface-raised));
+  padding: 0.125rem;
+}
+
+.theme-segment-slider {
+  position: absolute;
+  z-index: 1;
+  inset-block: 2px;
+  left: 0;
+  width: var(--theme-slider-width, 0px);
+  transform: translateX(var(--theme-slider-x, 3px));
+  border: 1px solid rgb(var(--color-accent-border));
+  border-radius: 0.25rem;
+  background: rgb(var(--color-accent-soft));
+  pointer-events: none;
+}
+
+.theme-segment-slider[data-ready='true'] {
+  transition:
+    transform 180ms var(--motion-ease-out),
+    width 180ms var(--motion-ease-out);
+}
+
+.theme-segment-button {
+  position: relative;
+  z-index: 2;
+  height: 2rem;
+  flex: none;
+  white-space: nowrap;
+  border-color: transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  padding-inline: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transition-property: color, scale;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.theme-segment-button:hover,
+.theme-segment-button:active {
+  background-color: transparent;
+}
+
+.theme-segment-button[aria-pressed='true'] {
+  color: rgb(var(--color-accent));
+  font-weight: 500;
+}
+
+.theme-segment-button:focus-visible {
+  /* Keep a clear ring inside the clipped track so it cannot be cut off. */
+  outline-offset: -3px;
+}
+
+.theme-segment-button:not(:disabled):active {
+  /* Adjacent segments stay aligned; only the label/button gets a restrained press. */
+  translate: none;
+  scale: 0.99;
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
 [data-theme='light'] .app-brand-mark-dark,
 [data-theme='dark'] .app-brand-mark-light {
   visibility: hidden;
@@ -1218,6 +1385,21 @@ button:disabled {
   }
 }
 
+@media (max-width: 35rem) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .settings-row-label {
+    padding-top: 0;
+  }
+
+  .settings-token-heading {
+    align-items: flex-start;
+  }
+}
+
 /* 输入框与按钮的统一聚焦轮廓（两种主题下都使用独立的焦点色） */
 *:focus-visible {
   outline: 2px solid rgb(var(--color-focus-ring));
@@ -1243,6 +1425,15 @@ button:disabled {
   .watchlist-add-trigger,
   .watchlist-add-action,
   .watchlist-inline-message {
+    transition: none !important;
+  }
+
+  .github-token-feedback {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .theme-segment-slider {
     transition: none !important;
   }
 
@@ -1296,6 +1487,11 @@ button:disabled {
   button:not(:disabled):active {
     translate: none;
     scale: none;
+  }
+
+  .theme-segment-button:not(:disabled):active {
+    translate: none !important;
+    scale: none !important;
   }
 
   /* 卡片：按下仍然变灰，但整卡不再下压 */
