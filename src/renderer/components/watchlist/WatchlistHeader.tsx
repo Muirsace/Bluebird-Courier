@@ -1,15 +1,17 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { AddRepositoryForm } from './AddRepositoryForm';
 import { Spinner } from '../Spinner';
-import type { AddRepositoryResult, Glance } from '../../../shared/types';
+import type { Glance } from '../../../shared/types';
+import type { AddRepositoryOutcome } from './AddRepositoryForm';
 
 interface WatchlistHeaderProps {
   /** 当前清单里的仓库数量；读取中为 null（此时不显示数量，避免先显示 0 再跳数）。 */
   repositoryCount: number | null;
   repositories: Glance[];
   adding: boolean;
-  onAdd: (fullName: string) => Promise<AddRepositoryResult>;
+  onAdd: (fullName: string) => Promise<AddRepositoryOutcome>;
   onOpenRepository: (repository: Glance) => void;
+  onViewPosition: (repositoryId: number, onRevealSettled: () => void) => void;
   refreshing: boolean;
   onRefresh: () => void;
 }
@@ -21,6 +23,7 @@ export function WatchlistHeader({
   adding,
   onAdd,
   onOpenRepository,
+  onViewPosition,
   refreshing,
   onRefresh,
 }: WatchlistHeaderProps) {
@@ -77,6 +80,7 @@ export function WatchlistHeader({
             adding={adding}
             onSubmit={onAdd}
             onOpenRepository={onOpenRepository}
+            onViewPosition={onViewPosition}
           />
           <button
             type="button"

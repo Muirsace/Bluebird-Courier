@@ -1181,54 +1181,6 @@ button:disabled {
   background-color: rgb(var(--color-app));
 }
 
-.watchlist-added-notice {
-  position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 15;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  width: min(30rem, calc(100vw - 2rem));
-  padding: 0.625rem 0.75rem;
-  border: 1px solid rgb(var(--color-border-subtle));
-  border-radius: 0.625rem;
-  background-color: rgb(var(--color-app));
-  opacity: 0;
-  transform: translateY(4px);
-  pointer-events: none;
-  transition:
-    opacity 170ms var(--motion-ease-out),
-    transform 170ms var(--motion-ease-out);
-}
-
-.watchlist-added-notice[data-visible='true'] {
-  animation: watchlist-notice-enter 170ms var(--motion-ease-out) both;
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.watchlist-added-notice[data-visible='false'] {
-  opacity: 0;
-  transform: translateY(2px);
-  transition-duration: 130ms;
-  transition-timing-function: var(--motion-ease-in);
-}
-
-@keyframes watchlist-notice-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* Keep the action slot reserved so editing never changes the input width. */
 .watchlist-add-form {
   position: relative;
@@ -1326,7 +1278,7 @@ button:disabled {
     visibility 0s 130ms;
 }
 
-.watchlist-add-content[data-action-visible='true'] .watchlist-add-action {
+.watchlist-add-form[data-expanded='true'] .watchlist-add-action {
   transform: scale(1);
   visibility: visible;
   pointer-events: auto;
@@ -1435,13 +1387,6 @@ button:disabled {
 
   .theme-segment-slider {
     transition: none !important;
-  }
-
-  .watchlist-added-notice,
-  .watchlist-added-notice[data-visible='true'],
-  .watchlist-added-notice[data-visible='false'] {
-    transition: none !important;
-    transform: none !important;
   }
 
   .watchlist-add-field,

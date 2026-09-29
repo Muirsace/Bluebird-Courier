@@ -5,24 +5,53 @@ import { parseRepoInput } from '../../../shared/repo-input';
 import { describeError } from '../../lib/errors';
 import { Spinner } from '../Spinner';
 
+export type AddRepositoryPosition = 'visible' | 'offscreen';
+
+export interface AddRepositoryOutcome {
+  result: AddRepositoryResult;
+  newCardPosition: AddRepositoryPosition;
+}
+
 interface AddRepositoryFormProps {
   repositories: Glance[];
   adding: boolean;
-  onSubmit: (fullName: string) => Promise<AddRepositoryResult>;
+  onSubmit: (fullName: string) => Promise<AddRepositoryOutcome>;
   onOpenRepository: (repository: Glance) => void;
+  /**
+   * 定位刚加入的卡片：实现方必须在调用栈内立即发起滚动（同步），
+   * 并在"滚动到位、高亮开始"时调用 onRevealSettled —— 提示要等它之后再停留一会儿。
+   */
+  onViewPosition: (repositoryId: number, onRevealSettled: () => void) => void;
 }
 
 const DUPLICATE_MESSAGE = '该仓库已在监控清单中';
-const ADDED_NOTICE_MS = 1000;
+const VISIBLE_SUCCESS_MS = 1400;
+/** 「查看位置」到位后提示停留多久：够看完高亮，然后提示与输入框一起收回。 */
+const REVEAL_SUCCESS_MS = 700;
+const DUPLICATE_ACTION_MS = 1200;
+const MESSAGE_EXIT_MS = 130;
 const FALLBACK_ERROR: NormalizedError = {
   kind: 'unknown',
   message: '加入清单失败，请稍后重试',
 };
 
+type SuccessRepository = {
+  repositoryId: number | null;
+  fullName: string;
+  position: AddRepositoryPosition;
+};
+
+type FeedbackState =
+  | { kind: 'none' }
+  | { kind: 'duplicate'; name: string; repository: Glance | null; phase: 'confirming' | 'manual-clear' }
+  | { kind: 'remote-error'; input: string; error: NormalizedError }
+  | { kind: 'success'; repository: SuccessRepository; phase: 'confirming' | 'manual-clear' | 'revealing' };
+
 type InlineMessage =
   | { kind: 'invalid' }
   | { kind: 'duplicate'; name: string; repository: Glance | null }
-  | { kind: 'error'; error: NormalizedError };
+  | { kind: 'remote-error'; input: string; error: NormalizedError }
+  | { kind: 'success'; repository: SuccessRepository };
 type ActionKind = 'none' | 'clear' | 'join' | 'added';
 
 function findRepository(repositories: Glance[], fullName: string): Glance | null {
@@ -37,27 +66,36 @@ function findRepository(repositories: Glance[], fullName: string): Glance | null
   );
 }
 
-/** 添加仓库：默认折叠，复用主进程同一输入解析规则，重复项直接使用已加载清单判断。 */
+/** 添加仓库：默认折叠，复用主进程同一输入解析规则，所有反馈留在同一个 Inline Message 槽位。 */
 export function AddRepositoryForm({
   repositories,
   adding,
   onSubmit,
   onOpenRepository,
+  onViewPosition,
 }: AddRepositoryFormProps) {
   const [expanded, setExpanded] = useState(false);
   const [value, setValue] = useState('');
-  const [confirmedName, setConfirmedName] = useState<string | null>(null);
-  const [clearReady, setClearReady] = useState(false);
-  const [autoClearPending, setAutoClearPending] = useState(false);
-  const [lastAction, setLastAction] = useState<Exclude<ActionKind, 'none'>>('join');
-  const [error, setError] = useState<NormalizedError | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState>({ kind: 'none' });
+  const [retainedMessage, setRetainedMessage] = useState<InlineMessage | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const actionRef = useRef<HTMLButtonElement>(null);
   const wasExpanded = useRef(false);
   const restoreTriggerFocus = useRef(false);
   const submissionId = useRef(0);
+  const valueRef = useRef('');
+  const feedbackRef = useRef<FeedbackState>({ kind: 'none' });
+  const successTimerRef = useRef<number | null>(null);
+
+  const updateFeedback = (next: FeedbackState): void => {
+    feedbackRef.current = next;
+    setFeedback(next);
+  };
+  const cancelSuccessTimer = (): void => {
+    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+    successTimerRef.current = null;
+  };
 
   const parsed = parseRepoInput(value);
   const hasInput = value.trim().length > 0;
@@ -65,43 +103,68 @@ export function AddRepositoryForm({
   const localDuplicate = parsed.ok
     ? findRepository(repositories, `${parsed.owner}/${parsed.name}`)
     : null;
-  const confirmedRepository = confirmedName ? findRepository(repositories, confirmedName) : null;
-  const duplicateRepository = localDuplicate ?? confirmedRepository;
-  const duplicateName = duplicateRepository?.fullName ?? confirmedName;
-  const isDuplicate = duplicateName !== null;
-  const describedBy = invalid
-    ? 'add-repository-invalid'
-    : isDuplicate
-      ? 'add-repository-duplicate'
-      : error
-        ? 'add-repository-error'
-        : undefined;
+  const duplicateFeedback = feedback.kind === 'duplicate' ? feedback : null;
+  const duplicateRepository = duplicateFeedback?.repository ?? localDuplicate;
+  const duplicateName = duplicateFeedback?.name ?? duplicateRepository?.fullName ?? null;
+  const isDuplicate = duplicateName !== null && hasInput;
+  const hasRemoteError = feedback.kind === 'remote-error' && feedback.input === value;
+  const successRepository = feedback.kind === 'success' ? feedback.repository : null;
 
   const currentMessage = useMemo<InlineMessage | null>(() => {
-    if (invalid) return { kind: 'invalid' };
-    if (isDuplicate && !autoClearPending) {
+    if (successRepository) return { kind: 'success', repository: successRepository };
+    if (isDuplicate) {
       return { kind: 'duplicate', name: duplicateName ?? '', repository: duplicateRepository };
     }
-    if (error) return { kind: 'error', error };
+    if (hasRemoteError && feedback.kind === 'remote-error') {
+      return { kind: 'remote-error', input: feedback.input, error: feedback.error };
+    }
+    if (invalid) return { kind: 'invalid' };
     return null;
-  }, [invalid, isDuplicate, duplicateName, duplicateRepository, error, autoClearPending]);
-  const [retainedMessage, setRetainedMessage] = useState<InlineMessage | null>(null);
-  const displayedMessage = currentMessage ?? retainedMessage;
+  }, [
+    invalid,
+    isDuplicate,
+    duplicateName,
+    duplicateRepository,
+    hasRemoteError,
+    feedback,
+    successRepository,
+  ]);
+
+  const messageId =
+    currentMessage?.kind === 'invalid'
+      ? 'add-repository-invalid'
+      : currentMessage?.kind === 'duplicate'
+        ? 'add-repository-duplicate'
+        : currentMessage?.kind === 'remote-error'
+          ? 'add-repository-error'
+          : currentMessage?.kind === 'success'
+            ? 'add-repository-success'
+            : undefined;
   const messageOpen = expanded && currentMessage !== null;
-  const requestedAction: ActionKind = !expanded || !hasInput
+  const displayedMessage = currentMessage ?? retainedMessage;
+  const requestedAction: ActionKind = !expanded
     ? 'none'
-    : invalid || (isDuplicate && clearReady)
-      ? 'clear'
-      : isDuplicate
-        ? 'added'
-        : 'join';
-  const actionVisible = requestedAction !== 'none';
-  const displayedAction = requestedAction === 'none' ? lastAction : requestedAction;
+    : adding
+      ? 'join'
+      : successRepository
+        ? feedback.kind === 'success' && feedback.phase !== 'confirming' ? 'clear' : 'added'
+        : isDuplicate
+          ? duplicateFeedback?.phase === 'manual-clear' ? 'clear' : 'added'
+          : invalid || hasRemoteError
+          ? 'clear'
+          : 'join';
+  const actionVisible = expanded;
+  // 定位进行中只锁「查看位置」自己：卡在 revealing（例如目标卡片一直没提交）时，
+  // 用户仍然能靠这个按钮清掉成功提示，不留下关不掉的反馈。
+  const actionDisabled =
+    !actionVisible ||
+    adding ||
+    (requestedAction === 'join' && !parsed.ok);
   const actionLabel = adding
     ? '加入中…'
-    : displayedAction === 'clear'
+    : requestedAction === 'clear'
       ? '清除'
-      : displayedAction === 'added'
+      : requestedAction === 'added'
         ? '已添加'
         : '加入';
   const actionAriaLabel = !actionVisible
@@ -111,19 +174,30 @@ export function AddRepositoryForm({
       : requestedAction === 'clear'
         ? '清除输入框'
         : requestedAction === 'added'
-          ? '仓库已添加，点击清除'
+          ? '仓库已添加，切换到清除'
           : '加入仓库';
 
   const collapse = useCallback((returnFocus = false) => {
-    restoreTriggerFocus.current = returnFocus;
+    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+    successTimerRef.current = null;
+    restoreTriggerFocus.current =
+      returnFocus && containerRef.current?.contains(document.activeElement) === true;
     submissionId.current += 1;
+    valueRef.current = '';
     setValue('');
-    setConfirmedName(null);
-    setClearReady(false);
-    setAutoClearPending(false);
-    setError(null);
+    feedbackRef.current = { kind: 'none' };
+    setFeedback({ kind: 'none' });
     setExpanded(false);
   }, []);
+
+  function resetToEditing(): void {
+    cancelSuccessTimer();
+    submissionId.current += 1;
+    valueRef.current = '';
+    setValue('');
+    updateFeedback({ kind: 'none' });
+    inputRef.current?.focus();
+  }
 
   useEffect(() => {
     if (expanded) {
@@ -141,31 +215,37 @@ export function AddRepositoryForm({
       return;
     }
     if (!retainedMessage) return;
-    const timeout = window.setTimeout(() => setRetainedMessage(null), 130);
+    const timeout = window.setTimeout(() => setRetainedMessage(null), MESSAGE_EXIT_MS);
     return () => window.clearTimeout(timeout);
   }, [currentMessage, retainedMessage]);
 
   useEffect(() => {
-    if (requestedAction !== 'none') setLastAction(requestedAction);
-  }, [requestedAction]);
+    if (!expanded || feedback.kind !== 'success' || feedback.phase !== 'confirming' ||
+      feedback.repository.position !== 'visible') return;
+    cancelSuccessTimer();
+    successTimerRef.current = window.setTimeout(() => {
+      if (feedbackRef.current === feedback) collapse();
+    }, VISIBLE_SUCCESS_MS);
+    return cancelSuccessTimer;
+  }, [expanded, feedback, collapse]);
 
   useEffect(() => {
-    if (!expanded || !isDuplicate || adding || clearReady || autoClearPending) return;
-    const timeout = window.setTimeout(() => setClearReady(true), ADDED_NOTICE_MS);
-    return () => window.clearTimeout(timeout);
-  }, [expanded, value, isDuplicate, adding, clearReady, autoClearPending]);
-
-  useEffect(() => {
-    if (!expanded || !autoClearPending || adding) return;
+    if (!expanded || !isDuplicate || duplicateFeedback?.phase === 'manual-clear') return;
+    const name = duplicateName;
+    const input = value;
     const timeout = window.setTimeout(() => {
-      setValue('');
-      setConfirmedName(null);
-      setClearReady(false);
-      setAutoClearPending(false);
-      collapse(true);
-    }, ADDED_NOTICE_MS);
+      if (valueRef.current !== input || feedbackRef.current.kind === 'success') return;
+      const next: FeedbackState = {
+        kind: 'duplicate',
+        name: name ?? input,
+        repository: duplicateRepository,
+        phase: 'manual-clear',
+      };
+      feedbackRef.current = next;
+      setFeedback(next);
+    }, DUPLICATE_ACTION_MS);
     return () => window.clearTimeout(timeout);
-  }, [expanded, autoClearPending, adding, collapse]);
+  }, [expanded, isDuplicate, duplicateFeedback?.phase, duplicateName, duplicateRepository, value]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -181,38 +261,64 @@ export function AddRepositoryForm({
   useEffect(() => {
     if (!expanded) return;
     function handlePointerDown(event: PointerEvent): void {
-      if (containerRef.current?.contains(event.target as Node)) return;
-      if (value.trim() !== '' || adding) return;
+      if (containerRef.current?.contains(event.target as Node) || adding) return;
+      if (feedbackRef.current.kind !== 'none' || hasInput || isDuplicate) return;
       collapse();
     }
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [expanded, value, adding, collapse]);
+  }, [expanded, hasInput, adding, isDuplicate, collapse]);
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();
-    if (!expanded || adding || !parsed.ok || isDuplicate) return;
+    if (
+      !expanded ||
+      adding ||
+      !parsed.ok ||
+      isDuplicate ||
+      hasRemoteError ||
+      successRepository
+    ) {
+      return;
+    }
 
-    setError(null);
-    setConfirmedName(null);
+    const inputAtSubmit = value;
+    const submittedValue = inputAtSubmit.trim();
+    const submittedName = `${parsed.owner}/${parsed.name}`;
+    cancelSuccessTimer();
+    updateFeedback({ kind: 'none' });
     const currentSubmission = ++submissionId.current;
-    const result = await onSubmit(value.trim());
+    const outcome = await onSubmit(submittedValue);
     if (currentSubmission !== submissionId.current) return;
+
+    const result = outcome.result;
     if (result.ok) {
-      setConfirmedName(result.repository?.fullName ?? `${parsed.owner}/${parsed.name}`);
-      setClearReady(false);
-      setAutoClearPending(true);
+      valueRef.current = '';
+      setValue('');
+      updateFeedback({
+        kind: 'success',
+        repository: {
+          repositoryId: result.repository?.id ?? null,
+          fullName: result.repository?.fullName ?? submittedName,
+          position: outcome.newCardPosition,
+        },
+        phase: 'confirming',
+      });
       return;
     }
 
     const resultError = result.error ?? FALLBACK_ERROR;
     if (resultError.message === DUPLICATE_MESSAGE) {
-      setConfirmedName(resultError.fullName ?? value.trim());
-      setClearReady(false);
-      setError(null);
+      const name = resultError.fullName ?? submittedValue;
+      updateFeedback({
+        kind: 'duplicate',
+        name,
+        repository: findRepository(repositories, name),
+        phase: 'confirming',
+      });
       return;
     }
-    setError(resultError);
+    updateFeedback({ kind: 'remote-error', input: inputAtSubmit, error: resultError });
   }
 
   return (
@@ -233,7 +339,6 @@ export function AddRepositoryForm({
       </button>
       <form
         onSubmit={(event) => void handleSubmit(event)}
-        data-action-visible={actionVisible}
         className="watchlist-add-content grid min-w-0"
       >
         <div className="watchlist-add-control-row grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-x-2">
@@ -244,54 +349,68 @@ export function AddRepositoryForm({
               type="text"
               value={value}
               onChange={(event) => {
-                setValue(event.target.value);
-                setError(null);
-                setConfirmedName(null);
-                setClearReady(false);
-                setAutoClearPending(false);
+                const nextValue = event.target.value;
+                cancelSuccessTimer();
+                valueRef.current = nextValue;
+                setValue(nextValue);
+                const duplicate = findRepository(repositories, nextValue);
+                updateFeedback(duplicate
+                  ? { kind: 'duplicate', name: duplicate.fullName, repository: duplicate, phase: 'confirming' }
+                  : { kind: 'none' });
               }}
               placeholder="owner/repo 或 GitHub 网址"
               aria-label="监控仓库（owner/repo 或 GitHub 网址）"
-              aria-invalid={invalid || undefined}
-              aria-describedby={describedBy}
+              aria-invalid={invalid || hasRemoteError || undefined}
+              aria-describedby={messageOpen ? messageId : undefined}
               disabled={!expanded || adding}
               tabIndex={expanded ? 0 : -1}
               className={`h-9 w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-focus/15 ${
-                invalid ? 'border-warning focus:border-warning' : 'border-strong focus:border-focus'
+                invalid || hasRemoteError
+                  ? 'border-warning focus:border-warning'
+                  : 'border-strong focus:border-focus'
               }`}
             />
           </div>
           <button
-            ref={actionRef}
             type={requestedAction === 'join' ? 'submit' : 'button'}
             onClick={() => {
               if (requestedAction === 'clear') {
-                setValue('');
-                setConfirmedName(null);
-                setError(null);
-                setClearReady(false);
-                setAutoClearPending(false);
-                inputRef.current?.focus();
+                resetToEditing();
               } else if (requestedAction === 'added') {
-                setAutoClearPending(false);
-                setClearReady(true);
+                cancelSuccessTimer();
+                if (feedbackRef.current.kind === 'success') {
+                  updateFeedback({ ...feedbackRef.current, phase: 'manual-clear' });
+                } else if (duplicateName) {
+                  updateFeedback({
+                    kind: 'duplicate',
+                    name: duplicateName,
+                    repository: duplicateRepository,
+                    phase: 'manual-clear',
+                  });
+                }
               }
             }}
-            disabled={!actionVisible || adding}
+            disabled={actionDisabled}
             aria-hidden={!actionVisible}
             tabIndex={actionVisible ? 0 : -1}
             aria-busy={adding}
             aria-label={actionAriaLabel}
-            className={`watchlist-add-action relative inline-flex h-9 self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed ${
-              displayedAction !== 'join'
-                ? 'border border-default bg-surface-raised text-secondary hover:bg-surface-hover active:bg-surface-active'
-                : 'border border-transparent bg-accent-solid text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed'
+            className={`watchlist-add-action relative inline-flex h-9 self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${
+              requestedAction === 'added'
+                ? 'border border-default bg-surface-raised text-secondary'
+                : requestedAction === 'clear'
+                  ? 'border border-default bg-surface-raised text-secondary hover:bg-surface-hover active:bg-surface-active'
+                  : adding
+                    ? 'border border-transparent bg-accent-solid text-accent-contrast'
+                    : actionDisabled
+                      ? 'border border-default bg-surface-raised text-muted'
+                      : 'border border-transparent bg-accent-solid text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed'
             }`}
           >
             <span className="watchlist-add-action-label" aria-hidden="true">
               {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : null}
               <span>{actionLabel}</span>
-              {displayedAction === 'added' ? <span className="text-success">✓</span> : null}
+              {requestedAction === 'added' ? <span className="text-success">{' '}✓</span> : null}
             </span>
           </button>
         </div>
@@ -305,8 +424,8 @@ export function AddRepositoryForm({
               {displayedMessage?.kind === 'invalid' ? (
                 <p
                   id="add-repository-invalid"
-                  className="add-repository-status min-h-5 text-xs text-warning"
                   aria-live="polite"
+                  className="add-repository-status min-h-5 text-xs text-warning"
                 >
                   请输入 owner/repo 或 GitHub 仓库地址
                 </p>
@@ -330,7 +449,6 @@ export function AddRepositoryForm({
                     aria-label={`打开 ${displayedMessage.name || '已监控仓库'} 详情`}
                     onClick={() => {
                       if (!displayedMessage.repository) return;
-                      collapse();
                       onOpenRepository(displayedMessage.repository);
                     }}
                     className="shrink-0 text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-60"
@@ -338,7 +456,7 @@ export function AddRepositoryForm({
                     打开详情
                   </button>
                 </div>
-              ) : displayedMessage?.kind === 'error' ? (
+              ) : displayedMessage?.kind === 'remote-error' ? (
                 <p
                   id="add-repository-error"
                   role="alert"
@@ -346,6 +464,56 @@ export function AddRepositoryForm({
                 >
                   {describeError(displayedMessage.error)}
                 </p>
+              ) : displayedMessage?.kind === 'success' ? (
+                <div
+                  id="add-repository-success"
+                  role="status"
+                  className="add-repository-status flex min-h-5 min-w-0 flex-wrap items-center gap-x-1 text-xs text-success"
+                >
+                  <span aria-hidden="true" className="shrink-0 font-medium">✓</span>
+                  {' '}
+                  <span className="min-w-0 [overflow-wrap:anywhere] font-mono">
+                    {displayedMessage.repository.fullName}
+                  </span>
+                  {' '}
+                  <span>已加入监控清单</span>
+                  {displayedMessage.repository.position === 'offscreen' &&
+                  displayedMessage.repository.repositoryId !== null ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <button
+                        type="button"
+                        disabled={!messageOpen || feedback.kind === 'success' && feedback.phase === 'revealing'}
+                        tabIndex={messageOpen && feedback.kind === 'success' && feedback.phase !== 'revealing' ? 0 : -1}
+                        onClick={() => {
+                          const repositoryId = displayedMessage.repository.repositoryId;
+                          if (repositoryId === null || feedbackRef.current.kind !== 'success' ||
+                            feedbackRef.current.phase === 'revealing') return;
+                          const revealing: FeedbackState = {
+                            ...feedbackRef.current,
+                            phase: 'revealing',
+                          };
+                          feedbackRef.current = revealing;
+                          // 顺序固定：先让页面开始定位（同步），再安排收尾。
+                          // 收尾不在到位那一刻发生——到位后提示还要停留一段，用户才看得见高亮；
+                          // 停留结束连同输入框一起收回，不留一个空表单占着版面。
+                          onViewPosition(repositoryId, () => {
+                            if (feedbackRef.current !== revealing) return;
+                            cancelSuccessTimer();
+                            successTimerRef.current = window.setTimeout(() => {
+                              if (feedbackRef.current === revealing) collapse();
+                            }, REVEAL_SUCCESS_MS);
+                          });
+                          cancelSuccessTimer();
+                          setFeedback(revealing);
+                        }}
+                        className="shrink-0 font-medium text-accent hover:underline disabled:cursor-not-allowed"
+                      >
+                        查看位置
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </div>

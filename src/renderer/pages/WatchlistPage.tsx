@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AddRepositoryResult, Glance, NormalizedError } from '../../shared/types';
+import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
@@ -8,75 +8,22 @@ import { ErrorBar } from '../components/ErrorBar';
 import { Loading } from '../components/Loading';
 import { RepoRow } from '../components/RepoRow';
 import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
-import { prefersReducedMotion } from '../lib/motion';
+import { prefersReducedMotion, revealScrollFallbackMs } from '../lib/motion';
+import type { AddRepositoryOutcome, AddRepositoryPosition } from '../components/watchlist/AddRepositoryForm';
 
 /** 启动时自动抓取一次轻量信息（整个会话一次；之后走「全部刷新」）。 */
 let startupRefreshed = false;
 const WATCHLIST_TOP_PROXIMITY_PX = 144;
-const ADDED_NOTICE_EXIT_MS = 135;
 
-interface AddedRepository {
+interface PendingViewportAnchor {
   repositoryId: number;
-  fullName: string;
-}
-
-interface PendingViewportAnchor extends AddedRepository {
   scrollTop: number;
   scrollHeight: number;
 }
 
-interface AddedNoticeProps {
-  repository: AddedRepository;
-  onViewPosition: (repositoryId: number) => void;
-  onDismiss: (repositoryId: number) => void;
-}
-
-function AddedRepositoryNotice({ repository, onViewPosition, onDismiss }: AddedNoticeProps) {
-  const [visible, setVisible] = useState(true);
-  const dismissTimerRef = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (dismissTimerRef.current !== null) window.clearTimeout(dismissTimerRef.current);
-    },
-    [],
-  );
-
-  function dismiss(): void {
-    if (dismissTimerRef.current !== null) return;
-    setVisible(false);
-    dismissTimerRef.current = window.setTimeout(() => {
-      onDismiss(repository.repositoryId);
-    }, ADDED_NOTICE_EXIT_MS);
-  }
-
-  return (
-    <div className="watchlist-added-notice" data-visible={visible ? 'true' : 'false'}>
-      <p role="status" className="min-w-0 flex-1 text-sm leading-5 text-primary">
-        <span aria-hidden="true" className="mr-1 font-medium text-success">✓</span>
-        <span className="font-mono [overflow-wrap:anywhere]">{repository.fullName}</span>
-        <span> 已加入监控清单 ·</span>
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          onViewPosition(repository.repositoryId);
-          dismiss();
-        }}
-        className="shrink-0 rounded px-1 text-sm font-medium text-accent hover:underline focus-visible:outline"
-      >
-        查看位置
-      </button>
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label="关闭新增仓库提示"
-        className="shrink-0 rounded px-1 text-sm text-secondary hover:bg-surface-hover"
-      >
-        ×
-      </button>
-    </div>
-  );
+interface PendingReveal {
+  repositoryId: number;
+  onRevealSettled: () => void;
 }
 
 interface WatchlistPageProps {
@@ -137,17 +84,105 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const [refreshErrors, setRefreshErrors] = useState<NormalizedError[]>([]);
   /** 刚加入成功的仓库：只有它会播一次进场动画，播完清掉。 */
   const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null);
-  const [addedNotice, setAddedNotice] = useState<AddedRepository | null>(null);
   const [highlightRequest, setHighlightRequest] = useState<{
     repositoryId: number;
     token: number;
   } | null>(null);
+  const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   const [exiting, setExiting] = useState<ExitingRepo[]>([]);
   /** 已确认移除的仓库 id：即使清单还没刷新（或刷新失败）也不会让卡片弹回来。id 由 AUTOINCREMENT 分配，不复用。 */
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const pendingViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
   const highlightSequenceRef = useRef(0);
-  const scrollCompletionRef = useRef<(() => void) | null>(null);
+  const cancelRevealRef = useRef<(() => void) | null>(null);
+
+  const startReveal = useCallback((
+    repositoryId: number,
+    target: HTMLElement,
+    onRevealSettled: () => void,
+  ): void => {
+    cancelRevealRef.current?.();
+    cancelRevealRef.current = null;
+    // 用户主动定位优先于新增时的视口补偿，避免补偿在 smooth scroll 后把视口拉回去。
+    pendingViewportAnchorRef.current = null;
+    setPendingReveal((current) => (current?.repositoryId === repositoryId ? null : current));
+
+    const scrollRoot = document.scrollingElement ?? document.documentElement;
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const targetOf = (): number => {
+      const rect = target.getBoundingClientRect();
+      const maxScrollTop = Math.max(0, scrollRoot.scrollHeight - viewportHeight);
+      return Math.min(
+        maxScrollTop,
+        Math.max(0, scrollRoot.scrollTop + rect.top + rect.height / 2 - viewportHeight / 2),
+      );
+    };
+    const behavior =
+      prefersReducedMotion() || Math.abs(targetOf() - scrollRoot.scrollTop) <= 1 ? 'auto' : 'smooth';
+    const scroll = (): void => target.scrollIntoView({ behavior, block: 'center' });
+
+    // 同步落在点击处理链里：目标一存在就立刻开始滚，不经过任何 state / effect / 计时器。
+    scroll();
+
+    let finished = false;
+    let moved = false;
+    let fallback = 0;
+    let settleFrame = 0;
+    let verifyFrame = 0;
+    let verifyAttempts = 0;
+    const cleanup = (): void => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scrollend', handleScrollEnd);
+      window.clearTimeout(fallback);
+      window.cancelAnimationFrame(settleFrame);
+      window.cancelAnimationFrame(verifyFrame);
+    };
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      cancelRevealRef.current = null;
+      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current });
+      onRevealSettled();
+    };
+    const handleScroll = (): void => {
+      moved = true;
+    };
+    // 只认"滚动真的开始过"的 scrollend：用户刚滚完就点「查看位置」时，浏览器可能
+    // 派发上一条滚动的 scrollend，若据此提前收尾，高亮会在卡片还没到之前就播掉。
+    const handleScrollEnd = (): void => {
+      if (moved) finish();
+    };
+    // Chromium 偶发吞掉一次 scroll-into-view（实测：真实点击的处理链里，同样的调用
+    // 可以完全不生效）。逐帧确认"有没有真的动"，没动就重发同一条 smooth 请求 ——
+    // 绝不改成 instant，也绝不把"没滚"变成"瞬移"。三帧还没有任何位移就交给兜底计时器。
+    const verifyStarted = (): void => {
+      if (moved || finished) return;
+      if (Math.abs(targetOf() - scrollRoot.scrollTop) <= 1) return;
+      if (verifyAttempts >= 3) return;
+      verifyAttempts += 1;
+      scroll();
+      verifyFrame = window.requestAnimationFrame(verifyStarted);
+    };
+
+    if (behavior === 'auto') {
+      settleFrame = window.requestAnimationFrame(finish);
+    } else {
+      window.addEventListener('scroll', handleScroll, { passive: true });
+      window.addEventListener('scrollend', handleScrollEnd);
+      fallback = window.setTimeout(finish, revealScrollFallbackMs(Math.abs(targetOf() - scrollRoot.scrollTop)));
+      verifyFrame = window.requestAnimationFrame(verifyStarted);
+    }
+    cancelRevealRef.current = () => {
+      finished = true;
+      cleanup();
+    };
+  }, []);
+
+  useEffect(() => () => {
+    cancelRevealRef.current?.();
+    cancelRevealRef.current = null;
+  }, []);
 
   const repositories: Glance[] = listQuery.data ?? [];
   const removed = new Set(removedIds);
@@ -176,13 +211,30 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
         behavior: 'instant',
       });
     }
-    setAddedNotice({ repositoryId: pending.repositoryId, fullName: pending.fullName });
   }, [listQuery.data, listQuery.isError]);
 
-  useEffect(
-    () => () => scrollCompletionRef.current?.(),
-    [],
-  );
+  /** 只有卡片尚未提交到 DOM 时才 pending；提交后在 paint 前立即开始定位。 */
+  useLayoutEffect(() => {
+    if (
+      pendingReveal === null ||
+      !displayed.some((repository) => repository.id === pendingReveal.repositoryId)
+    ) {
+      return;
+    }
+
+    const { repositoryId, onRevealSettled } = pendingReveal;
+    const revealIfCommitted = (): boolean => {
+      const target = document.querySelector<HTMLElement>(
+        `ul.repo-list > li[data-repository-id="${repositoryId}"]`,
+      );
+      if (!target) return false;
+      startReveal(repositoryId, target, onRevealSettled);
+      return true;
+    };
+    if (revealIfCommitted()) return;
+    const frame = window.requestAnimationFrame(revealIfCommitted);
+    return () => window.cancelAnimationFrame(frame);
+  }, [displayed, pendingReveal, startReveal]);
 
   // 刷新全部轻量信息；完成后重读清单查询
   async function runRefresh(): Promise<void> {
@@ -221,97 +273,64 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   }, []);
 
   /** 新增失败由表单局部展示；重复响应刷新本地清单以提供对应仓库的详情入口。 */
-  async function handleAdd(fullName: string): Promise<AddRepositoryResult> {
-    setAddedNotice(null);
+  async function handleAdd(fullName: string): Promise<AddRepositoryOutcome> {
     setAdding(true);
+    let newCardPosition: AddRepositoryPosition = 'visible';
     try {
       const result = await getApi().addRepository(fullName);
       if (!result.ok) {
         if (result.error?.message === '该仓库已在监控清单中') {
           await queryClient.invalidateQueries({ queryKey: ['repositories'] });
         }
-        return result;
+        return { result, newCardPosition };
       }
+      const scrollRoot = document.scrollingElement ?? document.documentElement;
+      const scrollTop = scrollRoot.scrollTop;
+      const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
+      newCardPosition = nearTop ? 'visible' : 'offscreen';
       if (result.repository) {
-        const scrollRoot = document.scrollingElement ?? document.documentElement;
-        const scrollTop = scrollRoot.scrollTop;
-        const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
         pendingViewportAnchorRef.current = null;
         setNewlyAddedId(nearTop ? result.repository.id : null);
 
         if (!nearTop) {
           pendingViewportAnchorRef.current = {
             repositoryId: result.repository.id,
-            fullName: result.repository.fullName,
             scrollTop,
             scrollHeight: scrollRoot.scrollHeight,
           };
         }
       }
       await queryClient.invalidateQueries({ queryKey: ['repositories'] });
-      return result;
+      return { result, newCardPosition };
     } catch {
       return {
-        ok: false,
-        repository: null,
-        error: { kind: 'unknown', message: '加入清单失败，请稍后重试' },
+        result: {
+          ok: false,
+          repository: null,
+          error: { kind: 'unknown', message: '加入清单失败，请稍后重试' },
+        },
+        newCardPosition,
       };
     } finally {
       setAdding(false);
     }
   }
 
-  function viewNewRepositoryPosition(repositoryId: number): void {
+  /**
+   * 目标已挂载就立即滚（同步，在点击处理链里）；只有还没提交到 DOM 时才留下请求。
+   * onRevealSettled 在滚动到位、高亮开始时回报——提示要在这之后才允许收起。
+   */
+  function viewNewRepositoryPosition(repositoryId: number, onRevealSettled: () => void): void {
+    // Reveal 请求打断任何尚未执行的新增视口补偿。
+    pendingViewportAnchorRef.current = null;
     const target = document.querySelector<HTMLElement>(
       `ul.repo-list > li[data-repository-id="${repositoryId}"]`,
     );
-    if (!target) return;
-
-    scrollCompletionRef.current?.();
-    const reducedMotion = prefersReducedMotion();
-    const options: ScrollIntoViewOptions = {
-      behavior: reducedMotion ? 'auto' : 'smooth',
-      block: 'start',
-      inline: 'nearest',
-    };
-    const requestHighlight = (): void => {
-      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current });
-    };
-
-    if (reducedMotion) {
-      target.scrollIntoView(options);
-      requestHighlight();
+    if (target) {
+      startReveal(repositoryId, target, onRevealSettled);
       return;
     }
-
-    let finished = false;
-    let timer: number | null = null;
-    const cleanup = (): void => {
-      document.removeEventListener('scrollend', finish);
-      if (timer !== null) window.clearTimeout(timer);
-      if (scrollCompletionRef.current === cancel) scrollCompletionRef.current = null;
-    };
-    const finish = (): void => {
-      if (finished) return;
-      finished = true;
-      cleanup();
-      requestHighlight();
-    };
-    const cancel = (): void => {
-      finished = true;
-      cleanup();
-    };
-
-    scrollCompletionRef.current = cancel;
-    document.addEventListener('scrollend', finish, { once: true });
-    timer = window.setTimeout(finish, 1800);
-    target.scrollIntoView(options);
-  }
-
-  function dismissAddedNotice(repositoryId: number): void {
-    setAddedNotice((current) =>
-      current?.repositoryId === repositoryId ? null : current,
-    );
+    setPendingReveal({ repositoryId, onRevealSettled });
   }
 
   /**
@@ -319,7 +338,6 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
    * 成功后卡片先留在 DOM 里播退场，播完由 handleExited 真正移除。
    */
   async function handleRemove(repositoryId: number): Promise<void> {
-    dismissAddedNotice(repositoryId);
     const index = displayed.findIndex((repo) => repo.id === repositoryId);
     const repo = index >= 0 ? displayed[index] : undefined;
     await getApi().removeRepository(repositoryId);
@@ -345,6 +363,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
         adding={adding}
         onAdd={handleAdd}
         onOpenRepository={onOpenDetail}
+        onViewPosition={viewNewRepositoryPosition}
         refreshing={refreshing}
         onRefresh={() => void runRefresh()}
       />
@@ -391,13 +410,6 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
           ))}
         </ul>
       )}
-      {addedNotice ? (
-        <AddedRepositoryNotice
-          repository={addedNotice}
-          onViewPosition={viewNewRepositoryPosition}
-          onDismiss={dismissAddedNotice}
-        />
-      ) : null}
     </div>
   );
 }

@@ -37,6 +37,16 @@ export function motionCompletionMs(totalMs: number): number {
   return prefersReducedMotion() ? REPO_MOTION.reducedMs : totalMs + REPO_MOTION.fallbackMs;
 }
 
+/**
+ * 「查看位置」滚动收尾的兜底时长。
+ *
+ * scrollend 是主信号，但用户中途自己滚动、目标提前卸载时它可能不来；到位后要高亮、
+ * 表单要收尾，都不能悬着。原生 smooth 的时长随距离增长（实测约 300ms + 0.17ms/px），
+ * 所以这里按距离估一个上限——正常滚动永远先结束，它只在"事件没来"时兜底。
+ */
+export function revealScrollFallbackMs(distancePx: number): number {
+  return Math.min(1400, 480 + Math.abs(distancePx) * 0.25) + REPO_MOTION.fallbackMs;
+}
 
 /** 读系统"减少动态效果"开关；动画开始前问一次，用来把动画降级成一次极短淡出。 */
 export function prefersReducedMotion(): boolean {
