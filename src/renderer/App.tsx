@@ -31,10 +31,9 @@ function motionFor(from: View, to: View): PageMotion {
   return 'top';
 }
 
-function navButtonClass(active: boolean, disabled: boolean): string {
+function navButtonClass(disabled: boolean): string {
   const base = 'inline-flex h-9 items-center rounded-md px-3 text-sm transition-colors duration-150 ease-out';
   if (disabled) return `${base} cursor-not-allowed text-muted`;
-  if (active) return `${base} bg-accent-soft text-accent active:bg-accent-soft`;
   return `${base} text-secondary hover:bg-surface-hover hover:text-primary active:bg-surface-active`;
 }
 
@@ -103,6 +102,9 @@ export function App() {
   }
 
   const activeView: View = configured ? view : 'settings';
+  const destination = activeView === 'settings'
+    ? { label: '监控清单', view: 'watchlist' as const, disabled: !configured }
+    : { label: '设置', view: 'settings' as const, disabled: false };
   // 读不到任何状态才整页阻断；已有缓存时后台刷新失败不应把界面清空
   const tokenStateFailed = accessTokenStateQuery.isError;
   const hasTokenState = accessTokenStateQuery.data !== undefined;
@@ -208,26 +210,14 @@ export function App() {
               />
             ) : null}
           </div>
-          <nav className="flex flex-wrap items-center gap-1">
+          <nav aria-label="页面导航" className="flex flex-wrap items-center gap-1">
             <button
               type="button"
-              onClick={() => navigate('watchlist')}
-              disabled={!configured}
-              aria-current={activeView === 'watchlist' || activeView === 'detail' ? 'page' : undefined}
-              className={navButtonClass(
-                activeView === 'watchlist' || activeView === 'detail',
-                !configured,
-              )}
+              onClick={() => navigate(destination.view)}
+              disabled={destination.disabled}
+              className={navButtonClass(destination.disabled)}
             >
-              监控清单
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('settings')}
-              aria-current={activeView === 'settings' ? 'page' : undefined}
-              className={navButtonClass(activeView === 'settings', false)}
-            >
-              设置
+              {destination.label}
             </button>
           </nav>
         </div>

@@ -248,8 +248,9 @@ export function createStub(options: StubOptions = {}): StubHandle {
       addInputs.push(fullName);
       if (addGate) await addGate;
       if (options.addResult) return options.addResult;
-      const repository = makeGlance(repositories.length + 1, fullName);
-      repositories = [...repositories, repository];
+      const nextId = Math.max(0, ...repositories.map((item) => item.id)) + 1;
+      const repository = makeGlance(nextId, fullName);
+      repositories = [repository, ...repositories];
       return { ok: true, repository, error: null };
     },
     async removeRepository() {

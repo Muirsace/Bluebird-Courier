@@ -100,6 +100,7 @@ describe('卡片动画 · 新增进场', () => {
     await addRepository('vercel/next.js');
 
     expect(repoRows()).toHaveLength(4);
+    expect(slotIds()).toEqual(['4', '1', '2', '3']);
     expect(repoMotion('vercel/next.js')).toBe('entering');
     expect(repoSlot('vercel/next.js')?.dataset.highlight).toBe('true');
     for (const fullName of [FIRST, SECOND, THIRD]) {

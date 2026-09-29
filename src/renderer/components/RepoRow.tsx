@@ -21,6 +21,8 @@ interface RepoRowProps {
   /** 刚加入清单：只这一张播放一次进场（含轻量高亮），其它卡片不跟着动。 */
   justAdded?: boolean;
   onEntered?: (repositoryId: number) => void;
+  /** 只播放高亮的请求序号；与首次新增进场状态分开，允许同一张卡片重复定位。 */
+  highlightRequest?: number;
   /** 移除已成功、正在播放退场；播完回报，由上层真正从列表移除。 */
   exiting?: boolean;
   onExited?: (repositoryId: number) => void;
@@ -52,6 +54,7 @@ export function RepoRow({
   refreshing,
   justAdded = false,
   onEntered,
+  highlightRequest,
   onExited,
   exiting = false,
 }: RepoRowProps) {
@@ -59,12 +62,20 @@ export function RepoRow({
     exiting ? 'exiting' : justAdded ? 'entering' : 'idle',
   );
   const [highlight, setHighlight] = useState(justAdded);
+  const [highlightOnly, setHighlightOnly] = useState(false);
+  const seenHighlightRequest = useRef<number | undefined>(undefined);
   const slotRef = useRef<HTMLLIElement>(null);
 
   // 移除成功由上层打开 exiting；进场只在挂载那一刻判定，后续 render 不会重播
   useEffect(() => {
     if (exiting) setPhase('exiting');
   }, [exiting]);
+
+  useEffect(() => {
+    if (highlightRequest === undefined || highlightRequest === seenHighlightRequest.current) return;
+    seenHighlightRequest.current = highlightRequest;
+    setHighlightOnly(true);
+  }, [highlightRequest]);
 
   useEffect(() => {
     if (phase === 'idle') return;
@@ -123,6 +134,29 @@ export function RepoRow({
     };
   }, [highlight]);
 
+  useEffect(() => {
+    if (!highlightOnly) return;
+    const slot = slotRef.current;
+    if (!slot) return;
+
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      setHighlightOnly(false);
+    };
+    const handleAnimationEnd = (event: AnimationEvent): void => {
+      if (event.animationName === 'repo-card-highlight') finish();
+    };
+
+    slot.addEventListener('animationend', handleAnimationEnd);
+    const timer = window.setTimeout(finish, motionCompletionMs(REPO_MOTION.highlightMs));
+    return () => {
+      slot.removeEventListener('animationend', handleAnimationEnd);
+      window.clearTimeout(timer);
+    };
+  }, [highlightOnly]);
+
   // 退场期间整张卡片立即失效：鼠标点不到，键盘也 Tab 不进去
   useEffect(() => {
     const slot = slotRef.current;
@@ -140,6 +174,7 @@ export function RepoRow({
       data-repository-id={repo.id}
       data-motion={phase}
       data-highlight={highlight ? 'true' : undefined}
+      data-highlight-only={highlightOnly ? 'true' : undefined}
     >
       <div className="repo-row-clip">
         <div className="repo-row rounded-lg border border-subtle bg-surface hover:border-strong hover:bg-surface-hover">

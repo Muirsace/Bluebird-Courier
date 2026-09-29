@@ -48,7 +48,9 @@ afterEach(async () => {
 describe('公共按钮交互层 · 禁用与 Loading', () => {
   it('禁用按钮：点击不触发业务调用，且保持 disabled', async () => {
     await mount({ repositories: [] });
-    const join = document.querySelector<HTMLButtonElement>('.watchlist-add-form form > button');
+    const join = document.querySelector<HTMLButtonElement>(
+      '.watchlist-add-form .watchlist-add-control-row > .watchlist-add-action',
+    );
     if (!join) throw new Error('未找到加入按钮');
     expect(join.disabled).toBe(true);
 

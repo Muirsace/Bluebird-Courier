@@ -80,11 +80,18 @@ describe('页面切换 · 顶级导航（监控清单 ↔ 设置）', () => {
   it('两个顶级页仍然互相可达，切换方向是同级', async () => {
     await mount();
     expect(document.body.textContent).toContain('监控清单');
+    expect(navButton('设置')).not.toBeNull();
+    expect(navButton('监控清单')).toBeNull();
+    expect(document.querySelectorAll('header nav button')).toHaveLength(1);
+    expect(navButton('设置')?.getAttribute('aria-current')).toBeNull();
 
     await click(navButton('设置'));
     await settle();
     expect(motionKind()).toBe('top');
     expect(document.body.textContent).toContain('访问令牌');
+    expect(navButton('监控清单')).not.toBeNull();
+    expect(navButton('设置')).toBeNull();
+    expect(document.querySelectorAll('header nav button')).toHaveLength(1);
 
     await click(navButton('监控清单'));
     await settle();
@@ -110,12 +117,16 @@ describe('页面切换 · 仓库详情（清单 ↔ 详情）', () => {
     expect(repoSlot('octocat/Hello-World')).not.toBeNull();
   });
 
-  it('详情里点顶部导航回清单，方向仍然是 back（返回父级）', async () => {
+  it('详情 Header 只提供设置目的地；返回清单继续走页面内 Back', async () => {
     await mount();
     await openDetail();
-    await click(navButton('监控清单'));
+    expect(navButton('设置')).not.toBeNull();
+    expect(navButton('监控清单')).toBeNull();
+
+    await click(navButton('设置'));
     await settle();
-    expect(motionKind()).toBe('back');
+    expect(motionKind()).toBe('top');
+    expect(navButton('监控清单')).not.toBeNull();
   });
 
   it('只有内容容器换节点：Header / Logo 在切换前后是同一个节点', async () => {

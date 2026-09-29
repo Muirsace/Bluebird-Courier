@@ -64,10 +64,11 @@ describe('设置页 · 结构与导航', () => {
     expect(text).toContain('GitHub');
     expect(text).toContain('Personal Access Token');
 
-    // 底部不再有「← 返回清单」；顶部导航仍是唯一的清单入口
+    // 页面不再重复显示当前页入口；Header 只指向监控清单
     expect(buttonByText('← 返回清单')).toBeNull();
     expect(navButton('监控清单')).not.toBeNull();
-    expect(navButton('设置')).not.toBeNull();
+    expect(navButton('设置')).toBeNull();
+    expect(navButton('监控清单')?.getAttribute('aria-current')).toBeNull();
   });
 
   it('顶部导航仍可在设置与清单间往返', async () => {

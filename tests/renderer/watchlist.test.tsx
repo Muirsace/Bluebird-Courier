@@ -44,7 +44,9 @@ function addInput(): HTMLInputElement {
 }
 
 function addSubmitButton(): HTMLButtonElement {
-  const button = document.querySelector<HTMLButtonElement>('.watchlist-add-form form > button');
+  const button = document.querySelector<HTMLButtonElement>(
+    '.watchlist-add-form .watchlist-add-control-row > .watchlist-add-action',
+  );
   if (!button) throw new Error('未找到加入仓库按钮');
   return button;
 }
@@ -227,18 +229,26 @@ describe('监控清单 · 添加仓库', () => {
     expect(addSubmitButton().disabled).toBe(true);
   });
 
-  it('标题、添加区域和仓库列表共用页面内容容器，折叠和展开从添加区域起点开始', async () => {
+  it('标题、单一工具栏和仓库列表共用页面内容容器，折叠和展开从添加区域起点开始', async () => {
     await mount({ repositories: [makeGlance(1, 'octocat/Hello-World')] });
-    const list = repoRows()[0]?.parentElement;
-    const page = list?.parentElement;
+    const page = document.querySelector('.watchlist-page');
     const addArea = document.querySelector('.watchlist-add-form');
-    expect(page?.firstElementChild?.querySelector('h1')?.textContent).toBe('监控清单');
-    expect(page?.firstElementChild?.contains(addArea)).toBe(true);
+    const toolbar = document.querySelector('.watchlist-page-toolbar');
+    expect(page?.querySelector('.watchlist-page-heading h1')?.textContent).toBe('监控清单');
+    expect(page?.firstElementChild?.contains(addArea)).toBe(false);
+    expect(toolbar?.contains(addArea)).toBe(true);
     expect(addArea?.contains(buttonByLabel('新增仓库'))).toBe(true);
+    expect(document.querySelectorAll('.watchlist-page-toolbar')).toHaveLength(1);
+    expect(document.querySelectorAll('.watchlist-add-form')).toHaveLength(1);
+    const toolbarBeforeExpand = toolbar;
+    const addAreaBeforeExpand = addArea;
     const input = await expandAddForm();
-    expect(addArea?.contains(input.form)).toBe(true);
-    expect(input.parentElement).toBe(input.form?.firstElementChild);
-    expect(addSubmitButton().parentElement).toBe(input.form);
+    expect(toolbarBeforeExpand).toBe(document.querySelector('.watchlist-page-toolbar'));
+    expect(addAreaBeforeExpand).toBe(document.querySelector('.watchlist-add-form'));
+    expect(toolbar?.contains(input.form)).toBe(true);
+    expect(input.parentElement).toBe(input.form?.querySelector('.watchlist-add-field'));
+    expect(input.parentElement?.parentElement).toBe(input.form?.firstElementChild);
+    expect(addSubmitButton().parentElement).toBe(input.form?.firstElementChild);
   });
 
   it('展开后 input 自动获得焦点', async () => {
@@ -325,20 +335,25 @@ describe('监控清单 · 添加仓库', () => {
     await typeInto(input, 'deepseek-ai/deepseek-harness');
     expect(addStatus()?.textContent).toContain('deepseek-ai/deepseek-harness');
     expect(addStatus()?.textContent).toContain('已在监控清单中');
-    expect(addStatus()?.textContent).toContain('查看');
-    expect(input.parentElement?.contains(addStatus())).toBe(true);
+    expect(addStatus()?.textContent).toContain('打开详情');
+    expect(input.form?.querySelector('.watchlist-inline-message')?.contains(addStatus() ?? null)).toBe(
+      true,
+    );
     expect(addStatus()?.closest('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
-    expect(addSubmitButton().parentElement).toBe(input.form);
+    expect(addSubmitButton().parentElement).toBe(input.form?.firstElementChild);
     expect(addError()).toBeNull();
     expect(alertTexts().join(' ')).not.toContain('该仓库已在监控清单中');
   });
 
-  it('重复状态「查看」直接进入对应仓库 Detail', async () => {
+  it('重复状态「打开详情」直接进入对应仓库 Detail 且不改变排序', async () => {
     await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
+    const orderBefore = repoRows().map((row) => row.dataset.repositoryId);
     const input = await expandAddForm();
     await typeInto(input, 'deepseek-ai/deepseek-harness');
     await pointerDown(addStatus()!);
-    await click(buttonByText('查看'));
+    expect(addStatus()?.textContent).toContain('打开详情');
+    expect(repoRows().map((row) => row.dataset.repositoryId)).toEqual(orderBefore);
+    await click(buttonByText('打开详情'));
     await settle();
     expect(bodyText()).toContain('概览');
     expect(bodyText()).toContain('deepseek-ai/deepseek-harness');
@@ -368,7 +383,7 @@ describe('监控清单 · 添加仓库', () => {
     const page = list?.parentElement;
     await typeInto(input, '11111');
     expect(region?.getAttribute('data-open')).toBe('true');
-    expect(region?.parentElement).toBe(input.parentElement);
+    expect(region?.parentElement).toBe(input.form);
     await typeInto(input, 'deepseek-ai/deepseek-harness');
     expect(document.querySelector('.watchlist-inline-message')).toBe(region);
     expect(region?.getAttribute('data-open')).toBe('true');
@@ -463,7 +478,7 @@ describe('监控清单 · 添加仓库', () => {
     expect(addStatus()?.textContent).toContain(repository.fullName);
     expect(addStatus()?.textContent).toContain('已在监控清单中');
     expect(addError()).toBeNull();
-    expect(buttonByText('查看')?.disabled).toBe(false);
+    expect(buttonByText('打开详情')?.disabled).toBe(false);
     await click(addSubmitButton());
     expect(activeAddButtonLabel()).toBe('清除');
     await click(addSubmitButton());
@@ -499,6 +514,8 @@ describe('监控清单 · 添加仓库', () => {
     expect(activeAddButtonLabel()).toBe('已添加');
     await vi.waitFor(() => expect(addInput().value).toBe(''), { timeout: 1800 });
     expect(addSubmitButton().getAttribute('aria-hidden')).toBe('true');
+    expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('false');
+    expect(addInput().disabled).toBe(true);
     expect(handle.calls.addRepository).toBe(1);
     expect(bodyText()).toContain('1 个仓库');
   });

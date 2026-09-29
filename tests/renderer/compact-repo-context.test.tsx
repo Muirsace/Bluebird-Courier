@@ -318,10 +318,11 @@ describe('Compact Context · 结构与无障碍', () => {
     // 不卸载节点 → flex 布局里那份占位始终在，品牌 / 导航 / 高度都不会被推动
     expect(contextEl()).toBe(node);
     expect(node?.parentElement?.textContent).toContain('青鸟信使');
-    expect(navButton('监控清单')).not.toBeNull();
+    expect(navButton('监控清单')).toBeNull();
     expect(navButton('设置')).not.toBeNull();
+    expect(document.querySelectorAll('header nav button')).toHaveLength(1);
     // 上下文不在导航里：它是左侧品牌区的一部分，不占 Tabs 那一行
-    expect(navButton('监控清单')?.closest('.compact-repo-context')).toBeNull();
+    expect(document.querySelector('.compact-repo-context')?.closest('nav')).toBeNull();
     expect(node?.closest('[role="tablist"]')).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AddRepositoryResult, Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
@@ -8,9 +8,76 @@ import { ErrorBar } from '../components/ErrorBar';
 import { Loading } from '../components/Loading';
 import { RepoRow } from '../components/RepoRow';
 import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
+import { prefersReducedMotion } from '../lib/motion';
 
 /** 启动时自动抓取一次轻量信息（整个会话一次；之后走「全部刷新」）。 */
 let startupRefreshed = false;
+const WATCHLIST_TOP_PROXIMITY_PX = 144;
+const ADDED_NOTICE_EXIT_MS = 135;
+
+interface AddedRepository {
+  repositoryId: number;
+  fullName: string;
+}
+
+interface PendingViewportAnchor extends AddedRepository {
+  scrollTop: number;
+  scrollHeight: number;
+}
+
+interface AddedNoticeProps {
+  repository: AddedRepository;
+  onViewPosition: (repositoryId: number) => void;
+  onDismiss: (repositoryId: number) => void;
+}
+
+function AddedRepositoryNotice({ repository, onViewPosition, onDismiss }: AddedNoticeProps) {
+  const [visible, setVisible] = useState(true);
+  const dismissTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (dismissTimerRef.current !== null) window.clearTimeout(dismissTimerRef.current);
+    },
+    [],
+  );
+
+  function dismiss(): void {
+    if (dismissTimerRef.current !== null) return;
+    setVisible(false);
+    dismissTimerRef.current = window.setTimeout(() => {
+      onDismiss(repository.repositoryId);
+    }, ADDED_NOTICE_EXIT_MS);
+  }
+
+  return (
+    <div className="watchlist-added-notice" data-visible={visible ? 'true' : 'false'}>
+      <p role="status" className="min-w-0 flex-1 text-sm leading-5 text-primary">
+        <span aria-hidden="true" className="mr-1 font-medium text-success">✓</span>
+        <span className="font-mono [overflow-wrap:anywhere]">{repository.fullName}</span>
+        <span> 已加入监控清单 ·</span>
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          onViewPosition(repository.repositoryId);
+          dismiss();
+        }}
+        className="shrink-0 rounded px-1 text-sm font-medium text-accent hover:underline focus-visible:outline"
+      >
+        查看位置
+      </button>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="关闭新增仓库提示"
+        className="shrink-0 rounded px-1 text-sm text-secondary hover:bg-surface-hover"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
 
 interface WatchlistPageProps {
   onOpenDetail: (repo: Glance) => void;
@@ -70,9 +137,17 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const [refreshErrors, setRefreshErrors] = useState<NormalizedError[]>([]);
   /** 刚加入成功的仓库：只有它会播一次进场动画，播完清掉。 */
   const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null);
+  const [addedNotice, setAddedNotice] = useState<AddedRepository | null>(null);
+  const [highlightRequest, setHighlightRequest] = useState<{
+    repositoryId: number;
+    token: number;
+  } | null>(null);
   const [exiting, setExiting] = useState<ExitingRepo[]>([]);
   /** 已确认移除的仓库 id：即使清单还没刷新（或刷新失败）也不会让卡片弹回来。id 由 AUTOINCREMENT 分配，不复用。 */
   const [removedIds, setRemovedIds] = useState<number[]>([]);
+  const pendingViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
+  const highlightSequenceRef = useRef(0);
+  const scrollCompletionRef = useRef<(() => void) | null>(null);
 
   const repositories: Glance[] = listQuery.data ?? [];
   const removed = new Set(removedIds);
@@ -80,6 +155,33 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const displayed = mergeExiting(
     repositories.filter((repo) => !removed.has(repo.id)),
     exiting,
+  );
+
+  /** 新卡片完整落入 DOM 后、绘制前补偿顶部增加的真实高度，独立于导航返回恢复。 */
+  useLayoutEffect(() => {
+    const pending = pendingViewportAnchorRef.current;
+    if (!pending) return;
+
+    if (!listQuery.data?.some((repository) => repository.id === pending.repositoryId)) {
+      if (listQuery.isError) pendingViewportAnchorRef.current = null;
+      return;
+    }
+
+    pendingViewportAnchorRef.current = null;
+    const scrollRoot = document.scrollingElement ?? document.documentElement;
+    const heightDelta = scrollRoot.scrollHeight - pending.scrollHeight;
+    if (heightDelta !== 0) {
+      window.scrollTo({
+        top: Math.max(0, pending.scrollTop + heightDelta),
+        behavior: 'instant',
+      });
+    }
+    setAddedNotice({ repositoryId: pending.repositoryId, fullName: pending.fullName });
+  }, [listQuery.data, listQuery.isError]);
+
+  useEffect(
+    () => () => scrollCompletionRef.current?.(),
+    [],
   );
 
   // 刷新全部轻量信息；完成后重读清单查询
@@ -118,8 +220,9 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     focusAfterRemoval(repositoryId);
   }, []);
 
-  /** 新增失败由表单局部展示；重复响应刷新本地清单以提供对应仓库的「查看」入口。 */
+  /** 新增失败由表单局部展示；重复响应刷新本地清单以提供对应仓库的详情入口。 */
   async function handleAdd(fullName: string): Promise<AddRepositoryResult> {
+    setAddedNotice(null);
     setAdding(true);
     try {
       const result = await getApi().addRepository(fullName);
@@ -129,8 +232,22 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
         }
         return result;
       }
-      // 先记下新仓库，再刷新清单：卡片一进 DOM 就带着进场动画（失败时什么都不播）
-      if (result.repository) setNewlyAddedId(result.repository.id);
+      if (result.repository) {
+        const scrollRoot = document.scrollingElement ?? document.documentElement;
+        const scrollTop = scrollRoot.scrollTop;
+        const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
+        pendingViewportAnchorRef.current = null;
+        setNewlyAddedId(nearTop ? result.repository.id : null);
+
+        if (!nearTop) {
+          pendingViewportAnchorRef.current = {
+            repositoryId: result.repository.id,
+            fullName: result.repository.fullName,
+            scrollTop,
+            scrollHeight: scrollRoot.scrollHeight,
+          };
+        }
+      }
       await queryClient.invalidateQueries({ queryKey: ['repositories'] });
       return result;
     } catch {
@@ -144,11 +261,65 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     }
   }
 
+  function viewNewRepositoryPosition(repositoryId: number): void {
+    const target = document.querySelector<HTMLElement>(
+      `ul.repo-list > li[data-repository-id="${repositoryId}"]`,
+    );
+    if (!target) return;
+
+    scrollCompletionRef.current?.();
+    const reducedMotion = prefersReducedMotion();
+    const options: ScrollIntoViewOptions = {
+      behavior: reducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+      inline: 'nearest',
+    };
+    const requestHighlight = (): void => {
+      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current });
+    };
+
+    if (reducedMotion) {
+      target.scrollIntoView(options);
+      requestHighlight();
+      return;
+    }
+
+    let finished = false;
+    let timer: number | null = null;
+    const cleanup = (): void => {
+      document.removeEventListener('scrollend', finish);
+      if (timer !== null) window.clearTimeout(timer);
+      if (scrollCompletionRef.current === cancel) scrollCompletionRef.current = null;
+    };
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      requestHighlight();
+    };
+    const cancel = (): void => {
+      finished = true;
+      cleanup();
+    };
+
+    scrollCompletionRef.current = cancel;
+    document.addEventListener('scrollend', finish, { once: true });
+    timer = window.setTimeout(finish, 1800);
+    target.scrollIntoView(options);
+  }
+
+  function dismissAddedNotice(repositoryId: number): void {
+    setAddedNotice((current) =>
+      current?.repositoryId === repositoryId ? null : current,
+    );
+  }
+
   /**
    * 移除失败必须抛出：确认 Popover 保持打开并就地提示，用户可重试。
    * 成功后卡片先留在 DOM 里播退场，播完由 handleExited 真正移除。
    */
   async function handleRemove(repositoryId: number): Promise<void> {
+    dismissAddedNotice(repositoryId);
     const index = displayed.findIndex((repo) => repo.id === repositoryId);
     const repo = index >= 0 ? displayed[index] : undefined;
     await getApi().removeRepository(repositoryId);
@@ -167,7 +338,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const listUnavailable = listQuery.isError && !listQuery.data;
 
   return (
-    <div className="space-y-4">
+    <div className="watchlist-page min-w-0">
       <WatchlistHeader
         repositoryCount={listQuery.data ? repositories.length : null}
         repositories={repositories}
@@ -210,6 +381,9 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
               onRemove={handleRemove}
               refreshing={refreshing}
               justAdded={repo.id === newlyAddedId}
+              highlightRequest={
+                repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
+              }
               onEntered={handleEntered}
               exiting={exitingIds.has(repo.id)}
               onExited={handleExited}
@@ -217,6 +391,13 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
           ))}
         </ul>
       )}
+      {addedNotice ? (
+        <AddedRepositoryNotice
+          repository={addedNotice}
+          onViewPosition={viewNewRepositoryPosition}
+          onDismiss={dismissAddedNotice}
+        />
+      ) : null}
     </div>
   );
 }

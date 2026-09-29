@@ -79,12 +79,12 @@ export function AddRepositoryForm({
 
   const currentMessage = useMemo<InlineMessage | null>(() => {
     if (invalid) return { kind: 'invalid' };
-    if (isDuplicate) {
+    if (isDuplicate && !autoClearPending) {
       return { kind: 'duplicate', name: duplicateName ?? '', repository: duplicateRepository };
     }
     if (error) return { kind: 'error', error };
     return null;
-  }, [invalid, isDuplicate, duplicateName, duplicateRepository, error]);
+  }, [invalid, isDuplicate, duplicateName, duplicateRepository, error, autoClearPending]);
   const [retainedMessage, setRetainedMessage] = useState<InlineMessage | null>(null);
   const displayedMessage = currentMessage ?? retainedMessage;
   const messageOpen = expanded && currentMessage !== null;
@@ -162,10 +162,10 @@ export function AddRepositoryForm({
       setConfirmedName(null);
       setClearReady(false);
       setAutoClearPending(false);
-      if (document.activeElement === actionRef.current) inputRef.current?.focus();
+      collapse(true);
     }, ADDED_NOTICE_MS);
     return () => window.clearTimeout(timeout);
-  }, [expanded, autoClearPending, adding]);
+  }, [expanded, autoClearPending, adding, collapse]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -227,128 +227,129 @@ export function AddRepositoryForm({
         aria-hidden={expanded}
         tabIndex={expanded ? -1 : 0}
         aria-label="新增仓库"
-        className="watchlist-add-trigger inline-flex h-[38px] items-center justify-center rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed"
+        className="watchlist-add-trigger inline-flex h-9 items-center justify-center rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed"
       >
         ＋ 新增仓库
       </button>
       <form
         onSubmit={(event) => void handleSubmit(event)}
         data-action-visible={actionVisible}
-        className="watchlist-add-content grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2"
+        className="watchlist-add-content grid min-w-0"
       >
-        <div className="watchlist-add-field min-w-0" aria-hidden={!expanded}>
-          <input
-            ref={inputRef}
-            id="add-repository-input"
-            type="text"
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value);
-              setError(null);
-              setConfirmedName(null);
-              setClearReady(false);
-              setAutoClearPending(false);
+        <div className="watchlist-add-control-row grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-x-2">
+          <div className="watchlist-add-field min-w-0" aria-hidden={!expanded}>
+            <input
+              ref={inputRef}
+              id="add-repository-input"
+              type="text"
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setError(null);
+                setConfirmedName(null);
+                setClearReady(false);
+                setAutoClearPending(false);
+              }}
+              placeholder="owner/repo 或 GitHub 网址"
+              aria-label="监控仓库（owner/repo 或 GitHub 网址）"
+              aria-invalid={invalid || undefined}
+              aria-describedby={describedBy}
+              disabled={!expanded || adding}
+              tabIndex={expanded ? 0 : -1}
+              className={`h-9 w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-focus/15 ${
+                invalid ? 'border-warning focus:border-warning' : 'border-strong focus:border-focus'
+              }`}
+            />
+          </div>
+          <button
+            ref={actionRef}
+            type={requestedAction === 'join' ? 'submit' : 'button'}
+            onClick={() => {
+              if (requestedAction === 'clear') {
+                setValue('');
+                setConfirmedName(null);
+                setError(null);
+                setClearReady(false);
+                setAutoClearPending(false);
+                inputRef.current?.focus();
+              } else if (requestedAction === 'added') {
+                setAutoClearPending(false);
+                setClearReady(true);
+              }
             }}
-            placeholder="owner/repo 或 GitHub 网址"
-            aria-label="监控仓库（owner/repo 或 GitHub 网址）"
-            aria-invalid={invalid || undefined}
-            aria-describedby={describedBy}
-            disabled={!expanded || adding}
-            tabIndex={expanded ? 0 : -1}
-            className={`h-[38px] w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-focus/15 ${
-              invalid ? 'border-warning focus:border-warning' : 'border-strong focus:border-focus'
+            disabled={!actionVisible || adding}
+            aria-hidden={!actionVisible}
+            tabIndex={actionVisible ? 0 : -1}
+            aria-busy={adding}
+            aria-label={actionAriaLabel}
+            className={`watchlist-add-action relative inline-flex h-9 self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed ${
+              displayedAction !== 'join'
+                ? 'border border-default bg-surface-raised text-secondary hover:bg-surface-hover active:bg-surface-active'
+                : 'border border-transparent bg-accent-solid text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed'
             }`}
-          />
-
-          <div
-            className="watchlist-inline-message"
-            data-open={messageOpen}
-            aria-hidden={!messageOpen}
           >
-            <div className="min-h-0 overflow-hidden">
-              <div className="pt-1.5">
-                {displayedMessage?.kind === 'invalid' ? (
-                  <p
-                    id="add-repository-invalid"
-                    className="add-repository-status min-h-5 text-xs text-warning"
-                    aria-live="polite"
+            <span className="watchlist-add-action-label" aria-hidden="true">
+              {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : null}
+              <span>{actionLabel}</span>
+              {displayedAction === 'added' ? <span className="text-success">✓</span> : null}
+            </span>
+          </button>
+        </div>
+        <div
+          className="watchlist-inline-message"
+          data-open={messageOpen}
+          aria-hidden={!messageOpen}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="pt-1.5">
+              {displayedMessage?.kind === 'invalid' ? (
+                <p
+                  id="add-repository-invalid"
+                  className="add-repository-status min-h-5 text-xs text-warning"
+                  aria-live="polite"
+                >
+                  请输入 owner/repo 或 GitHub 仓库地址
+                </p>
+              ) : displayedMessage?.kind === 'duplicate' ? (
+                <div
+                  id="add-repository-duplicate"
+                  role="status"
+                  className="add-repository-status flex min-h-5 min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-xs text-secondary"
+                >
+                  <span aria-hidden="true" className="shrink-0 font-medium text-success">
+                    ✓
+                  </span>
+                  <span className="min-w-0 truncate font-mono" title={displayedMessage.name}>
+                    {displayedMessage.name}
+                  </span>
+                  <span className="shrink-0">已在监控清单中 ·</span>
+                  <button
+                    type="button"
+                    disabled={!messageOpen || !displayedMessage.repository}
+                    tabIndex={messageOpen && displayedMessage.repository ? 0 : -1}
+                    aria-label={`打开 ${displayedMessage.name || '已监控仓库'} 详情`}
+                    onClick={() => {
+                      if (!displayedMessage.repository) return;
+                      collapse();
+                      onOpenRepository(displayedMessage.repository);
+                    }}
+                    className="shrink-0 text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    请输入 owner/repo 或 GitHub 仓库地址
-                  </p>
-                ) : displayedMessage?.kind === 'duplicate' ? (
-                  <div
-                    id="add-repository-duplicate"
-                    role="status"
-                    className="add-repository-status flex min-h-5 min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-xs text-secondary"
-                  >
-                    <span aria-hidden="true" className="shrink-0 font-medium text-success">
-                      ✓
-                    </span>
-                    <span className="min-w-0 truncate font-mono" title={displayedMessage.name}>
-                      {displayedMessage.name}
-                    </span>
-                    <span className="shrink-0">已在监控清单中 ·</span>
-                    <button
-                      type="button"
-                      disabled={!messageOpen || !displayedMessage.repository}
-                      tabIndex={messageOpen && displayedMessage.repository ? 0 : -1}
-                      aria-label={`查看 ${displayedMessage.name || '已监控仓库'}`}
-                      onClick={() => {
-                        if (!displayedMessage.repository) return;
-                        collapse();
-                        onOpenRepository(displayedMessage.repository);
-                      }}
-                      className="shrink-0 text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      查看
-                    </button>
-                  </div>
-                ) : displayedMessage?.kind === 'error' ? (
-                  <p
-                    id="add-repository-error"
-                    role="alert"
-                    className="add-repository-status min-h-5 break-words text-xs text-danger"
-                  >
-                    {describeError(displayedMessage.error)}
-                  </p>
-                ) : null}
-              </div>
+                    打开详情
+                  </button>
+                </div>
+              ) : displayedMessage?.kind === 'error' ? (
+                <p
+                  id="add-repository-error"
+                  role="alert"
+                  className="add-repository-status min-h-5 break-words text-xs text-danger"
+                >
+                  {describeError(displayedMessage.error)}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
-        <button
-          ref={actionRef}
-          type={requestedAction === 'join' ? 'submit' : 'button'}
-          onClick={() => {
-            if (requestedAction === 'clear') {
-              setValue('');
-              setConfirmedName(null);
-              setError(null);
-              setClearReady(false);
-              setAutoClearPending(false);
-              inputRef.current?.focus();
-            } else if (requestedAction === 'added') {
-              setAutoClearPending(false);
-              setClearReady(true);
-            }
-          }}
-          disabled={!actionVisible || adding}
-          aria-hidden={!actionVisible}
-          tabIndex={actionVisible ? 0 : -1}
-          aria-busy={adding}
-          aria-label={actionAriaLabel}
-          className={`watchlist-add-action relative inline-flex h-[38px] self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed ${
-            displayedAction !== 'join'
-              ? 'border border-default bg-surface-raised text-secondary hover:bg-surface-hover active:bg-surface-active'
-              : 'border border-transparent bg-accent-solid text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed'
-          }`}
-        >
-          <span className="watchlist-add-action-label" aria-hidden="true">
-            {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : null}
-            <span>{actionLabel}</span>
-            {displayedAction === 'added' ? <span className="text-success">✓</span> : null}
-          </span>
-        </button>
       </form>
     </div>
   );

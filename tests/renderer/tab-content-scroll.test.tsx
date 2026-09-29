@@ -602,7 +602,8 @@ describe('与其它滚动规则协同', () => {
       await switchTab('趋势');
 
       expect(scrollCalls).toHaveLength(before);
-      expect(navButton('监控清单')?.getAttribute('aria-current')).toBe('page');
+      expect(navButton('监控清单')).toBeNull();
+      expect(navButton('设置')?.getAttribute('aria-current')).toBeNull();
     } finally {
       delete (window as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
     }

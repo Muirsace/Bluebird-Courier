@@ -69,6 +69,35 @@ describe('监控清单', () => {
     });
   });
 
+  it('按最近添加优先排序；同时间由 id 决胜，重复、刷新与重启都保持顺序', async () => {
+    await ready();
+    const base = makeRepoData();
+    const names = ['acme/first', 'acme/second', 'acme/third'];
+
+    for (const [index, fullName] of names.entries()) {
+      h().github.addRepo({ ...base, meta: { ...base.meta, fullName } });
+      const result = await h().facade.addRepository(fullName);
+      expect(result.ok).toBe(true);
+      if (index === 1) h().clock.advanceMs(1000);
+    }
+
+    const expected = ['acme/third', 'acme/second', 'acme/first'];
+    const orderedNames = async (): Promise<string[]> =>
+      (await h().facade.listRepositories()).map((repository) => repository.fullName);
+
+    expect(await orderedNames()).toEqual(expected);
+
+    const duplicate = await h().facade.addRepository('acme/second');
+    expect(duplicate.ok).toBe(false);
+    expect(await orderedNames()).toEqual(expected);
+
+    await h().facade.refreshGlance();
+    expect(await orderedNames()).toEqual(expected);
+
+    h().reopen();
+    expect(await orderedNames()).toEqual(expected);
+  });
+
   it('加入不存在或无权访问的仓库（404）立即报错且不留在清单里', async () => {
     await ready();
 
