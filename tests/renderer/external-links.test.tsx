@@ -65,11 +65,11 @@ function makeCommit(): CommitItem {
 }
 
 function makeIssue(number: number): IssueItem {
-  return { number, title: `议题 ${number}`, state: 'open', authorName: 'Turtle', updatedAt: '2026-09-26T09:00:00.000Z' };
+  return { number, title: `议题 ${number}`, body: null, state: 'open', authorName: 'Turtle', updatedAt: '2026-09-26T09:00:00.000Z' };
 }
 
 function makePull(number: number): PullRequestItem {
-  return { number, title: `PR ${number}`, state: 'open', authorName: 'Turtle', updatedAt: '2026-09-26T09:00:00.000Z' };
+  return { number, title: `PR ${number}`, body: null, state: 'open', authorName: 'Turtle', updatedAt: '2026-09-26T09:00:00.000Z' };
 }
 
 afterEach(async () => {

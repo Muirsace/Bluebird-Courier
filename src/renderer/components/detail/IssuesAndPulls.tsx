@@ -50,10 +50,11 @@ interface NumberedItemRowProps {
   kind: ItemKind;
   owner: string;
   name: string;
+  showBody?: boolean;
 }
 
 /** 议题与合并请求共用的一行：类型 → #编号（可点开 GitHub）→ 标题 → 状态 → 作者 → 更新时间。 */
-export function NumberedItemRow({ item, kind, owner, name }: NumberedItemRowProps) {
+export function NumberedItemRow({ item, kind, owner, name, showBody = true }: NumberedItemRowProps) {
   return (
     <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0">
       <KindBadge kind={kind} />
@@ -69,6 +70,14 @@ export function NumberedItemRow({ item, kind, owner, name }: NumberedItemRowProp
       <StateBadge state={item.state} />
       <span className="text-xs text-secondary">{item.authorName ?? '—'}</span>
       <span className="text-xs text-muted">{formatRelativeTime(item.updatedAt)}</span>
+      {showBody && item.body?.trim() ? (
+        <p
+          className="basis-full mt-1 max-h-16 overflow-hidden whitespace-pre-line text-xs leading-5 text-secondary"
+          title={item.body}
+        >
+          {item.body.trim()}
+        </p>
+      ) : null}
     </li>
   );
 }
@@ -78,13 +87,21 @@ interface NumberedItemListProps {
   kind: ItemKind;
   owner: string;
   name: string;
+  showBody?: boolean;
 }
 
-function NumberedItemList({ items, kind, owner, name }: NumberedItemListProps) {
+function NumberedItemList({ items, kind, owner, name, showBody }: NumberedItemListProps) {
   return (
     <ul className="divide-y divide-subtle">
       {items.map((item, index) => (
-        <NumberedItemRow key={`${item.number}|${index}`} item={item} kind={kind} owner={owner} name={name} />
+        <NumberedItemRow
+          key={`${item.number}|${index}`}
+          item={item}
+          kind={kind}
+          owner={owner}
+          name={name}
+          showBody={showBody}
+        />
       ))}
     </ul>
   );

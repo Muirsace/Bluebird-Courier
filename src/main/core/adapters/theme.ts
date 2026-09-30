@@ -1,5 +1,5 @@
 import { nativeTheme } from 'electron';
-import { normalizeThemePreference, THEME_PREFERENCE_KEY } from '../shared/theme';
+import { normalizeThemePreference, THEME_PREFERENCE_KEY } from '../../../domain/rules/theme';
 
 /**
  * 把持久化的主题偏好落到 Electron。

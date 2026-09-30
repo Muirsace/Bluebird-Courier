@@ -2,10 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
-import { openDatabase } from '../../src/main/core/db/database';
-import type { CipherBox } from '../../src/main/core/cipher/cipher-box';
+import { openDatabase } from '../../src/main/core/infra/database';
+import type { CipherBox } from '../../src/main/core/infra/cipher';
 import { createFacade } from '../../src/main/facade/facade';
-import type { OctoFacade } from '../../src/shared/types';
+import { createFetching } from '../../src/main/features/fetching/implementation';
+import { createSettings } from '../../src/main/features/settings/implementation';
+import { createWatchlist } from '../../src/main/features/watchlist/implementation';
+import type { BluebirdCourierFacade } from '../../src/shared/types';
 import { FakeGitHub } from './fake-github';
 import { FakeClock, FakeCipherBox } from './fakes';
 
@@ -14,7 +17,7 @@ export interface Harness {
   github: FakeGitHub;
   cipher: CipherBox;
   clock: FakeClock;
-  facade: OctoFacade;
+  facade: BluebirdCourierFacade;
   /** 关闭并重新打开同一个数据库文件（模拟应用重启）。 */
   reopen(): Harness;
   destroy(): void;
@@ -33,7 +36,11 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
   const clock = new FakeClock(options.now ?? new Date(2026, 8, 26, 12, 0, 0));
 
   let db = openDatabase(dbPath);
-  let facade = createFacade({ db, github, cipher, clock });
+  let facade = createFacade({
+    settings: createSettings({ db, cipher }),
+    watchlist: createWatchlist({ db, clock }),
+    fetching: createFetching({ github }),
+  });
 
   const harness: Harness = {
     get db() {
@@ -48,7 +55,11 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
     reopen(): Harness {
       db.close();
       db = openDatabase(dbPath);
-      facade = createFacade({ db, github, cipher, clock });
+      facade = createFacade({
+        settings: createSettings({ db, cipher }),
+        watchlist: createWatchlist({ db, clock }),
+        fetching: createFetching({ github }),
+      });
       return harness;
     },
     destroy(): void {

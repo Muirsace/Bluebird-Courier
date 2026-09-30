@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createSafeStorageCipherBox } from '../../src/main/core/cipher/cipher-box';
+import { createSafeStorageCipherBox } from '../../src/main/core/infra/cipher';
 import { createHarness, type Harness } from '../helpers/harness';
 import { fixtures } from '../helpers/fake-github';
 

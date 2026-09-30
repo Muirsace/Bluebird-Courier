@@ -1,5 +1,5 @@
-import type Database from 'better-sqlite3';
-import type { Snapshot } from '../../shared/types';
+import type { Snapshot } from '../../../../domain/types';
+import type { LocalDatabase } from '../../../core/infra/database';
 
 export interface SnapshotValues {
   stars: number | null;
@@ -9,7 +9,7 @@ export interface SnapshotValues {
   pushedAt: string | null;
 }
 
-/** 本地日期（YYYY-MM-DD）：快照每日一档的去重键。 */
+/** The local calendar day is the uniqueness key for a repository snapshot. */
 export function localDateKey(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -17,12 +17,9 @@ export function localDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/**
- * 历史快照记档：仅成功抓取后调用；同一仓库同一天只留一档（本地日期），
- * 当日再次抓取（含手动刷新）覆盖为最新值；缺省值（如无发版）记空。
- */
+/** Upsert the day's snapshot. The caller owns the surrounding transaction. */
 export function recordSnapshot(
-  db: Database.Database,
+  db: LocalDatabase,
   repositoryId: number,
   values: SnapshotValues,
   capturedAt: Date,
@@ -49,8 +46,7 @@ export function recordSnapshot(
   );
 }
 
-/** 趋势读取：按时间升序的历史快照序列。 */
-export function listSnapshots(db: Database.Database, repositoryId: number): Snapshot[] {
+export function listSnapshots(db: LocalDatabase, repositoryId: number): Snapshot[] {
   const rows = db
     .prepare(
       'SELECT captured_at, stars, forks, open_issues, latest_release_tag, pushed_at FROM snapshot WHERE repository_id = ? ORDER BY captured_at ASC',
@@ -72,3 +68,4 @@ export function listSnapshots(db: Database.Database, repositoryId: number): Snap
     pushedAt: row.pushed_at,
   }));
 }
+

@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   saveAccessToken: 'octo:saveAccessToken',
   getSettings: 'octo:getSettings',
   updateSettings: 'octo:updateSettings',
+  inspectRepositoryInput: 'octo:inspectRepositoryInput',
   listRepositories: 'octo:listRepositories',
   addRepository: 'octo:addRepository',
   removeRepository: 'octo:removeRepository',

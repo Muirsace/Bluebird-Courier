@@ -1,8 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { App } from './App';
-import { ThemeProvider } from './lib/theme';
-import './styles.css';
+import { App } from '../pages/App';
+import { ThemeProvider } from './theme';
+import '../styles.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -1,13 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { NormalizedError, SettingsView } from '../../shared/types';
-import { normalizeThemePreference, resolveEffectiveTheme, THEME_PREFERENCE_KEY } from '../../shared/theme';
-import type { EffectiveTheme, ThemePreference } from '../../shared/theme';
+import type { NormalizedError, SettingsView, EffectiveTheme, ThemePreference } from '../../shared/types';
+import { THEME_PREFERENCE_KEY } from '../../shared/types';
 import { getApi } from './api';
 
 /** 主题状态的唯一来源：组件一律经 useTheme / useEffectiveTheme 读取，不自行 matchMedia。 */
 const DARK_QUERY = '(prefers-color-scheme: dark)';
+
+function normalizeThemePreference(value: unknown): ThemePreference {
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
+}
+
+function resolveEffectiveTheme(preference: ThemePreference, systemTheme: EffectiveTheme): EffectiveTheme {
+  return preference === 'system' ? systemTheme : preference;
+}
 
 /** 偏好保存失败时的提示。 */
 const SAVE_ERROR: NormalizedError = { kind: 'unknown', message: '主题保存失败，请稍后重试' };

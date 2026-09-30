@@ -1,6 +1,6 @@
-import type { CommitItem, ReleaseItem } from '../../src/shared/types';
-import { GitHubRequestError } from '../../src/main/core/github/port';
-import type { BuildRun, GitHubPort, IssueOrPullRequest, RepoMeta } from '../../src/main/core/github/port';
+import type { BuildInfo, CommitItem, ReleaseItem } from '../../src/domain/types';
+import { PortFailure } from '../../src/domain/ports';
+import type { GitHubPort, IssueOrPullRequest, RepoMeta } from '../../src/domain/ports';
 
 /** 录制形态的仓库数据（按抓取与 API 调用清单组织）。 */
 export interface FakeRepoData {
@@ -9,33 +9,29 @@ export interface FakeRepoData {
   releases: ReleaseItem[];
   commits: CommitItem[];
   issuesAndPullRequests: IssueOrPullRequest[];
-  build: BuildRun | null;
+  build: BuildInfo | null;
 }
 
 export type FakeMethod = 'validateAccessToken' | keyof Omit<GitHubPort, 'validateAccessToken'>;
 
 /** 按 spec 的错误与降级场景构造的适配器错误。 */
 export const fixtures = {
-  unauthorized(): GitHubRequestError {
-    return new GitHubRequestError(401, {}, 'Bad credentials');
+  unauthorized(): PortFailure {
+    return new PortFailure('access_token_invalid', '访问令牌无效，请到设置页更换令牌');
   },
-  rateLimited(resetAt: Date): GitHubRequestError {
-    const headers: Record<string, string> = {
-      'x-ratelimit-remaining': '0',
-      'x-ratelimit-reset': String(Math.floor(resetAt.getTime() / 1000)),
-    };
-    return new GitHubRequestError(403, headers, 'API rate limit exceeded');
+  rateLimited(resetAt: Date): PortFailure {
+    return new PortFailure('rate_limited', '抓取被 GitHub 限流，配额恢复前暂不可用', resetAt.toISOString());
   },
   /** 限流但响应不带恢复时间头。 */
-  rateLimitedNoReset(): GitHubRequestError {
-    return new GitHubRequestError(403, { 'x-ratelimit-remaining': '0' }, 'API rate limit exceeded');
+  rateLimitedNoReset(): PortFailure {
+    return new PortFailure('rate_limited', '抓取被 GitHub 限流，配额恢复前暂不可用');
   },
   /** 429 限流（无任何配额头）。 */
-  tooManyRequests(): GitHubRequestError {
-    return new GitHubRequestError(429, {}, 'Too Many Requests');
+  tooManyRequests(): PortFailure {
+    return new PortFailure('rate_limited', '抓取被 GitHub 限流，配额恢复前暂不可用');
   },
-  notFound(): GitHubRequestError {
-    return new GitHubRequestError(404, {}, 'Not Found');
+  notFound(): PortFailure {
+    return new PortFailure('not_found', '仓库不存在或无权访问');
   },
   networkError(): TypeError {
     return new TypeError('fetch failed');
@@ -78,13 +74,13 @@ export function makeRepoData(overrides: Partial<FakeRepoData> = {}): FakeRepoDat
       },
     ],
     issuesAndPullRequests: [
-      { number: 42, title: '清单页刷新按钮无反馈', state: 'open', authorName: 'user-a', updatedAt: '2026-09-25T02:00:00.000Z', hasPullRequest: false },
-      { number: 57, title: 'feat: 详情页构建徽章', state: 'open', authorName: 'user-b', updatedAt: '2026-09-25T07:20:00.000Z', hasPullRequest: true },
+      { kind: 'issue', number: 42, title: '清单页刷新按钮无反馈', body: '刷新按钮应该显示进行中的状态。', state: 'open', authorName: 'user-a', updatedAt: '2026-09-25T02:00:00.000Z' },
+      { kind: 'pull', number: 57, title: 'feat: 详情页构建徽章', body: '为详情页增加构建状态展示。', state: 'open', authorName: 'user-b', updatedAt: '2026-09-25T07:20:00.000Z' },
     ],
     build: {
       workflowName: 'ci',
-      status: 'completed',
-      conclusion: 'success',
+      status: 'success',
+      resultDescription: 'success',
       url: 'https://github.com/octo-demo/hello-world/actions/runs/1',
       finishedAt: '2026-09-25T08:45:00.000Z',
     },
@@ -162,7 +158,7 @@ export class FakeGitHub implements GitHubPort {
     return this.repo(fullName).issuesAndPullRequests;
   }
 
-  async getLatestBuild(_accessToken: string, fullName: string): Promise<BuildRun | null> {
+  async getLatestBuild(_accessToken: string, fullName: string): Promise<BuildInfo | null> {
     this.guard(fullName, 'getLatestBuild');
     return this.repo(fullName).build;
   }

@@ -1,14 +1,18 @@
-import { app, BrowserWindow, dialog, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { openDatabase } from './core/db/database';
-import { createSafeStorageCipherBox } from './core/cipher/cipher-box';
-import { createFileLogger } from './core/logging/logger';
-import { systemClock } from './core/clock';
-import { createHttpGitHub } from './core/github/http-github';
+import { openDatabase } from './core/infra/database';
+import { createSafeStorageCipherBox } from './core/infra/cipher';
+import { createFileLogger } from './core/infra/logger';
+import { systemClock } from './core/infra/clock';
+import { createHttpGitHub } from './core/adapters/github/http-github';
+import { openGitHubExternal } from './core/adapters/shell-links';
+import { applyThemeSource } from './core/adapters/theme';
+import { createFetching } from './features/fetching/implementation';
+import { createSettings } from './features/settings/implementation';
+import { createWatchlist } from './features/watchlist/implementation';
 import { createFacade } from './facade/facade';
 import { registerIpc } from './ipc';
-import { applyThemeSource } from './theme';
 
 // productName changed for display, but existing installations store the database,
 // settings and safeStorage ciphertext under the former Electron userData directory.
@@ -97,14 +101,18 @@ if (userDataPathError !== null) {
       const logger = createFileLogger(path.join(userData, 'logs'));
       logger.info('主进程启动');
       const db = openDatabase(path.join(userData, 'octo.db'));
+      const cipher = createSafeStorageCipherBox(safeStorage);
+      const github = createHttpGitHub();
       const facade = createFacade({
-        db,
-        github: createHttpGitHub(),
-        cipher: createSafeStorageCipherBox(safeStorage),
-        clock: systemClock,
+        settings: createSettings({ db, cipher, logger }),
+        watchlist: createWatchlist({ db, clock: systemClock, logger }),
+        fetching: createFetching({ github }),
         logger,
       });
-      registerIpc(facade);
+      registerIpc(facade, {
+        openGitHubExternal: (target) => openGitHubExternal(target, (url) => shell.openExternal(url)),
+        applyTheme: applyThemeSource,
+      });
       // 建窗口之前先落地主题偏好：首屏就按用户选的主题绘制，不闪一下再切
       applyThemeSource((await facade.getSettings()).preferences);
       createWindow();

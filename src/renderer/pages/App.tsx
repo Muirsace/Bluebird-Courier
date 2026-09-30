@@ -1,17 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Glance, AccessTokenState } from '../shared/types';
-import lightBrandMark from './assets/bluebird-mark-light.svg';
-import darkBrandMark from './assets/bluebird-mark-dark.svg';
-import { getApi } from './lib/api';
-import { CompactRepositoryContext } from './components/CompactRepositoryContext';
-import { ErrorBar } from './components/ErrorBar';
-import { PageTransition } from './components/PageTransition';
-import type { PageMotion } from './components/PageTransition';
-import { Spinner } from './components/Spinner';
-import { DetailPage } from './pages/DetailPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { WatchlistPage } from './pages/WatchlistPage';
+import type { Glance, AccessTokenState } from '../../shared/types';
+import lightBrandMark from '../assets/bluebird-mark-light.svg';
+import darkBrandMark from '../assets/bluebird-mark-dark.svg';
+import { getApi } from '../lib/api';
+import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
+import { ErrorBar } from '../components/ErrorBar';
+import { PageTransition } from '../components/PageTransition';
+import type { PageMotion } from '../components/PageTransition';
+import { Spinner } from '../components/Spinner';
+import { DetailPage } from './DetailPage';
+import { SettingsPage } from './SettingsPage';
+import { WatchlistPage } from './WatchlistPage';
 
 /** 顶级页面只有两个：监控清单（含仓库详情这一层）与设置。 */
 type View = 'watchlist' | 'detail' | 'settings';

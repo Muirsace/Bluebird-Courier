@@ -1,4 +1,4 @@
-import type { OpenExternalResult } from '../shared/types';
+import type { OpenExternalResult } from '../../../domain/types';
 
 /**
  * 在系统默认浏览器里打开 GitHub 页面。主进程是最终信任边界：

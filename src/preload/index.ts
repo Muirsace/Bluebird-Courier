@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { OctoBridge } from '../shared/types';
+import type { BluebirdCourierBridge } from '../shared/types';
 import type { IpcChannelMap } from '../shared/ipc';
 
 /**
@@ -19,6 +19,7 @@ const CHANNELS: IpcChannelMap = {
   saveAccessToken: 'octo:saveAccessToken',
   getSettings: 'octo:getSettings',
   updateSettings: 'octo:updateSettings',
+  inspectRepositoryInput: 'octo:inspectRepositoryInput',
   listRepositories: 'octo:listRepositories',
   addRepository: 'octo:addRepository',
   removeRepository: 'octo:removeRepository',
@@ -27,18 +28,19 @@ const CHANNELS: IpcChannelMap = {
   openGitHubExternal: 'octo:openGitHubExternal',
 };
 
-const bridge: OctoBridge = {
+const bridge = {
   accessTokenState: () => ipcRenderer.invoke(CHANNELS.accessTokenState),
   validateAccessToken: (accessToken) => ipcRenderer.invoke(CHANNELS.validateAccessToken, accessToken),
   saveAccessToken: (accessToken) => ipcRenderer.invoke(CHANNELS.saveAccessToken, accessToken),
   getSettings: () => ipcRenderer.invoke(CHANNELS.getSettings),
   updateSettings: (patch) => ipcRenderer.invoke(CHANNELS.updateSettings, patch),
+  inspectRepositoryInput: (input) => ipcRenderer.invoke(CHANNELS.inspectRepositoryInput, input),
   listRepositories: () => ipcRenderer.invoke(CHANNELS.listRepositories),
   addRepository: (fullName) => ipcRenderer.invoke(CHANNELS.addRepository, fullName),
   removeRepository: (repositoryId) => ipcRenderer.invoke(CHANNELS.removeRepository, repositoryId),
   refreshGlance: () => ipcRenderer.invoke(CHANNELS.refreshGlance),
   fetchDetail: (repositoryId) => ipcRenderer.invoke(CHANNELS.fetchDetail, repositoryId),
   openGitHubExternal: (target) => ipcRenderer.invoke(CHANNELS.openGitHubExternal, target),
-};
+} satisfies BluebirdCourierBridge;
 
-contextBridge.exposeInMainWorld('octo', bridge);
+contextBridge.exposeInMainWorld('bluebirdCourier', bridge);

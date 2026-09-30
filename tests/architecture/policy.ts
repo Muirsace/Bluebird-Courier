@@ -7,10 +7,16 @@ import { classifyModule } from './analyzer/classifier';
  * The source document remains authoritative; these sets only record the
  * explicitly maintained technology exceptions requested by that document.
  */
-export const coreInfraTechnicalDependencies = new Set<string>();
-export const coreAdapterTechnicalDependencies = new Set<string>();
-export const mainIndexTechnicalDependencies = new Set<string>();
-export const rendererPresentationLibraries = new Set<string>();
+export const coreInfraTechnicalDependencies = new Set<string>(['better-sqlite3', 'node:fs', 'node:path']);
+export const coreAdapterTechnicalDependencies = new Set<string>(['electron']);
+export const mainIndexTechnicalDependencies = new Set<string>(['electron', 'node:fs', 'node:path']);
+export const rendererPresentationLibraries = new Set<string>([
+  'react',
+  'react-dom/client',
+  '@tanstack/react-query',
+  'chart.js',
+  'react-chartjs-2',
+]);
 
 export interface PolicyRule {
   id: string;

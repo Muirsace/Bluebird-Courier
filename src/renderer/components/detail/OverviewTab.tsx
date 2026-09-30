@@ -49,6 +49,7 @@ function RecentList({
               kind={kind}
               owner={owner}
               name={name}
+              showBody={false}
             />
           ))}
         </ul>

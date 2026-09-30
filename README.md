@@ -103,7 +103,7 @@ npm run dist
 | 概览 | 构建状态（高权重）、最近 5 条发版、最近 5 条提交、Issue / PR 摘要（都为空时只给一行紧凑提示）、趋势摘要（紧凑 sparkline） |
 | 🏷 发版 | 完整发版列表：标签（可点开 GitHub 发版页）→ 类型徽章 → 发布日期，标题只在它不等于标签时另起一行 |
 | 📝 提交 | 完整提交列表：消息在前（超长一行截断，悬停看全文），作者 · 相对时间 · SHA 次之，SHA 等宽弱色且可点开 |
-| 💬 Issue & PR | 顶部计数摘要 + 分为「议题」「合并请求」两个子区；每行以文字徽章 `Issue` / `PR` 标明类型，状态（开启 / 已关闭）同样是文字，`#编号` 可点开对应页面 |
+| 💬 Issue & PR | 顶部计数摘要 + 分为「议题」「合并请求」两个子区；每行以文字徽章 `Issue` / `PR` 标明类型，状态（开启 / 已关闭）同样是文字，`#编号` 可点开对应页面；有正文时在元信息下方显示正文摘要 |
 | 🏗 构建 | 最近一次构建：状态徽章（构建通过 / 构建失败 / 构建中 / 无结论 / 无构建）、工作流名、完成时间、原始结论，有 Actions 地址时给「在 GitHub 查看 ↗」 |
 | 📈 趋势 | Stars 与 Forks 两张**各自独立 Y 轴**的图 + 时间范围 7D / 30D / 90D |
 
@@ -116,7 +116,7 @@ npm run dist
 - **只标 alpha / beta / rc**：tag 里明确写着 `rc` / `rc1` / `beta` / `beta2` / `alpha` 这类词时，才显示 `RC`（蓝）/ `Beta`、`Alpha`（黄）徽章。
 - **不标 Stable**：本应用只保存 tag、标题、发布日期，没有 GitHub 的 prerelease / draft 字段。普通版本号不代表稳定，nightly / canary / snapshot / dev 更不能当成正式版——所以**一律不显示** Stable，宁可不标也不标错。
 - **提交**：消息是第一视觉层，超长消息一行截断（悬停显示完整内容），作者与相对时间次之，7 位 SHA 等宽弱色放行末（点它打开 GitHub 上的该次提交）。
-- **Issue / PR**：类型（Issue / PR）与状态（开启 / 已关闭）都用文字表达，不靠颜色区分；`#编号` 是外链入口。
+- **Issue / PR**：类型（Issue / PR）与状态（开启 / 已关闭）都用文字表达，不靠颜色区分；`#编号` 是外链入口；正文保留换行显示，过长内容截断并可悬停查看全文。
 - **日期表达只有两种**：会变动的时间（最近活动、提交时间、构建完成时间）用相对时间（`2 天前`）；固定发生过一次的时间（发版日期）用绝对短日期（`2026-09-24`）。趋势横轴用 `MM-DD`。同一个列表里不混用。
 
 ## 📈 历史快照与趋势
@@ -156,7 +156,7 @@ npm run dist
 - **owner / name 逐段校验字符集**（`[A-Za-z0-9._-]`，且不许是 `.` / `..`），所以拼不出 `../` 之类的路径逃逸；SHA 只认十六进制，编号只认正整数。
 - **非法目标连 `shell` 都不碰**：主进程直接返回 `invalid_target`。打开失败返回 `open_failed`，界面**就地报错**（清单菜单保持展开、详情页在按钮旁给提示），不假装成功。
 - **外链不产生任何抓取**：点任何一个入口都不会增加 GitHub 请求。
-- **没有任何额外权限**：没有 `webview`、没有 `window.open` 转发、没有外部协议注册；`openExternal` 只在 `src/main/shell-links.ts` 这一处被调用。
+- **没有任何额外权限**：没有 `webview`、没有 `window.open` 转发、没有外部协议注册；`openExternal` 只在 `src/main/core/adapters/shell-links.ts` 这一处被调用。
 
 # 💥 出错时会怎样
 
@@ -209,21 +209,21 @@ npm run dist
 
 ```
 渲染进程 (React)
-   │  window.octo.*  ← 11 个白名单 IPC 通道 (octo:xxx)：10 个用例门面 + 1 个受控外链
+   │  window.bluebirdCourier.*  ← 12 个白名单 IPC 通道 (octo:xxx)：11 个用例门面 + 1 个受控外链
 preload (contextBridge)
    │
 facade  ← 用例边界，渲染层唯一入口；错误在此归一
    │
 features  ← 用例片段 + 全部 SQL：watchlist / fetching / snapshots / settings / repo-input
    │
-core      ← 基础设施：db / github(REST 适配器) / cipher / clock / logger
+core      ← infra 基础设施 + adapters 平台适配器
 ```
 
 要点：
 
 - **依赖方向单向**：`core` 不依赖 `features`，`features` 之间不互相引用，`facade` 是唯一用例边界（测试也只测这个边界）。
-- **契约在 `src/shared/`**：`types.ts` 定义领域类型与 `OctoFacade`，`ipc.ts` 定义通道常量；preload 内联通道字面量并用字面量类型锁定，与主进程漂移即编译报错。
-- **门面之外只有一条受控旁路**：外链不是用例（不碰数据库、不碰 GitHub），因此不进 `OctoFacade`——它在 `src/main/shell-links.ts` 单独实现，`OctoBridge = OctoFacade & ExternalLinkBridge`，preload 也只多暴露这一个方法。
+- **契约在 `src/shared/`**：`types.ts` 定义跨进程契约与 `BluebirdCourierFacade`，`ipc.ts` 定义通道常量；preload 内联通道字面量并用字面量类型锁定，与主进程漂移即编译报错。
+- **门面之外只有一条受控旁路**：外链不是用例（不碰数据库、不碰 GitHub），因此不进 `BluebirdCourierFacade`——它在 `src/main/core/adapters/shell-links.ts` 单独实现，`BluebirdCourierBridge = BluebirdCourierFacade & ExternalLinkBridge`，preload 也只多暴露这一个方法。
 - **全依赖注入**：`createFacade({ db, github, cipher, clock, logger })`——GitHub 适配器、加密盒、时钟、日志都可替换，这也是测试得以完全离线的原因。
 - **无推送**：全部为 `ipcMain.handle` 请求/响应，没有 `webContents.send` 主动推送。主题因此**不新增通道**：主进程把偏好交给 Electron（`nativeTheme.themeSource`），渲染层从已有 `getSettings` 读偏好、用 `prefers-color-scheme` 感知系统变化。
 - **时间统一 UTC ISO8601 存储**，展示层转相对时间；`snapshot.day` 用本地日期做去重键。
@@ -298,20 +298,24 @@ icacls node_modules\electron\dist /setintegritylevel "(OI)(CI)Medium" /T /C
 
 ```
 src/
+├─ domain/                  领域类型、端口与纯规则
+│  ├─ types.ts
+│  ├─ ports.ts
+│  └─ rules/
 ├─ main/
-│  ├─ index.ts            组合根：logger → db → facade → ipc → theme → window
-│  ├─ ipc.ts              11 个白名单通道注册（偏好落库后同步 nativeTheme）
-│  ├─ theme.ts            主题偏好 → nativeTheme.themeSource
-│  ├─ shell-links.ts      GitHub 外链：目标 → URL 构造 + 校验 + shell.openExternal
-│  ├─ facade/             用例门面 + 错误归一
-│  ├─ features/           watchlist / fetching / snapshots / settings / repo-input
-│  └─ core/               db / github(port + http 适配器) / cipher / clock / logging
-├─ preload/index.ts       contextBridge 暴露 window.octo
+│  ├─ index.ts            唯一组合根：infra → adapters → features → facade → ipc → window
+│  ├─ ipc.ts              白名单通道注册（偏好落库后同步 nativeTheme）
+│  ├─ facade/             只编排 feature contract + 错误归一
+│  ├─ features/           每个 feature 分 contract / implementation
+│  └─ core/
+│     ├─ infra/           database / cipher / clock / logger
+│     └─ adapters/        GitHub / 外链 / theme 平台适配
+├─ preload/index.ts       contextBridge 暴露 window.bluebirdCourier
 ├─ renderer/              React UI：App + pages/ + components/ + lib/
 │  ├─ components/         ExternalLinkButton（唯一的外链控件）
 │  └─ lib/                api / errors / time（时间展示）/ format（千分位）/ trend（趋势计算）
 │                         / release（tag 分类）/ external-link / chart-theme / theme
-└─ shared/                跨进程契约：types.ts + ipc.ts + theme.ts（偏好取值与 effective 主题判定）
+└─ shared/                跨进程契约：types.ts + ipc.ts
 
 tests/                    Vitest 测试（facade/ 门面集成、db/、main/ 外链守卫、preload/、renderer/ DOM 交互、helpers/、manual-acceptance/）
 docs/adr/                 架构决策记录
@@ -327,12 +331,12 @@ tools/compat/             沙箱兼容垫片
 npm test   # = build:main + vitest run
 ```
 
-**策略：以门面集成测试为主，另有两个适配器的窄缝直测**（`core/db` 的建表与迁移、`core/github/http-github` 的请求层）、preload 构建产物，以及渲染层的 DOM 交互测试。门面用例只断言返回值与数据库落档，不测内部调用顺序、私有状态与 UI 结构。
+**策略：以门面集成测试为主，另有两个适配器的窄缝直测**（`core/infra/database` 的建表与迁移、`core/adapters/github/http-github` 的请求层）、preload 构建产物，以及渲染层的 DOM 交互测试。门面用例只断言返回值与数据库落档，不测内部调用顺序、私有状态与 UI 结构。
 
 | 组件 | 真/假 |
 |---|---|
 | SQLite | ✅ **真**（`os.tmpdir()` 下的临时文件库，顺带验证建表与迁移） |
-| 用例门面 `OctoFacade` | ✅ **真**（被测对象） |
+| 用例门面 `BluebirdCourierFacade` | ✅ **真**（跨进程契约） |
 | GitHub 网络层 | 🎭 假（录制 fixtures，含限流 / 401 / 404 / 网络 / 未知错误） |
 | 加密盒、时钟 | 🎭 假（可逆 base64；时钟默认本地正午，保证跨时区稳定）。令牌保存用例另注入**真实加密盒**，覆盖系统安全存储不可用 |
 

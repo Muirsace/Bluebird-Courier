@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
 
+export type LocalDatabase = Database.Database;
+
 /**
  * 本地数据库（SQLite 真文件）。表结构与语义对齐 v1 spec 的 Implementation Decisions：
  *
@@ -88,7 +90,7 @@ function migrate(db: Database.Database): void {
   }
 }
 
-export function openDatabase(pathname: string): Database.Database {
+export function openDatabase(pathname: string): LocalDatabase {
   const db = new Database(pathname);
   db.pragma('foreign_keys = ON');
   // 写锁冲突时等一会儿再放弃，而不是立刻抛 SQLITE_BUSY；WAL 让读不阻塞写

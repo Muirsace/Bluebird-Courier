@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildGitHubUrl, isAllowedExternalUrl, openGitHubExternal } from '../../src/main/shell-links';
+import { buildGitHubUrl, isAllowedExternalUrl, openGitHubExternal } from '../../src/main/core/adapters/shell-links';
 
 const buildTarget = (url: string, owner = 'octo', name = 'Hello-World') => ({ kind: 'build', owner, name, url });
 
