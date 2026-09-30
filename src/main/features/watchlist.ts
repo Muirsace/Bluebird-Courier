@@ -41,7 +41,7 @@ export function rowToGlance(row: RepositoryRow): Glance {
 
 export function listRepositoryRows(db: Database.Database): RepositoryRow[] {
   return db
-    .prepare('SELECT * FROM repository ORDER BY added_at ASC, id ASC')
+    .prepare('SELECT * FROM repository ORDER BY added_at DESC, id DESC')
     .all() as RepositoryRow[];
 }
 

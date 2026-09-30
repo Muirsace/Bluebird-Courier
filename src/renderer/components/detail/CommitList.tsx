@@ -35,6 +35,7 @@ export function CommitList({ commits, owner, name }: CommitListProps) {
             <ExternalLinkButton
               target={{ kind: 'commit', owner, name, sha: commit.sha }}
               label={`在 GitHub 打开提交 ${commit.sha.slice(0, 7)}`}
+              linkStyle
               className="font-mono text-muted transition-colors duration-150 ease-out hover:text-secondary hover:underline active:text-primary"
             >
               {commit.sha.slice(0, 7)}

@@ -1,5 +1,5 @@
 appId: com.octo.monitor
-productName: OCTO 仓库监控器
+productName: 青鸟信使
 directories:
   output: release
 # better-sqlite3 自带 win32-x64 预编译产物（N-API），无需 node-gyp 源码重建；
@@ -9,10 +9,17 @@ files:
   - dist/**
   - package.json
 win:
+  icon: resources/icons/bluebird-app.ico
+  # Keep the installed executable path stable while the shortcut and installer use the new product name.
+  executableName: OCTO 仓库监控器
   target:
     - target: nsis
       arch:
         - x64
+extraResources:
+  - from: resources/icons/bluebird-app.png
+    to: icons/bluebird-app.png
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  shortcutName: 青鸟信使

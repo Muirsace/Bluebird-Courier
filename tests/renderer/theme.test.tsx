@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { act } from 'react';
 import { resolveChartPalette } from '../../src/renderer/lib/chart-theme';
 import { useEffectiveTheme } from '../../src/renderer/lib/theme';
 import { ThemeSelector } from '../../src/renderer/components/ThemeSelector';
+import type { SettingsView } from '../../src/shared/types';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
 import {
   appliedTheme,
@@ -10,6 +12,7 @@ import {
   click,
   createStub,
   makeGlance,
+  menu,
   navButton,
   pressEscape,
   renderApp,
@@ -21,6 +24,7 @@ import {
   segmentedButton,
   setSystemTheme,
   settle,
+  settleOverlayClose,
 } from './helpers';
 
 const REPO = 'octocat/Hello-World';
@@ -95,6 +99,77 @@ describe('主题 · preference 与 effective', () => {
     expect(segmentedButton('跟随系统')?.getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('重复选择当前主题完全 no-op，且分段控件只渲染一个共享滑块', async () => {
+    await mount({ preferences: { theme: 'light' } });
+    await openSettings();
+
+    const before = { ...handle.calls };
+    const track = document.querySelector('.theme-segmented-track');
+    const slider = document.querySelector('.theme-segment-slider');
+    expect(document.querySelectorAll('.theme-segment-slider')).toHaveLength(1);
+    expect(track?.firstElementChild).toBe(slider);
+    expect(slider?.getAttribute('aria-hidden')).toBe('true');
+    const segments = [...(track?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+    expect(segments).toHaveLength(3);
+    expect(segments.every((segment) => segment.dataset.buttonMotion === 'compact')).toBe(true);
+    expect(segments.every((segment) => !/(^|\s)(bg-|hover:bg-|active:bg-)/.test(segment.className))).toBe(
+      true,
+    );
+    expect(document.querySelector('.theme-segmented-control')?.getAttribute('data-selected-theme')).toBe(
+      'light',
+    );
+
+    await click(segmentedButton('浅色'));
+    await settle();
+
+    expect(handle.calls.updateSettings).toBe(before.updateSettings);
+    expect(appliedTheme()).toBe('light');
+    expect(segmentedButton('浅色')?.getAttribute('aria-pressed')).toBe('true');
+    expect(bodyText()).not.toContain('保存中');
+  });
+
+  it('主题立即切换但不显示保存中，快速切换时按顺序持久化且忽略过期响应', async () => {
+    await mount({ preferences: { theme: 'light' } });
+    await openSettings();
+
+    const resolvers: Array<(view: SettingsView) => void> = [];
+    handle.api.updateSettings = (patch) => {
+      handle.calls.updateSettings += 1;
+      handle.settingsPatches.push({ ...patch });
+      return new Promise<SettingsView>((resolve) => resolvers.push(resolve));
+    };
+
+    await click(segmentedButton('深色'));
+    expect(appliedTheme()).toBe('dark');
+    expect(segmentedButton('深色')?.getAttribute('aria-pressed')).toBe('true');
+    expect(bodyText()).not.toContain('保存中');
+
+    await click(segmentedButton('浅色'));
+    expect(appliedTheme()).toBe('light');
+    expect(segmentedButton('浅色')?.getAttribute('aria-pressed')).toBe('true');
+    expect(handle.calls.updateSettings).toBe(1);
+
+    const resolveDark = resolvers[0];
+    if (!resolveDark) throw new Error('深色偏好保存尚未开始');
+    await act(async () => {
+      resolveDark({ preferences: { theme: 'dark' }, accessTokenConfigured: true });
+    });
+    await settle();
+
+    expect(appliedTheme()).toBe('light');
+    expect(handle.calls.updateSettings).toBe(2);
+    expect(handle.settingsPatches).toEqual([{ theme: 'dark' }, { theme: 'light' }]);
+
+    const resolveLight = resolvers[1];
+    if (!resolveLight) throw new Error('浅色偏好保存尚未开始');
+    await act(async () => {
+      resolveLight({ preferences: { theme: 'light' }, accessTokenConfigured: true });
+    });
+    await settle();
+    expect(appliedTheme()).toBe('light');
+    expect(bodyText()).not.toContain('保存中');
+  });
+
   it('强制深色后系统切浅色也不跟随', async () => {
     await mount();
     await openSettings();
@@ -126,10 +201,15 @@ describe('主题 · preference 与 effective', () => {
     await click(segmentedButton('跟随系统'));
     await settle();
     expect(handle.preferences.theme).toBe('system');
+    expect(segmentedButton('跟随系统')?.getAttribute('aria-pressed')).toBe('true');
 
     setSystemTheme('light');
     await settle();
     expect(appliedTheme()).toBe('light');
+    setSystemTheme('dark');
+    await settle();
+    expect(appliedTheme()).toBe('dark');
+    expect(segmentedButton('跟随系统')?.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('库里是非法主题值时按 system 处理', async () => {
@@ -233,10 +313,10 @@ describe('双主题 · 关键界面可用性', () => {
     await settle();
     await click(repoActionsButton(REPO));
     await settle();
-    expect(document.querySelector('[role="menu"]')).not.toBeNull();
+    expect(menu()).not.toBeNull();
     await pressEscape();
-    await settle();
-    expect(document.querySelector('[role="menu"]')).toBeNull();
+    await settleOverlayClose();
+    expect(menu()).toBeNull();
 
     // 迁移完成的护栏：业务组件不再直接写 slate-* / emerald-*
     expect(document.body.innerHTML).not.toMatch(/slate-|emerald-/);

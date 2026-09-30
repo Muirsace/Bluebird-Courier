@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, safeStorage } from 'electron';
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { openDatabase } from './core/db/database';
 import { createSafeStorageCipherBox } from './core/cipher/cipher-box';
@@ -8,6 +9,27 @@ import { createHttpGitHub } from './core/github/http-github';
 import { createFacade } from './facade/facade';
 import { registerIpc } from './ipc';
 import { applyThemeSource } from './theme';
+
+// productName changed for display, but existing installations store the database,
+// settings and safeStorage ciphertext under the former Electron userData directory.
+const LEGACY_USER_DATA_DIRECTORY = 'OCTO 仓库监控器';
+let legacyUserDataPath: string | null = null;
+let userDataPathError: unknown = null;
+try {
+  legacyUserDataPath = path.join(app.getPath('appData'), LEGACY_USER_DATA_DIRECTORY);
+  mkdirSync(legacyUserDataPath, { recursive: true });
+  app.setPath('userData', legacyUserDataPath);
+} catch (error) {
+  // Do not continue with Electron's new productName-based directory if compatibility setup fails.
+  userDataPathError = error;
+}
+
+function appIconPath(): string {
+  const iconDirectory = app.isPackaged
+    ? path.join(process.resourcesPath, 'icons')
+    : path.join(app.getAppPath(), 'resources', 'icons');
+  return path.join(iconDirectory, 'bluebird-app.png');
+}
 
 /**
  * Electron 主进程：承载服务层（core + features），经白名单 IPC 暴露用例门面。
@@ -20,7 +42,8 @@ function createWindow(): BrowserWindow {
     minWidth: 480,
     minHeight: 640,
     autoHideMenuBar: true,
-    title: 'OCTO 仓库监控器',
+    title: '青鸟信使',
+    icon: appIconPath(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -45,16 +68,19 @@ function reportStartupFailure(error: unknown): void {
   const detail = error instanceof Error ? error.message : String(error);
   let logHint = '';
   try {
-    logHint = `\n\n日志目录：${path.join(app.getPath('userData'), 'logs')}`;
+    const dataDirectory = legacyUserDataPath ?? app.getPath('userData');
+    logHint = `\n\n日志目录：${path.join(dataDirectory, 'logs')}`;
   } catch {
     // userData 路径取不到时省略提示，不能因此再抛错
   }
-  dialog.showErrorBox('OCTO 仓库监控器启动失败', `应用无法启动：${detail}${logHint}`);
+  dialog.showErrorBox('青鸟信使启动失败', `应用无法启动：${detail}${logHint}`);
   app.exit(1);
 }
 
 // 单实例：两个实例写同一个 SQLite 文件会互相撞写锁（SQLITE_BUSY），第二个实例直接让位
-if (!app.requestSingleInstanceLock()) {
+if (userDataPathError !== null) {
+  void app.whenReady().then(() => reportStartupFailure(userDataPathError));
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {

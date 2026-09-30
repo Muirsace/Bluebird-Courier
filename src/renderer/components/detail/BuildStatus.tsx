@@ -45,7 +45,17 @@ const BUILD_EDGE: Record<BuildStatus, string> = {
 };
 
 /** 三层构建信息：状态、workflow、时间与结论。仅显示已有数据，不推断 run title。 */
-export function BuildStatusPanel({ build, showLink = false }: { build: BuildInfo; showLink?: boolean }) {
+export function BuildStatusPanel({
+  build,
+  owner,
+  name,
+  showLink = false,
+}: {
+  build: BuildInfo;
+  owner: string;
+  name: string;
+  showLink?: boolean;
+}) {
   return (
     <div className={`min-w-0 rounded-r-md border-l-2 bg-surface-raised px-3 py-3 transition-colors duration-150 ease-out ${BUILD_EDGE[build.status]}`}>
       <BuildStatusBadge status={build.status} />
@@ -66,7 +76,7 @@ export function BuildStatusPanel({ build, showLink = false }: { build: BuildInfo
 
         {showLink && build.url ? (
           <ExternalLinkButton
-            target={{ kind: 'build', url: build.url }}
+            target={{ kind: 'build', owner, name, url: build.url }}
             label="在 GitHub 打开这次构建"
             className="inline-flex h-9 shrink-0 items-center rounded-md border border-default px-3 text-sm text-primary transition-colors duration-150 ease-out hover:bg-surface-hover active:bg-surface-active"
           >

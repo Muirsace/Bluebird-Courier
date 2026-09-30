@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { vi } from 'vitest';
 import type { AddRepositoryResult, AccessTokenResult, Detail, Glance, GitHubExternalTarget, OctoBridge, OpenExternalResult, Snapshot } from '../../src/shared/types';
 import { App } from '../../src/renderer/App';
 import { ThemeProvider } from '../../src/renderer/lib/theme';
@@ -14,14 +15,21 @@ import { ThemeProvider } from '../../src/renderer/lib/theme';
 // ---------- 假系统主题：happy-dom 的 matchMedia 恒为浅色，这里换成可控的 ----------
 
 let systemTheme: 'light' | 'dark' = 'light';
+let reducedMotion = false;
 const mediaListeners = new Set<() => void>();
 
 function installMatchMedia(): void {
+  // 按查询串分别回答：主题读 prefers-color-scheme，动画降级读 prefers-reduced-motion。
   const matchMedia = (query: string): MediaQueryList => {
+    const matchesNow = (): boolean => {
+      if (query.includes('prefers-reduced-motion')) return reducedMotion;
+      if (query.includes('prefers-color-scheme')) return systemTheme === 'dark';
+      return false;
+    };
     const list = {
       media: query,
       get matches() {
-        return systemTheme === 'dark';
+        return matchesNow();
       },
       onchange: null,
       addEventListener: (_type: string, listener: () => void) => {
@@ -54,6 +62,15 @@ export function resetSystemTheme(): void {
   mediaListeners.clear();
 }
 
+/** 模拟系统"减少动态效果"开关（下一次挂载生效）。 */
+export function setReducedMotion(reduce: boolean): void {
+  reducedMotion = reduce;
+}
+
+export function resetReducedMotion(): void {
+  reducedMotion = false;
+}
+
 // ---------- 桩门面 ----------
 
 export interface StubCalls {
@@ -79,6 +96,8 @@ export interface StubHandle {
   settingsPatches: Array<Record<string, string>>;
   /** 收到过的外链目标，按顺序（断言"点了哪条外链"）。 */
   externalTargets: GitHubExternalTarget[];
+  /** 收到过的新增仓库原始输入。 */
+  addInputs: string[];
   /** 下次 listRepositories 返回的清单（删除成功后用它模拟清单缩小）。 */
   setRepositories(repositories: Glance[]): void;
   /** 让下一次 listRepositories 挂起，返回放行函数。 */
@@ -87,8 +106,12 @@ export interface StubHandle {
   holdNextRefresh(): () => void;
   /** 让下一次 removeRepository 挂起，返回放行函数。 */
   holdNextRemove(): () => void;
+  /** 让下一次 addRepository 挂起，返回放行函数。 */
+  holdNextAdd(): () => void;
   /** 让下一次 openGitHubExternal 挂起，返回放行函数。 */
   holdNextOpen(): () => void;
+  /** 让下一次 fetchDetail 挂起，返回放行函数。 */
+  holdNextDetail(): () => void;
 }
 
 export interface StubOptions {
@@ -110,6 +133,8 @@ export interface StubOptions {
   detail?: Partial<Detail>;
   /** openGitHubExternal 的返回（默认成功）。 */
   openExternalResult?: OpenExternalResult;
+  /** fetchDetail 返回失败 envelope（detail 为 null + error）：首次抓取失败的语义。 */
+  detailFails?: boolean;
 }
 
 export function makeGlance(id: number, fullName: string): Glance {
@@ -167,7 +192,9 @@ export function createStub(options: StubOptions = {}): StubHandle {
   let listGate: Promise<void> | null = null;
   let gate: Promise<void> | null = null;
   let removeGate: Promise<void> | null = null;
+  let addGate: Promise<void> | null = null;
   let openGate: Promise<void> | null = null;
+  let detailGate: Promise<void> | null = null;
   const calls: StubCalls = {
     accessTokenState: 0,
     saveAccessToken: 0,
@@ -182,6 +209,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
     openGitHubExternal: 0,
   };
   const externalTargets: GitHubExternalTarget[] = [];
+  const addInputs: string[] = [];
 
   const api: OctoBridge = {
     async accessTokenState() {
@@ -215,14 +243,15 @@ export function createStub(options: StubOptions = {}): StubHandle {
       }
       return repositories;
     },
-    async addRepository() {
+    async addRepository(fullName) {
       calls.addRepository += 1;
-      const result: AddRepositoryResult = options.addResult ?? {
-        ok: true,
-        repository: repositories[0] ?? null,
-        error: null,
-      };
-      return result;
+      addInputs.push(fullName);
+      if (addGate) await addGate;
+      if (options.addResult) return options.addResult;
+      const nextId = Math.max(0, ...repositories.map((item) => item.id)) + 1;
+      const repository = makeGlance(nextId, fullName);
+      repositories = [repository, ...repositories];
+      return { ok: true, repository, error: null };
     },
     async removeRepository() {
       calls.removeRepository += 1;
@@ -237,6 +266,10 @@ export function createStub(options: StubOptions = {}): StubHandle {
     },
     async fetchDetail(repositoryId) {
       calls.fetchDetail += 1;
+      if (detailGate) await detailGate;
+      if (options.detailFails) {
+        return { detail: null, error: { kind: 'unknown', message: '抓取全量信息失败，请稍后重试' } };
+      }
       const repository = repositories.find((item) => item.id === repositoryId);
       if (!repository) return { detail: null, error: null };
       return { detail: makeDetail(repository, options.detail), error: null };
@@ -257,6 +290,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
     },
     settingsPatches,
     externalTargets,
+    addInputs,
     setRepositories(next) {
       repositories = next;
     },
@@ -290,11 +324,31 @@ export function createStub(options: StubOptions = {}): StubHandle {
       });
       return release;
     },
+    holdNextAdd() {
+      let release = (): void => {};
+      addGate = new Promise<void>((resolve) => {
+        release = () => {
+          addGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
     holdNextOpen() {
       let release = (): void => {};
       openGate = new Promise<void>((resolve) => {
         release = () => {
           openGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    holdNextDetail() {
+      let release = (): void => {};
+      detailGate = new Promise<void>((resolve) => {
+        release = () => {
+          detailGate = null;
           resolve();
         };
       });
@@ -344,6 +398,11 @@ export async function renderNode(stub: StubHandle, node: ReactNode): Promise<Ren
 export async function settle(rounds = 6): Promise<void> {
   for (let i = 0; i < rounds; i += 1) {
     await act(async () => {
+      // 装了假计时器时只推进"当前已排队的 0ms 任务"，不放过真实时间，动画窗口才可控
+      if (vi.isFakeTimers()) {
+        vi.advanceTimersByTime(0);
+        return;
+      }
       await new Promise<void>((resolve) => {
         setTimeout(resolve, 0);
       });
@@ -390,25 +449,94 @@ export function repoOpenButton(fullName: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`button[aria-label="查看 ${fullName} 详情"]`);
 }
 
+/** 仓库卡片的外层槽位（承载进出场状态与位置）。 */
+export function repoSlot(fullName: string): HTMLElement | null {
+  return repoOpenButton(fullName)?.closest<HTMLElement>('li') ?? null;
+}
+
+/** 卡片当前的动画阶段：idle / entering / exiting（卡片已不在 DOM 时返回 null）。 */
+export function repoMotion(fullName: string): string | null {
+  return repoSlot(fullName)?.dataset.motion ?? null;
+}
+
+/**
+ * 等卡片动画（含"animationend 没来"的兜底计时器）走完。
+ * happy-dom 不跑 CSS 动画、也不会派发 animationend，所以这里的等待就是兜底路径本身：
+ * fake timers 下推进虚拟时间，真实计时器下等真实时长。
+ */
+export async function settleMotion(ms = 500): Promise<void> {
+  await act(async () => {
+    if (vi.isFakeTimers()) {
+      vi.advanceTimersByTime(ms);
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  });
+  await settle();
+}
+
+/**
+ * 等仓库操作浮层的关闭动画播完。happy-dom 不跑 CSS 动画、也不派发 animationend，
+ * 所以这里等的就是组件里那条兜底计时器（关闭 120ms + 余量），到点后外壳才卸载。
+ */
+export async function settleOverlayClose(): Promise<void> {
+  await settleMotion(400);
+}
+
+/** 详情首次抓取的揭示容器；`data-reveal` 就是 loading / revealing / ready 三个阶段。 */
+export function detailReveal(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.detail-reveal');
+}
+
+export function revealPhase(): string | null {
+  return detailReveal()?.dataset.reveal ?? null;
+}
+
+/** Loading 卡：抓取中在文档流里（visible），数据到达后原地淡出（exiting）。 */
+export function loadingSlot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('.detail-loading-slot');
+}
+
+/** 表头四条指标里正在交叉淡化的"旧值"层（只在揭示窗口内存在）。 */
+export function factSwaps(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('.detail-fact-from')];
+}
+
 /** `···` 操作入口。 */
 export function repoActionsButton(fullName: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`button[aria-label="${fullName} 的仓库操作"]`);
 }
 
+/**
+ * 只取"当前生效"的那个节点：菜单 → 确认换内容时，旧菜单会带着 aria-hidden + inert
+ * 留在 out 层继续淡出，它不是用户此刻看到 / 能操作的菜单。
+ * 所有浮层查询都按这条过滤，断言才对应真实的界面状态。
+ */
+function liveQuery<T extends HTMLElement>(selector: string): T | null {
+  return (
+    [...document.querySelectorAll<T>(selector)].find(
+      (element) => element.closest('[aria-hidden="true"]') === null,
+    ) ?? null
+  );
+}
+
 export function menu(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[role="menu"]');
+  return liveQuery<HTMLElement>('[role="menu"]');
 }
 
 export function menuItem(text: string): HTMLButtonElement | null {
   return (
-    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes(text),
+    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (item) =>
+        item.closest('[aria-hidden="true"]') === null && (item.textContent?.includes(text) ?? false),
     ) ?? null
   );
 }
 
 export function dialog(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[role="dialog"]');
+  return liveQuery<HTMLElement>('[role="dialog"]');
 }
 
 export function buttonByText(text: string): HTMLButtonElement | null {

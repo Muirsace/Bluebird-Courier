@@ -75,6 +75,7 @@ export function TrendMetric({ summary, scope, compact = false }: TrendMetricProp
   const label = METRIC_LABELS[metric];
   const color = metric === 'stars' ? palette.star : palette.fork;
   const deltaText = formatDelta(delta);
+  const deltaTone = delta === 0 ? 'text-muted' : delta !== null && delta > 0 ? 'text-success' : 'text-danger';
   const first = points[0];
   const last = points[points.length - 1];
 
@@ -102,16 +103,15 @@ export function TrendMetric({ summary, scope, compact = false }: TrendMetricProp
       </div>
 
       {/* 图表不是唯一信息来源：变化量与记录范围都以文本给出 */}
-      <p
-        className={`mt-0.5 text-xs ${
-          deltaText === null || delta === 0
-            ? 'text-muted'
-            : delta !== null && delta > 0
-              ? 'text-success'
-              : 'text-danger'
-        }`}
-      >
-        {deltaText === null ? describeInsufficient(points) : `${deltaText} · ${describeSpan(scope, spanDays)}`}
+      <p className="mt-0.5 text-xs">
+        {deltaText === null ? (
+          <span className="text-muted">{describeInsufficient(points)}</span>
+        ) : (
+          <>
+            <span className={deltaTone}>{deltaText}</span>
+            <span className="text-muted"> · {describeSpan(scope, spanDays)}</span>
+          </>
+        )}
       </p>
 
       {status === 'ready' ? (

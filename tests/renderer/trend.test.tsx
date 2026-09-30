@@ -31,6 +31,13 @@ import {
 vi.mock('react-chartjs-2', () => import('./chart-stub'));
 
 const REPO = 'octocat/Hello-World';
+const TREND_FIXTURE_TODAY = new Date('2026-09-27T00:00:00');
+
+function trendFixtureDaysAgoIso(daysAgo: number): string {
+  const date = new Date(TREND_FIXTURE_TODAY);
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString();
+}
 
 let view: RenderResult | null = null;
 
@@ -267,7 +274,7 @@ describe('趋势 · 空态与积累态', () => {
 
 describe('趋势 · 时间范围', () => {
   const TEN_DAYS = Array.from({ length: 10 }, (_, index) =>
-    makeSnapshot(daysAgoIso(9 - index), 1_000 + index, 100 + index),
+    makeSnapshot(trendFixtureDaysAgoIso(9 - index), 1_000 + index, 100 + index),
   );
 
   it('范围切换只做本地过滤，点数与变化量随之变化', async () => {
@@ -309,8 +316,8 @@ describe('趋势 · 时间范围', () => {
 
 describe('趋势 · 双主题', () => {
   const TWO_POINTS = [
-    makeSnapshot(daysAgoIso(1), 100, 10),
-    makeSnapshot(daysAgoIso(0), 120, 12),
+    makeSnapshot(trendFixtureDaysAgoIso(1), 100, 10),
+    makeSnapshot(trendFixtureDaysAgoIso(0), 120, 12),
   ];
 
   it('主题切换后两条线各自使用对应的 chart-star / chart-fork token', async () => {

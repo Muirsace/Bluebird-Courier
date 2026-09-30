@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 /**
+ * Motion Language：全项目只此一套缓动，卡片进出场与 Button 按压共用。
+ * --motion-ease-out：快速启动、末端柔和减速 → 进场 / 释放 / 回弹。
+ * --motion-ease-in：快速进入目标状态 → 按下 / 收场。
+ */
+:root {
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/**
  * 语义 Design Token。
  *
  * 颜色变量一律写成「空格分隔的 RGB 通道」，这样 Tailwind 侧可以拼成
@@ -33,13 +43,16 @@
   --color-text-secondary: 93 105 122;
   --color-text-muted: 102 114 133;
 
-  /* Accent：浅色下压深一档，保证浅底上的对比度 */
-  --color-accent: 4 120 87;
-  --color-accent-hover: 5 150 105;
-  --color-accent-soft: 236 253 245;
-  --color-accent-solid: 4 120 87;
-  --color-accent-solid-hover: 5 150 105;
+  /* Brand accent：蓝色仅用于操作、选中、链接与焦点；成功状态独立使用绿色。 */
+  --color-accent: 29 78 216;
+  --color-accent-hover: 30 64 175;
+  --color-accent-soft: 239 246 255;
+  --color-accent-border: 191 219 254;
+  --color-accent-solid: 37 99 235;
+  --color-accent-solid-hover: 29 78 216;
+  --color-accent-solid-pressed: 30 64 175;
   --color-accent-contrast: 255 255 255;
+  --color-focus-ring: 37 99 235;
 
   /* Semantic */
   --color-success: 4 120 87;
@@ -50,6 +63,7 @@
   --color-danger-soft: 254 235 235;
   --color-danger-solid: 185 28 28;
   --color-danger-solid-hover: 220 38 38;
+  --color-danger-solid-pressed: 153 27 27;
   --color-danger-contrast: 255 255 255;
   --color-info: 3 105 161;
   --color-info-soft: 232 245 254;
@@ -84,12 +98,15 @@
   --color-text-muted: 123 135 152;
 
   /* Accent */
-  --color-accent: 52 211 153;
-  --color-accent-hover: 110 231 183;
-  --color-accent-soft: 6 46 36;
-  --color-accent-solid: 4 120 87;
-  --color-accent-solid-hover: 5 150 105;
+  --color-accent: 147 197 253;
+  --color-accent-hover: 191 219 254;
+  --color-accent-soft: 23 37 65;
+  --color-accent-border: 48 70 110;
+  --color-accent-solid: 29 78 216;
+  --color-accent-solid-hover: 37 99 235;
+  --color-accent-solid-pressed: 30 64 175;
   --color-accent-contrast: 255 255 255;
+  --color-focus-ring: 96 165 250;
 
   /* Semantic */
   --color-success: 52 211 153;
@@ -100,6 +117,8 @@
   --color-danger-soft: 60 20 22;
   --color-danger-solid: 220 38 38;
   --color-danger-solid-hover: 239 68 68;
+  /* 深色下"更深"会变脏：按压取比 hover 更沉的红，权重更明确但仍读得出危险 */
+  --color-danger-solid-pressed: 185 28 28;
   --color-danger-contrast: 255 255 255;
   --color-info: 125 211 252;
   --color-info-soft: 12 40 58;
@@ -113,7 +132,201 @@
   --chart-fork: #38bdf8;
 }
 
-html,
+/* Same-size transparent brand mark; the resolved root theme selects its palette. */
+.app-brand-mark {
+  position: relative;
+  display: inline-block;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+}
+
+.app-brand-mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Token validation is a local form result; it reveals below the actions without a card-wide alert. */
+.github-token-feedback {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition:
+    grid-template-rows 130ms var(--motion-ease-in),
+    opacity 130ms var(--motion-ease-in),
+    transform 130ms var(--motion-ease-in);
+}
+
+.github-token-feedback[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-duration: 170ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.github-token-feedback-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-inline-status,
+.github-token-feedback-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.125rem 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.settings-theme-error {
+  width: fit-content;
+}
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+}
+
+.settings-page > h1 {
+  margin-bottom: 0.125rem;
+}
+
+.settings-section-heading {
+  margin-bottom: 0.625rem;
+}
+
+.settings-section-card {
+  border-color: rgb(var(--color-border-subtle));
+}
+
+.settings-section:first-of-type .settings-section-card {
+  /* Preserve the row's top breathing room and trim 5px below its description. */
+  padding-bottom: 11px;
+}
+
+.settings-token-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.settings-token-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+.settings-row-label {
+  padding-top: 0.5rem;
+}
+
+.settings-row-control {
+  min-width: 0;
+}
+
+.theme-segmented-control {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  max-width: 100%;
+  height: 2.25rem;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 0.375rem;
+  background: rgb(var(--color-surface-raised));
+  padding: 0.125rem;
+}
+
+.theme-segment-slider {
+  position: absolute;
+  z-index: 1;
+  inset-block: 2px;
+  left: 0;
+  width: var(--theme-slider-width, 0px);
+  transform: translateX(var(--theme-slider-x, 3px));
+  border: 1px solid rgb(var(--color-accent-border));
+  border-radius: 0.25rem;
+  background: rgb(var(--color-accent-soft));
+  pointer-events: none;
+}
+
+.theme-segment-slider[data-ready='true'] {
+  transition:
+    transform 180ms var(--motion-ease-out),
+    width 180ms var(--motion-ease-out);
+}
+
+.theme-segment-button {
+  position: relative;
+  z-index: 2;
+  height: 2rem;
+  flex: none;
+  white-space: nowrap;
+  border-color: transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  padding-inline: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  transition-property: color, scale;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.theme-segment-button:hover,
+.theme-segment-button:active {
+  background-color: transparent;
+}
+
+.theme-segment-button[aria-pressed='true'] {
+  color: rgb(var(--color-accent));
+  font-weight: 500;
+}
+
+.theme-segment-button:focus-visible {
+  /* Keep a clear ring inside the clipped track so it cannot be cut off. */
+  outline-offset: -3px;
+}
+
+.theme-segment-button:not(:disabled):active {
+  /* Adjacent segments stay aligned; only the label/button gets a restrained press. */
+  translate: none;
+  scale: 0.99;
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
+[data-theme='light'] .app-brand-mark-dark,
+[data-theme='dark'] .app-brand-mark-light {
+  visibility: hidden;
+}
+
+html {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
 body,
 #root {
   height: 100%;
@@ -124,12 +337,63 @@ body {
   font-family: system-ui, "Segoe UI", sans-serif;
 }
 
+/**
+ * 公共 Button 交互层。
+ *
+ * 所有真 <button> 在这里统一拿到按下 / 释放反馈，组件只负责配色
+ * （hover / active 用 semantic token），页面里不再各写 active:translate-y / active:scale。
+ *
+ * 按压用 translate / scale 两个独立属性而不是 transform：它们与组件自己的 transform
+ * （例如「加入」按钮的 scale 进 / 出场）叠加而非互相覆盖，且只影响绘制、不改布局尺寸。
+ */
+button {
+  /* 普通按钮；紧凑导航与图标按钮通过 data-button-motion 调力度 */
+  --button-press-scale: 0.985;
+  transition-property: translate, scale, background-color, border-color, color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+/* 组件里自带的 transition-colors / duration / ease 只表达配色；按下与回弹的时序一律由本层接管 */
+button.transition-colors {
+  transition-property: translate, scale, background-color, border-color, color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
 button:enabled {
   cursor: pointer;
 }
 
+/* 按下：快速进入；释放走上面那条 130ms ease-out，不 overshoot */
+button:not(:disabled):active {
+  translate: 0 1px;
+  scale: var(--button-press-scale);
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
+/* 图标按钮可以略明显；Tab / 分段控件这类紧凑导航更克制 */
+button[data-button-motion='icon'] {
+  --button-press-scale: 0.96;
+}
+
+button[data-button-motion='compact'] {
+  --button-press-scale: 0.99;
+}
+
+/* 菜单行与文字链只保留颜色反馈，不位移也不缩放 */
+button[data-button-motion='surface']:not(:disabled):active,
+button[data-button-motion='link']:not(:disabled):active {
+  translate: none;
+  scale: none;
+}
+
+/* 禁用：完全不产生按压反馈（不位移、不缩放，颜色也不会变） */
 button:disabled {
   cursor: not-allowed;
+  translate: none;
+  scale: none;
 }
 
 /* Chromium/Electron scrollbar stays visible but uses the active semantic palette. */
@@ -170,15 +434,927 @@ button:disabled {
   }
 }
 
+/**
+ * 仓库操作浮层（RepositoryActionSurface）：`···` 菜单与移除确认共用同一个外壳。
+ *
+ * 三层各管一件事，互不覆盖：
+ *   positioner —— 上下翻转、与触发器的间距、max-width / max-height（尺寸只认 CSS 变量）
+ *   surface    —— 边框 / 圆角 / 阴影 + 进场退场（只做 opacity / translate / scale）
+ *   content    —— 菜单 → 确认的交叉淡化，外壳宽高跟着内容连续变化
+ *
+ * 尺寸补间走 keyframes + CSS 变量而不是 transition：换内容时"起始尺寸"必须显式给出，
+ * 否则 height 从具体值到另一个具体值拿不到 before-change style，会直接跳变。
+ * placement 的位移只落在 positioner 上，永远不写进 surface 的 enter / close transform。
+ */
+.repository-action-positioner {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  width: var(--overlay-width);
+  height: var(--overlay-height, auto);
+  max-width: var(--overlay-max-width, calc(100vw - 24px));
+  max-height: var(--overlay-max-height, none);
+}
+
+.repository-action-positioner[data-placement='bottom'] {
+  top: 100%;
+  margin-top: 8px;
+}
+
+.repository-action-positioner[data-placement='top'] {
+  bottom: 100%;
+  margin-bottom: 8px;
+}
+
+/* 换内容：外壳从旧尺寸连续长到新尺寸，中间不跳变。 */
+.repository-action-positioner[data-swapping='true'] {
+  animation: repository-action-resize 170ms var(--motion-ease-out);
+}
+
+@keyframes repository-action-resize {
+  from {
+    width: var(--overlay-from-width);
+    height: var(--overlay-from-height);
+  }
+
+  to {
+    width: var(--overlay-to-width);
+    height: var(--overlay-to-height);
+  }
+}
+
+.repository-action-surface {
+  position: relative;
+  height: 100%;
+  animation: repository-action-enter 160ms var(--motion-ease-out) both;
+}
+
+/* 从 trigger 那一侧长出来：方向跟着 placement 走 */
+.repository-action-surface[data-placement='bottom'] {
+  --overlay-enter-shift: -4px;
+  --overlay-close-shift: -2px;
+  transform-origin: top right;
+}
+
+.repository-action-surface[data-placement='top'] {
+  --overlay-enter-shift: 4px;
+  --overlay-close-shift: 2px;
+  transform-origin: bottom right;
+}
+
+/* 只在换内容期间裁剪：平时必须可见，否则菜单项的 focus ring 会被切掉。 */
+.repository-action-surface[data-swapping='true'] {
+  overflow: hidden;
+}
+
+/* 上下都放不下时才内部滚动；此时横向也只能一起裁，避免 auto 那块溢出。 */
+.repository-action-surface[data-clamped='true'] {
+  overflow: hidden auto;
+}
+
+.repository-action-surface[data-closing='true'] {
+  animation: repository-action-close 120ms var(--motion-ease-in) forwards;
+  pointer-events: none;
+}
+
+@keyframes repository-action-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--overlay-enter-shift)) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes repository-action-close {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(var(--overlay-close-shift)) scale(0.99);
+  }
+}
+
+.repository-action-content {
+  position: relative;
+}
+
+/* 旧内容留在原地淡出：脱流、不参与布局、不吃指针，宽度仍是它自己那一档。 */
+.repository-action-content-out {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--overlay-from-width);
+  pointer-events: none;
+  animation: repository-action-content-out 170ms var(--motion-ease-out) forwards;
+}
+
+.repository-action-content-out + .repository-action-content-in {
+  animation: repository-action-content-in 170ms var(--motion-ease-out);
+}
+
+@keyframes repository-action-content-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(-3px);
+  }
+}
+
+@keyframes repository-action-content-in {
+  from {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/**
+ * Page / View Transition Motion。
+ *
+ * 只包 main 里的内容区：Header、导航、Logo、背景都在它外面，切换时完全静止。
+ * 三个层级给三种方向感，一律不横向推出视口（最多 10px），也不做 spring：
+ * top（同级顶级页）/ forward（父级 → 子级）/ back（子级 → 父级）。
+ *
+ * 只做 enter：旧内容随重挂载立即消失，新内容用同一套 ease-out 快速淡入。
+ * 不走 exit + enter 串行，所以整段最长就是这里的 210ms。
+ */
+.view-transition {
+  width: 100%;
+  min-width: 0;
+}
+
+.view-transition[data-view-motion='top'] {
+  animation: view-enter-y 170ms var(--motion-ease-out);
+}
+
+.view-transition[data-view-motion='forward'] {
+  animation: view-enter-x-forward 210ms var(--motion-ease-out);
+}
+
+.view-transition[data-view-motion='back'] {
+  animation: view-enter-x-back 180ms var(--motion-ease-out);
+}
+
+/*
+ * 详情内部 Tab 内容是同级视图切换：不给方向，只做很轻的 Y。
+ *
+ * 注意它**不是**淡入：旧内容随重挂载立即消失，新内容从 0.98 起手。
+ * 从 0 淡入会让整块内容区在整段动画里接近透明——浅色主题下白卡片消失、灰底暴露，
+ * 看起来就是"闪一下"。0.98 → 1 的亮度差人眼不可辨，落位感完全交给那 2px。
+ */
+.tab-panel-enter {
+  animation: tab-panel-soft-enter 140ms var(--motion-ease-out) backwards;
+}
+
+@keyframes view-enter-y {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes view-enter-x-forward {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes view-enter-x-back {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tab-panel-soft-enter {
+  from {
+    opacity: 0.98;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/**
+ * Tab Indicator：单一可动下划线。
+ *
+ * 几何按激活 Tab 实测后由组件写成 inline transform / width，这里只负责过渡与画。
+ * 绝对定位所以不参与布局；pointer-events: none 所以永远不吃点击、也不影响 focus ring。
+ */
+.tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background-color: rgb(var(--color-accent));
+  pointer-events: none;
+  transition:
+    transform 180ms var(--motion-ease-out),
+    width 180ms var(--motion-ease-out);
+}
+
+/**
+ * Detail Tabs 吸附。
+ *
+ * 只改纵向定位：容器宽高、左右边界、内容对齐全部沿用原来那一份（吸附容器就是揭示层级本身，
+ * 它一直是个全宽块），也没有第二套 Tabs——tablist / indicator / aria 关系还是同一个 DOM。
+ *
+ * 吸附线取顶部栏实测高度（App 写在 --app-header-height）。变量缺失时这条 top 声明整体失效
+ * （computed-value 阶段无效 → top: auto），也就是不吸附，绝不会把 Tabs 藏在顶部栏底下。
+ */
+.detail-tabs-sticky {
+  position: sticky;
+  top: var(--app-header-height, 0px);
+  /* 高于详情普通内容，低于顶部栏与浮层（.repository-action-positioner 是 z-20） */
+  z-index: 10;
+  /* 吸附后内容会从下面滚过，底色必须不透明；也不用 backdrop-blur / 半透明玻璃 */
+  background-color: rgb(var(--color-app));
+}
+
+/* 分隔线只换颜色：吸附本身必须是稳定的，不做位移 / 缩放 / 阴影 */
+.detail-tabs-sticky [role='tablist'] {
+  transition: border-color 130ms var(--motion-ease-out);
+}
+
+.detail-tabs-sticky [role='tablist'][data-stuck='true'] {
+  border-color: rgb(var(--color-border));
+}
+
+/**
+ * 当前 Tab 内容的起点，也是切 Tab 时的滚动落点。
+ *
+ * 落点不是页面顶部：吸附后的 Tabs 会停在顶部栏下沿，所以内容起点必须让开「顶部栏 + Tabs」
+ * 这整段，第一行才不会被压在 Tabs 底下（也不必把页面滚回 Repository Header 那一屏）。
+ * 两个高度都是实测值——顶部栏由 App 量（--app-header-height），Tabs 由 DetailTabs 量
+ * （--detail-tabs-height），都不是猜的；末尾 8px 是内容第一行与 Tabs 的安全间距。
+ * scrollIntoView 会尊重这段留白，所以一次就落到最终位置，不会先到顶部再修正。
+ */
+.detail-tab-content-anchor {
+  scroll-margin-top: calc(
+    var(--app-header-height, 0px) + var(--detail-tabs-height, 0px) + 8px
+  );
+  /*
+   * 短 Tab（空 Issue、构建这类）的内容比一屏还矮，文档滚不动：那样切过来只能停在页面顶部，
+   * Repository Header 会重新回到屏幕上，落点这条规则也就名存实亡。
+   * 这里留出"吸附线以下正好填满一屏"的高度——它同时也是滚动范围的上限，
+   * 所以既保证了落点总是可达，又不会多出一段可以滚进空白里的行程。
+   * 减掉的 28px 是 main 的底部内边距（20px）与上面那 8px 安全间距：两边一致时才刚好对齐。
+   */
+  min-height: calc(
+    100vh - var(--app-header-height, 0px) - var(--detail-tabs-height, 0px) - 28px
+  );
+}
+
+/**
+ * Compact Repository Context：Repository Header 滚走后，顶部栏在品牌右侧接管"当前仓库"。
+ *
+ * 只动画 opacity 与 X：显隐绝不碰宽度 / 外边距 / 内边距，所以品牌、右侧导航与顶部栏高度
+ * 都不动一下（容器始终占位，宽度由 flex 分配，与可见性无关）。
+ * 用 X 而不是 Y：页面本身正在纵向滚动，再来一点纵向位移容易和滚动方向打架。
+ * 出现与退场用不同时长 / 缓动——各自写在目标状态上，过渡取的是"要去的那一边"那条。
+ */
+.compact-repo-context {
+  opacity: 0;
+  transform: translateX(-4px);
+  /* 不可见时不参与指针交互；语义上也从无障碍树里摘掉（表头自己还在交代仓库名） */
+  pointer-events: none;
+  transition:
+    opacity 120ms var(--motion-ease-in),
+    transform 120ms var(--motion-ease-in);
+}
+
+/* 出现：接管当前仓库身份，160ms ease-out，从左侧 6px 柔和进入 */
+.compact-repo-context[data-visible='true'] {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms var(--motion-ease-out),
+    transform 160ms var(--motion-ease-out);
+}
+
+/* 分隔符：低对比的语义边框色，和上下文一起进退，不抢品牌名 */
+.compact-repo-context-divider {
+  flex: none;
+  width: 1px;
+  height: 1rem;
+  background-color: rgb(var(--color-border-strong));
+}
+
+/**
+ * 表头与它哨兵的定位容器：只提供包含块，不产生任何盒模型效果。
+ */
+.repo-context-scope {
+  position: relative;
+}
+
+/**
+ * Compact Context 的哨兵：横贯表头的一张极窄色带，压在表头下沿往上"顶部栏高度 - 10px"处。
+ *
+ * 它整体滚出视口顶端 == 表头不仅离开吸附线、还多走了 10px；重新完整进入 == 表头还剩 4px 就要露头。
+ * 中间 6px（色带高度）就是迟滞区间：观察器用 threshold [0, 1] 拿到这两个边界，
+ * 既不需要第二个阈值，也不需要每帧监听滚动。
+ * 高度用 calc 引用顶部栏实测高度，所以窄窗口顶部栏换行变高时，这条线跟着一起走。
+ */
+.repo-context-sentinel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  bottom: calc(var(--app-header-height, 0px) - 10px);
+  pointer-events: none;
+}
+
+/**
+ * 吸附哨兵：放在 Tabs 天然位置（.detail-reveal 顶部）上方恰好一个顶部栏高度处。
+ * 它越过视口顶端的那一刻 == Tabs 抵达吸附线的那一刻，所以观察器用默认 rootMargin 就够，
+ * 不必在 JS 里再算一遍顶部栏高度。绝对定位 + 1px，不参与布局、不吃指针。
+ */
+.detail-tabs-sentinel {
+  position: absolute;
+  top: calc(-1 * var(--app-header-height, 0px));
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+/**
+ * Detail Reveal Motion：首次抓取完成，界面从 Loading「解锁」成完整详情。
+ *
+ * 语义是"数据就绪"，不是"新页面弹出"：只用 opacity 与几像素的 Y，不用 spring、不放大、
+ * 更不做整页高度补间（那会让页面像手风琴一样被拉长）。真内容在数据到达那一帧就挂载完毕，
+ * Loading 只是同时原地淡出，所以不会出现"空白帧"。
+ */
+.detail-reveal {
+  /* Loading 卡退出时脱离文档流，需要它当包含块 */
+  position: relative;
+}
+
+/* 数据到达：Loading 卡不再推开下面的内容，就地淡出。 */
+.detail-loading-slot[data-state='exiting'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  /* 淡出期间不吃点击：界面在数据到达那一刻就已经可以用了 */
+  pointer-events: none;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-panel {
+  animation: detail-loading-panel-out 100ms var(--motion-ease-in) forwards;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-spinner {
+  animation: detail-loading-spinner-out 100ms var(--motion-ease-in) forwards;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-text {
+  animation: detail-loading-text-out 100ms var(--motion-ease-in) forwards;
+}
+
+/*
+ * 错峰揭示：每个层级自带 --reveal-delay / --reveal-ms / --reveal-shift，
+ * 且只在 revealing 窗口里挂动画。窗口一过（ready），节点即使因切 Tab 重挂也不会再播。
+ * backwards 让它在延迟期间就停在起点，不会先闪一帧最终态。
+ *
+ * 注意：这里只挂错峰动画，不要去"抑制" tab-panel-enter——抑制规则一旦失效，
+ * 已经挂载的面板会当场重播一次进场（实测就是内容展开后闪一下）。
+ * 首屏不播 tab-panel-enter 这件事由 DetailPage 在切 Tab 那一刻决定。
+ */
+.detail-reveal[data-reveal='revealing'] .detail-reveal-item {
+  animation: detail-item-reveal var(--reveal-ms, 200ms) var(--motion-ease-out) var(--reveal-delay, 0ms)
+    backwards;
+}
+
+/* 表头指标值：`—` 绝对定位淡出（不参与布局），真实值原位淡入。不做数字滚动。 */
+.detail-fact-from {
+  pointer-events: none;
+  animation: detail-fact-out 140ms var(--motion-ease-in) forwards;
+}
+
+.detail-fact-to {
+  animation: detail-fact-in 140ms var(--motion-ease-out) backwards;
+}
+
+/* 抓取按钮文案：抓取中… → 重新抓取。按钮宽度由 min-width 定住，这里只换文案。 */
+.detail-refetch-label {
+  animation: detail-refetch-in 120ms var(--motion-ease-out) backwards;
+}
+
+@keyframes detail-item-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--reveal-shift, 5px));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detail-loading-panel-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes detail-loading-spinner-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes detail-loading-text-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes detail-fact-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes detail-fact-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detail-refetch-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/**
+ * 卡片按下反馈。
+ *
+ * 整张卡片是一个视觉整体（连 16px 内边距与 `···` 列一起），所以位移 / 缩放 / 变灰
+ * 都落在 .repo-row 上；主点击区只负责"我被按下了"这一个信号（data-row-activator），
+ * 自己不再位移也不再变色，避免同一处出现两种反馈。
+ */
+.repo-row {
+  transition-property: translate, scale, background-color, border-color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.repo-row:has([data-row-activator]:active) {
+  background-color: rgb(var(--color-surface-active));
+  border-color: rgb(var(--color-border-strong));
+  translate: 0 1px;
+  scale: 0.985;
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
 /* Keep the row quiet while its own menu / confirmation surface is open. */
-.repo-row:has(.repo-actions-trigger[aria-expanded='true']):hover {
+.repo-row:has(.repo-actions-trigger[aria-expanded='true']):hover:not(:has([data-row-activator]:active)) {
   border-color: rgb(var(--color-border-subtle));
   background-color: rgb(var(--color-surface));
 }
 
-/* 输入框与按钮的统一聚焦轮廓（两种主题下都用强调色） */
+/**
+ * 监控清单卡片进出场。
+ *
+ * 分工固定：外层 li 只负责 0fr ↔ 1fr 的空间腾挪（非线性、绝不 overshoot），
+ * 内层卡片本体只做 opacity / transform。这样列表与其它卡片永远走正常文档流，
+ * 不会整列一起弹。
+ */
+.repo-list > li + li .repo-row {
+  /* 卡片间距挂在卡片自己身上：空间收回时它会跟着一起被裁掉，不留空隙。 */
+  margin-top: 0.5rem;
+}
+
+.repo-list {
+  /* 新增到首项时由 Watchlist 明确补偿视口，避免浏览器再做一遍隐式锚定。 */
+  overflow-anchor: none;
+}
+
+.repo-row-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  scroll-margin-top: calc(
+    var(--app-header-height, 0px) + var(--watchlist-toolbar-idle-height, 54px) + 0.75rem
+  );
+}
+
+.repo-row-clip {
+  /* 网格项默认 min-width/min-height: auto：不归零的话，超长仓库名会把卡片撑出容器宽度 */
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 只在动画期间裁剪：平时 overflow 必须可见，否则 ··· 菜单与确认 Popover 会被切掉。 */
+.repo-row-slot[data-motion='entering'] > .repo-row-clip,
+.repo-row-slot[data-motion='exiting'] > .repo-row-clip {
+  overflow: hidden;
+}
+
+/* 退场期间整张卡片不再接受鼠标操作（键盘侧由 inert 兜住）。 */
+.repo-row-slot[data-motion='exiting'] {
+  pointer-events: none;
+}
+
+/* 列表为新卡片腾出空间：0fr → 1fr。 */
+.repo-row-slot[data-motion='entering'] {
+  animation: repo-slot-expand 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 移除后收回空间：1fr → 0fr。可以和本体淡出重叠，让下面的卡片自然上移。 */
+.repo-row-slot[data-motion='exiting'] {
+  animation: repo-slot-collapse 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* 新卡片本体：淡入 + 轻轻落入。弹簧感只属于这一张。 */
+.repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+  animation: repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * 新增高亮：本体落位后进一次 accent，再自动回到普通 surface，只提示一次。
+ * 两条动画必须写在同一条 animation 声明里——分两条规则会让后出现的简写把前一条整条顶掉，
+ * 结果是卡片先"瞬间出现"、等高亮播完再重播一次进场。
+ */
+.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row {
+  animation:
+    repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
+}
+
+/* 「查看位置」只提示已存在的卡片，不再播放 space-open 或 card-enter。 */
+.repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
+  animation: repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* 移除本体：先轻微蓄力，随后快速淡出，不回弹（排在最后，退场优先于高亮）。 */
+.repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
+  animation: repo-card-exit 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes repo-slot-expand {
+  from {
+    grid-template-rows: 0fr;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+@keyframes repo-slot-collapse {
+  from {
+    grid-template-rows: 1fr;
+  }
+
+  to {
+    grid-template-rows: 0fr;
+  }
+}
+
+@keyframes repo-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+
+  68% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.004);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes repo-card-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  22% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.998);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes repo-card-highlight {
+  from {
+    border-color: rgb(var(--color-accent-border));
+    background-color: rgb(var(--color-accent-soft));
+  }
+
+  to {
+    border-color: rgb(var(--color-border-subtle));
+    background-color: rgb(var(--color-surface));
+  }
+}
+
+@keyframes repo-card-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* 页面区块间距与标题下方的吸附哨兵共用同一值，哨兵本身不参与布局。 */
+.watchlist-page {
+  --watchlist-page-gap: 1rem;
+  --watchlist-toolbar-idle-height: 54px;
+}
+
+.watchlist-page > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: var(--watchlist-page-gap);
+}
+
+.watchlist-toolbar-sentinel {
+  position: absolute;
+  top: calc(100% + var(--watchlist-page-gap));
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+/**
+ * Watchlist 页面级操作栏：同一 DOM 在普通流与吸附状态间移动。
+ * 54px 最小高度、36px 控件和透明 1px 边框始终占位；状态只换背景与边框颜色。
+ */
+.watchlist-page-toolbar {
+  position: sticky;
+  top: var(--app-header-height, 0px);
+  z-index: 5;
+  width: 100%;
+  min-height: 54px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  padding-block: 8px;
+  border-bottom: 1px solid transparent;
+  background-color: transparent;
+  transition:
+    background-color 130ms var(--motion-ease-out),
+    border-color 130ms var(--motion-ease-out);
+}
+
+.watchlist-page-toolbar[data-stuck='true'] {
+  border-bottom-color: rgb(var(--color-border-subtle));
+  background-color: rgb(var(--color-app));
+}
+
+/* Keep the action slot reserved so editing never changes the input width. */
+.watchlist-add-form {
+  position: relative;
+  flex: 0 1 auto;
+  width: 7.5rem;
+  max-width: 100%;
+  overflow: hidden;
+  transition: width 150ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.watchlist-add-form[data-expanded='true'] {
+  width: 32rem;
+  overflow: visible;
+  transition-duration: 190ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.watchlist-add-content {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0;
+}
+
+.watchlist-add-control-row {
+  grid-template-columns: minmax(0, 1fr) 6rem;
+  column-gap: 0.5rem;
+}
+
+.watchlist-add-trigger {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 7.5rem;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 150ms var(--motion-ease-in),
+    visibility 0s,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    border-color 120ms var(--motion-ease-out),
+    color 120ms var(--motion-ease-out);
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-trigger {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 150ms var(--motion-ease-in),
+    visibility 0s 150ms,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    border-color 120ms var(--motion-ease-out),
+    color 120ms var(--motion-ease-out);
+}
+
+.watchlist-add-field {
+  opacity: 0;
+  transform: translateX(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 1, 1),
+    transform 150ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s 150ms;
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-field {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: 0s;
+}
+
+.watchlist-add-action {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  transform: scale(0);
+  transform-origin: center;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    background-color 150ms var(--motion-ease-in),
+    border-color 150ms var(--motion-ease-in),
+    color 150ms var(--motion-ease-in),
+    transform 130ms var(--motion-ease-in),
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    visibility 0s 130ms;
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-action {
+  transform: scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    background-color 150ms var(--motion-ease-out),
+    border-color 150ms var(--motion-ease-out),
+    color 150ms var(--motion-ease-out),
+    transform 170ms var(--motion-ease-out),
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    visibility 0s;
+}
+
+.watchlist-add-action-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.watchlist-add-spinner {
+  border-color: rgb(var(--color-accent-contrast));
+  border-top-color: transparent;
+}
+
+/* The row height, not a transform on the repository list, moves following content. */
+.watchlist-inline-message {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition:
+    grid-template-rows 130ms cubic-bezier(0.4, 0, 1, 1),
+    opacity 130ms cubic-bezier(0.4, 0, 1, 1),
+    transform 130ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.watchlist-inline-message[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-duration: 170ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 35rem) {
+  /* Reserve the refresh action's row during the width tween at narrow widths. */
+  .watchlist-add-form[data-expanded='true'] {
+    width: calc(100% - 7rem);
+    min-width: min(16rem, 100%);
+  }
+}
+
+@media (max-width: 35rem) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .settings-row-label {
+    padding-top: 0;
+  }
+
+  .settings-token-heading {
+    align-items: flex-start;
+  }
+}
+
+/* 输入框与按钮的统一聚焦轮廓（两种主题下都使用独立的焦点色） */
 *:focus-visible {
-  outline: 2px solid rgb(var(--color-accent) / 0.7);
+  outline: 2px solid rgb(var(--color-focus-ring));
   outline-offset: 1px;
 }
 
@@ -193,5 +1369,125 @@ button:disabled {
   .overlay-enter {
     animation: none;
     transform: none;
+  }
+
+  .watchlist-add-form,
+  .watchlist-add-content,
+  .watchlist-add-field,
+  .watchlist-add-trigger,
+  .watchlist-add-action,
+  .watchlist-inline-message {
+    transition: none !important;
+  }
+
+  .github-token-feedback {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .theme-segment-slider {
+    transition: none !important;
+  }
+
+  .watchlist-add-field,
+  .watchlist-add-action,
+  .watchlist-inline-message {
+    transform: none !important;
+  }
+
+  /* 新增：位移 / 缩放 / grid tween 全部关掉，卡片直接出现在最终位置与样式上。 */
+  .repo-row-slot[data-motion='entering'],
+  .repo-row-slot[data-motion='exiting'],
+  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+    animation: none !important;
+  }
+
+  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* 删除：空间立即收回，只留一次极短的透明度淡出。 */
+  .repo-row-slot[data-motion='exiting'] {
+    grid-template-rows: 0fr;
+  }
+
+  .repo-row-slot[data-motion='exiting'] > .repo-row-clip {
+    overflow: hidden;
+  }
+
+  .repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
+    animation: repo-card-fade-out 40ms linear forwards !important;
+    transform: none;
+  }
+
+  /* Button：按下 / 释放仍然看到颜色变深，但不再位移、不再缩放 */
+  button,
+  button.transition-colors {
+    transition-property: background-color, border-color, color;
+  }
+
+  button:not(:disabled):active {
+    translate: none;
+    scale: none;
+  }
+
+  .theme-segment-button:not(:disabled):active {
+    translate: none !important;
+    scale: none !important;
+  }
+
+  /* 卡片：按下仍然变灰，但整卡不再下压 */
+  .repo-row:has([data-row-activator]:active) {
+    translate: none;
+    scale: none;
+  }
+
+  /* 页面 / Tab 切换：不做位移也不做淡入，直接换内容；indicator 立即落位 */
+  /* 用 !important：降级必须压过任何带属性选择器的动画规则，与上面几条保持一致 */
+  .view-transition,
+  .tab-panel-enter {
+    animation: none !important;
+  }
+
+  /*
+   * Compact Repository Context：只留一次极短的透明度变化，不做 X 位移。
+   * 可见性逻辑本身不受影响——它由 JS 的状态决定，这里只降级运动。
+   */
+  .compact-repo-context,
+  .compact-repo-context[data-visible='true'] {
+    transform: none !important;
+    transition: opacity 40ms linear !important;
+  }
+
+  .tab-indicator {
+    transition: none !important;
+  }
+
+  /* 仓库操作浮层：不做位移 / 缩放 / 尺寸补间，直接换位置与内容。
+     关闭时也走不了 animationend，由组件那条兜底计时器（40ms）立即收尾。 */
+  .repository-action-surface,
+  .repository-action-positioner[data-swapping='true'],
+  .repository-action-content-out,
+  .repository-action-content-out + .repository-action-content-in {
+    animation: none !important;
+  }
+
+  /* 详情揭示：不做错峰 / 位移 / 交叉淡化，数据到达那一刻直接就是最终样子。
+     JS 侧同样不会进入 revealing（useDetailReveal 看到开关就直接 ready），这里是第二道保险。 */
+  .detail-reveal-item,
+  .detail-loading-slot[data-state='exiting'] .loading-panel,
+  .detail-loading-slot[data-state='exiting'] .loading-spinner,
+  .detail-loading-slot[data-state='exiting'] .loading-text,
+  .detail-fact-to,
+  .detail-refetch-label {
+    animation: none !important;
+  }
+
+  /* 不做交叉淡化，旧值就没有存在意义：别让它盖在真值上 */
+  .detail-fact-from {
+    display: none;
   }
 }

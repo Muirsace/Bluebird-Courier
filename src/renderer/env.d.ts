@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { OctoBridge } from '../shared/types';
 
 declare global {

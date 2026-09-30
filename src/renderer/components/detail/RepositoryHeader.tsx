@@ -1,6 +1,6 @@
 import type { Glance } from '../../../shared/types';
 import { formatCount } from '../../lib/format';
-import { formatRelativeTime, isWithinDays } from '../../lib/time';
+import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
 import { GlanceFact } from '../GlanceFact';
 import { Spinner } from '../Spinner';
@@ -10,6 +10,8 @@ interface RepositoryHeaderProps {
   fullName: string;
   repository: Glance | undefined;
   fetching: boolean;
+  /** 首次抓取完成后的揭示窗口：指标值从 `—` 交叉淡化到真实值。 */
+  revealing: boolean;
   onBack: () => void;
   onRefetch: () => void;
 }
@@ -19,11 +21,14 @@ export function RepositoryHeader({
   fullName,
   repository,
   fetching,
+  revealing,
   onBack,
   onRefetch,
 }: RepositoryHeaderProps) {
   // 详情数据回来前用清单里的全名兜底，外链按钮不会缺席也不会跳错页（主进程还会再校验一次）
   const [owner = '', name = ''] = (repository?.fullName ?? fullName).split('/');
+  // 抓取中这四条都是 `—`；揭示窗口里让它们原地淡换，而不是瞬间替换（也不做数字滚动）
+  const placeholder = revealing ? '—' : undefined;
 
   return (
     <div className="space-y-3">
@@ -59,27 +64,34 @@ export function RepositoryHeader({
               onClick={onRefetch}
               disabled={fetching}
               aria-busy={fetching}
-              className="flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent/40 bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent/70 hover:bg-accent-soft/70 active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 min-w-[6.5rem] shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {fetching ? <Spinner className="h-3.5 w-3.5" /> : null}
-              {fetching ? '抓取中…' : '重新抓取'}
+              {/* 宽度由上面的 min-w 定住，这里只换文案：抓取中… → 重新抓取 时右侧不会跳 */}
+              <span
+                key={fetching ? 'busy' : 'idle'}
+                className="detail-refetch-label flex items-center gap-2"
+              >
+                {fetching ? <Spinner className="h-3.5 w-3.5" /> : null}
+                {fetching ? '抓取中…' : '重新抓取'}
+              </span>
             </button>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
-          <GlanceFact label="Stars" value={formatCount(repository?.stars)} />
-          <GlanceFact label="Forks" value={formatCount(repository?.forks)} />
+          <GlanceFact label="Stars" value={formatCount(repository?.stars)} crossfadeFrom={placeholder} />
+          <GlanceFact label="Forks" value={formatCount(repository?.forks)} crossfadeFrom={placeholder} />
           <GlanceFact
             label="最近活动"
             value={repository?.pushedAt ? formatRelativeTime(repository.pushedAt) : '—'}
-            accent={isWithinDays(repository?.pushedAt ?? null, 7)}
+            crossfadeFrom={placeholder}
           />
           <GlanceFact
             label="最新版本"
             value={repository ? repository.latestReleaseTag ?? '无发版' : '—'}
             mono
             muted={!repository?.latestReleaseTag}
+            crossfadeFrom={placeholder}
           />
         </div>
       </div>

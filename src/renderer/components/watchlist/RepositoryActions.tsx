@@ -1,22 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Glance } from '../../../shared/types';
 import { getApi } from '../../lib/api';
 import { describeOpenFailure } from '../../lib/external-link';
 import { Spinner } from '../Spinner';
 import { RemoveRepositoryPopover } from './RemoveRepositoryPopover';
+import { RepositoryActionSurface } from './RepositoryActionSurface';
 
-/** closed → 无浮层；menu → ··· 菜单；confirm → 移除确认 Popover。 */
+/** closed → 无浮层；menu → ··· 菜单；confirm → 移除确认。 */
 type Stage = 'closed' | 'menu' | 'confirm';
 
 interface RepositoryActionsProps {
   repo: Glance;
   /** 移除失败时必须 reject，由本组件就地提示并允许重试。 */
   onRemove: (repositoryId: number) => Promise<void>;
+  /** 卡片正在退场：入口立即失效，不再接受任何操作。 */
+  disabled?: boolean;
 }
 
-/** 仓库的次要操作入口：`···` 菜单 + 移除确认 Popover，两者都从卡片主点击区里独立出来。 */
-export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
+/**
+ * 仓库的次要操作入口：`···` 菜单 + 移除确认，两者共用同一个 RepositoryActionSurface。
+ *
+ * 菜单 → 确认是"同一外壳换内容"（不卸载、不跳变），本组件只负责状态机
+ * （stage / closing / busy / error）与键盘、焦点、错误处理、安全规则。
+ */
+export function RepositoryActions({ repo, onRemove, disabled = false }: RepositoryActionsProps) {
   const [stage, setStage] = useState<Stage>('closed');
+  /** 正在播关闭动画：外壳留在原位淡出，播完（或兜底计时器到点）才真正卸载。 */
+  const [closing, setClosing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,25 +38,42 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
 
   const open = stage !== 'closed';
 
-  // 浮层打开期间的通用退出：Esc 关闭并交还焦点；点浮层外部关闭
+  /** 立即收起：删除成功时用，保持"先关浮层、再播卡片退场"的时序。 */
+  const closeNow = useCallback((): void => {
+    setClosing(false);
+    setStage('closed');
+    setError(null);
+  }, []);
+
+  /**
+   * 走关闭动画的收起。焦点还在浮层里、或已经被浏览器丢到 body 上（按钮刚被禁用时会这样）
+   * 就交还 `···`；已经移到别的控件上（Tab / 点到别处）就保持不动，免得把焦点抢回来。
+   */
+  const dismiss = useCallback((): void => {
+    setClosing(true);
+    setError(null);
+    const active = document.activeElement;
+    const dropped = !active || active === document.body;
+    if (dropped || containerRef.current?.contains(active)) triggerRef.current?.focus();
+  }, []);
+
+  // 浮层打开期间的通用退出：Esc / Tab / 点外部 / 焦点移出
   useEffect(() => {
     if (!open) return;
-    function close(): void {
-      setStage('closed');
-      setError(null);
-      triggerRef.current?.focus();
-    }
     function handleKeyDown(event: KeyboardEvent): void {
+      if (closing) return;
       if (event.key === 'Escape' && !busy) {
-        close();
+        // 消费掉这次按键：更外层的导航（例如详情页的 Esc 返回，挂在 window 上、冒泡更晚）
+        // 靠 defaultPrevented 判断"浮层先拿了这次 Esc"，就不该再切页
+        event.preventDefault();
+        dismiss();
         return;
       }
 
       if (stage !== 'menu') return;
 
       if (event.key === 'Tab' && !busy) {
-        setStage('closed');
-        setError(null);
+        dismiss();
         return;
       }
 
@@ -64,18 +91,12 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
       }
     }
     function handlePointerDown(event: MouseEvent): void {
-      if (busy) return;
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setStage('closed');
-        setError(null);
-      }
+      if (busy || closing) return;
+      if (!containerRef.current?.contains(event.target as Node)) dismiss();
     }
     function handleFocusIn(event: FocusEvent): void {
-      if (busy) return;
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setStage('closed');
-        setError(null);
-      }
+      if (busy || closing) return;
+      if (!containerRef.current?.contains(event.target as Node)) dismiss();
     }
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('mousedown', handlePointerDown);
@@ -85,7 +106,7 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('focusin', handleFocusIn);
     };
-  }, [open, busy, stage]);
+  }, [open, busy, stage, closing, dismiss]);
 
   // 菜单打开后把焦点交给菜单项
   useEffect(() => {
@@ -97,7 +118,7 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
     setError(null);
     try {
       await onRemove(repo.id);
-      setStage('closed');
+      closeNow();
     } catch {
       setError('删除失败，请稍后重试');
     } finally {
@@ -120,11 +141,20 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
         setError(describeOpenFailure(result.reason));
         return;
       }
-      setStage('closed');
-      triggerRef.current?.focus();
+      dismiss();
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleTriggerClick(): void {
+    if (closing) return;
+    if (stage === 'closed') {
+      setStage('menu');
+      setError(null);
+      return;
+    }
+    dismiss();
   }
 
   return (
@@ -137,71 +167,73 @@ export function RepositoryActions({ repo, onRemove }: RepositoryActionsProps) {
         aria-controls={stage === 'confirm' ? popoverId : stage === 'menu' ? menuId : undefined}
         aria-label={`${repo.fullName} 的仓库操作`}
         title={`${repo.fullName} 的仓库操作`}
-        onClick={() => setStage(stage === 'closed' ? 'menu' : 'closed')}
-        className={`repo-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-lg transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-primary active:bg-surface-active ${
+        disabled={disabled}
+        data-button-motion="icon"
+        onClick={handleTriggerClick}
+        className={`repo-actions-trigger inline-flex h-8 w-8 items-center justify-center rounded-md text-lg transition-colors duration-150 ease-out hover:bg-surface-hover hover:text-primary active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60 ${
           open ? 'bg-surface-active text-primary' : 'text-secondary'
         }`}
       >
         ···
       </button>
 
-      {stage === 'menu' ? (
-        <div
-          role="menu"
-          id={menuId}
-          aria-label="仓库操作"
-          aria-busy={busy}
-          className="overlay-enter absolute right-0 top-full z-20 mt-1 w-44 max-w-[calc(100vw-2rem)] rounded-lg border border-strong bg-surface py-1 shadow-sm"
+      {open ? (
+        <RepositoryActionSurface
+          stage={stage}
+          measureKey={`${stage}|${busy}|${error ?? ''}`}
+          closing={closing}
+          onExitEnd={closeNow}
+          triggerRef={triggerRef}
         >
-          <button
-            ref={menuItemRef}
-            type="button"
-            tabIndex={0}
-            role="menuitem"
-            aria-label={`在 GitHub 打开 ${repo.fullName}`}
-            onClick={() => void handleOpenExternal()}
-            disabled={busy}
-            className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-sm text-primary transition-colors duration-150 ease-out hover:bg-surface-hover active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy ? <Spinner className="h-3.5 w-3.5" /> : null}
-            {busy ? '打开中…' : '在 GitHub 打开'}
-          </button>
-          <div role="separator" className="my-1 border-t border-subtle" />
-          <button
-            ref={removeMenuItemRef}
-            type="button"
-            tabIndex={-1}
-            role="menuitem"
-            onClick={() => {
-              setError(null);
-              setStage('confirm');
-            }}
-            disabled={busy}
-            className="flex min-h-9 w-full items-center px-3 text-left text-sm text-danger transition-colors duration-150 ease-out hover:bg-danger-soft active:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            从监控清单移除
-          </button>
-          {error ? (
-            <p role="alert" className="px-3 py-1.5 text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {stage === 'confirm' ? (
-        <RemoveRepositoryPopover
-          id={popoverId}
-          fullName={repo.fullName}
-          busy={busy}
-          error={error}
-          onCancel={() => {
-            setStage('closed');
-            setError(null);
-            triggerRef.current?.focus();
-          }}
-          onConfirm={() => void handleConfirm()}
-        />
+          {stage === 'confirm' ? (
+            <RemoveRepositoryPopover
+              id={popoverId}
+              fullName={repo.fullName}
+              busy={busy}
+              error={error}
+              onCancel={dismiss}
+              onConfirm={() => void handleConfirm()}
+            />
+          ) : (
+            <div role="menu" id={menuId} aria-label="仓库操作" aria-busy={busy} className="py-1">
+              <button
+                ref={menuItemRef}
+                type="button"
+                tabIndex={0}
+                role="menuitem"
+                aria-label={`在 GitHub 打开 ${repo.fullName}`}
+                data-button-motion="surface"
+                onClick={() => void handleOpenExternal()}
+                disabled={busy}
+                className="flex min-h-9 w-full items-center gap-2 px-3 text-left text-sm text-primary transition-colors duration-150 ease-out hover:bg-surface-hover active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busy ? <Spinner className="h-3.5 w-3.5" /> : null}
+                {busy ? '打开中…' : '在 GitHub 打开'}
+              </button>
+              <div role="separator" className="my-1 border-t border-subtle" />
+              <button
+                ref={removeMenuItemRef}
+                type="button"
+                tabIndex={-1}
+                role="menuitem"
+                data-button-motion="surface"
+                onClick={() => {
+                  setError(null);
+                  setStage('confirm');
+                }}
+                disabled={busy}
+                className="flex min-h-9 w-full items-center px-3 text-left text-sm text-danger transition-colors duration-150 ease-out hover:bg-danger-soft active:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                从监控清单移除
+              </button>
+              {error ? (
+                <p role="alert" className="px-3 py-1.5 text-xs text-danger">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+          )}
+        </RepositoryActionSurface>
       ) : null}
     </div>
   );

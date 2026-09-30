@@ -1,10 +1,12 @@
 import type { Detail, IssueItem, PullRequestItem } from '../../../shared/types';
+import { DETAIL_REVEAL_MOTION } from '../../lib/motion';
 import { GlanceFact } from '../GlanceFact';
 import { Section } from '../Section';
 import { BuildStatusPanel } from './BuildStatus';
 import { CommitList } from './CommitList';
 import { IssueEmptyState, NumberedItemRow } from './IssuesAndPulls';
 import { ReleaseList } from './ReleaseList';
+import { RevealItem } from './RevealItem';
 import { TrendPanel } from './TrendPanel';
 
 /** 概览每条摘要最多显示几条；完整内容仍在各自 Tab。 */
@@ -65,73 +67,98 @@ export function OverviewTab({ detail }: OverviewTabProps) {
 
   return (
     <div className="space-y-4">
-      <Section title="构建状态">
-        <BuildStatusPanel build={build} />
-      </Section>
+      {/* 首次揭示：只做 Section 级错峰（相邻两层差 30～40ms），任何一层内部都不逐行播放 */}
+      <RevealItem
+        delayMs={DETAIL_REVEAL_MOTION.buildDelayMs}
+        durationMs={DETAIL_REVEAL_MOTION.buildMs}
+        shiftPx={DETAIL_REVEAL_MOTION.buildShiftPx}
+      >
+        <Section title="构建状态">
+          <BuildStatusPanel build={build} owner={owner} name={name} />
+        </Section>
+      </RevealItem>
 
       {/* min-w-0：提交消息是 truncate（nowrap）的，网格项默认 min-width:auto 会被它撑宽整列 */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="min-w-0">
-          <Section title="最新发版">
-            <ReleaseList releases={releases.slice(0, SUMMARY_LIMIT)} owner={owner} name={name} />
-            {releases.length > SUMMARY_LIMIT ? (
-              <p className="mt-2 text-xs text-muted">
-                仅显示最近 {SUMMARY_LIMIT} 条，已抓取 {releases.length} 条
-              </p>
-            ) : null}
-          </Section>
-        </div>
-
-        <div className="min-w-0">
-          <Section title="最近提交">
-            <CommitList commits={commits.slice(0, SUMMARY_LIMIT)} owner={owner} name={name} />
-            {commits.length > SUMMARY_LIMIT ? (
-              <p className="mt-2 text-xs text-muted">
-                仅显示最近 {SUMMARY_LIMIT} 条，已抓取 {commits.length} 条
-              </p>
-            ) : null}
-          </Section>
-        </div>
-      </div>
-
-      <Section title="Issue & PR">
-        {noIssuesAtAll ? (
-          <IssueEmptyState />
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-              <GlanceFact
-                label="议题"
-                value={`开启 ${openIssues} · 已关闭 ${issues.length - openIssues}`}
-              />
-              <GlanceFact
-                label="合并请求"
-                value={`开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
-              />
-            </div>
-            <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
-              <RecentList
-                title="最近更新的议题"
-                kind="issue"
-                items={[...issues].sort(byUpdatedDesc).slice(0, RECENT_LIMIT)}
-                owner={owner}
-                name={name}
-              />
-              <RecentList
-                title="最近更新的合并请求"
-                kind="pull"
-                items={[...pullRequests].sort(byUpdatedDesc).slice(0, RECENT_LIMIT)}
-                owner={owner}
-                name={name}
-              />
-            </div>
+      <RevealItem
+        delayMs={DETAIL_REVEAL_MOTION.releaseDelayMs}
+        durationMs={DETAIL_REVEAL_MOTION.sectionMs}
+        shiftPx={DETAIL_REVEAL_MOTION.sectionShiftPx}
+      >
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="min-w-0">
+            <Section title="最新发版">
+              <ReleaseList releases={releases.slice(0, SUMMARY_LIMIT)} owner={owner} name={name} />
+              {releases.length > SUMMARY_LIMIT ? (
+                <p className="mt-2 text-xs text-muted">
+                  仅显示最近 {SUMMARY_LIMIT} 条，已抓取 {releases.length} 条
+                </p>
+              ) : null}
+            </Section>
           </div>
-        )}
-      </Section>
 
-      <Section title="趋势摘要">
-        <TrendPanel trend={trend} scope="all" compact />
-      </Section>
+          <div className="min-w-0">
+            <Section title="最近提交">
+              <CommitList commits={commits.slice(0, SUMMARY_LIMIT)} owner={owner} name={name} />
+              {commits.length > SUMMARY_LIMIT ? (
+                <p className="mt-2 text-xs text-muted">
+                  仅显示最近 {SUMMARY_LIMIT} 条，已抓取 {commits.length} 条
+                </p>
+              ) : null}
+            </Section>
+          </div>
+        </div>
+      </RevealItem>
+
+      <RevealItem
+        delayMs={DETAIL_REVEAL_MOTION.issueDelayMs}
+        durationMs={DETAIL_REVEAL_MOTION.sectionMs}
+        shiftPx={DETAIL_REVEAL_MOTION.sectionShiftPx}
+      >
+        <Section title="Issue & PR">
+          {noIssuesAtAll ? (
+            <IssueEmptyState />
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+                <GlanceFact
+                  label="议题"
+                  value={`开启 ${openIssues} · 已关闭 ${issues.length - openIssues}`}
+                />
+                <GlanceFact
+                  label="合并请求"
+                  value={`开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
+                />
+              </div>
+              <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+                <RecentList
+                  title="最近更新的议题"
+                  kind="issue"
+                  items={[...issues].sort(byUpdatedDesc).slice(0, RECENT_LIMIT)}
+                  owner={owner}
+                  name={name}
+                />
+                <RecentList
+                  title="最近更新的合并请求"
+                  kind="pull"
+                  items={[...pullRequests].sort(byUpdatedDesc).slice(0, RECENT_LIMIT)}
+                  owner={owner}
+                  name={name}
+                />
+              </div>
+            </div>
+          )}
+        </Section>
+      </RevealItem>
+
+      <RevealItem
+        delayMs={DETAIL_REVEAL_MOTION.trendDelayMs}
+        durationMs={DETAIL_REVEAL_MOTION.sectionMs}
+        shiftPx={DETAIL_REVEAL_MOTION.sectionShiftPx}
+      >
+        <Section title="趋势摘要">
+          <TrendPanel trend={trend} scope="all" compact />
+        </Section>
+      </RevealItem>
     </div>
   );
 }

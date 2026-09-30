@@ -16,9 +16,12 @@ import {
   pressEscape,
   renderApp,
   repoActionsButton,
+  repoMotion,
   repoOpenButton,
   repoRows,
   settle,
+  settleMotion,
+  settleOverlayClose,
 } from './helpers';
 
 const FULL_NAME = 'octocat/Hello-World';
@@ -81,6 +84,7 @@ describe('仓库操作 · 入口', () => {
     await mount();
     await openMenu();
     await openMenu();
+    await settleOverlayClose();
     expect(menu()).toBeNull();
   });
 
@@ -88,6 +92,7 @@ describe('仓库操作 · 入口', () => {
     await mount();
     await openMenu();
     await pressEscape();
+    await settleOverlayClose();
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(repoActionsButton(FULL_NAME));
     expect(handle.calls.removeRepository).toBe(0);
@@ -118,6 +123,7 @@ describe('仓库操作 · 入口', () => {
     if (!openItem) throw new Error('菜单项未渲染');
 
     await pressKey(openItem, 'Tab');
+    await settleOverlayClose();
 
     expect(menu()).toBeNull();
     expect(handle.calls.fetchDetail).toBe(0);
@@ -127,6 +133,7 @@ describe('仓库操作 · 入口', () => {
     await mount();
     await openMenu();
     await pointerDownOutside(document.body);
+    await settleOverlayClose();
     expect(menu()).toBeNull();
   });
 
@@ -138,6 +145,7 @@ describe('仓库操作 · 入口', () => {
 
     await act(async () => repoButton.focus());
     await settle();
+    await settleOverlayClose();
 
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(repoButton);
@@ -165,6 +173,7 @@ describe('仓库操作 · 移除确认 Popover', () => {
 
     await click(buttonByText('取消'));
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(handle.calls.removeRepository).toBe(0);
@@ -177,6 +186,7 @@ describe('仓库操作 · 移除确认 Popover', () => {
 
     await pressEscape();
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(document.activeElement).toBe(repoActionsButton(FULL_NAME));
@@ -190,13 +200,14 @@ describe('仓库操作 · 移除确认 Popover', () => {
 
     await pointerDownOutside(document.body);
     await settle();
+    await settleOverlayClose();
 
     expect(dialog()).toBeNull();
     expect(handle.calls.removeRepository).toBe(0);
     expect(repoRows()).toHaveLength(1);
   });
 
-  it('确认移除：调用一次 removeRepository，成功后仓库从清单消失', async () => {
+  it('确认移除：调用一次 removeRepository，退场播完才从清单消失', async () => {
     await mount();
     await openConfirm();
     handle.setRepositories([]);
@@ -205,6 +216,11 @@ describe('仓库操作 · 移除确认 Popover', () => {
     await settle();
 
     expect(handle.calls.removeRepository).toBe(1);
+    // 后端已成功，但卡片先留在原位播退场
+    expect(repoMotion(FULL_NAME)).toBe('exiting');
+    expect(repoRows()).toHaveLength(1);
+
+    await settleMotion();
     expect(repoRows()).toHaveLength(0);
     expect(bodyText()).toContain('0 个仓库');
   });
@@ -221,11 +237,15 @@ describe('仓库操作 · 移除确认 Popover', () => {
     expect(buttonByText('取消')?.disabled).toBe(true);
     expect(buttonByText('移除中…')?.disabled).toBe(true);
     expect(repoRows()).toHaveLength(1);
+    expect(repoMotion(FULL_NAME)).toBe('idle');
 
     handle.setRepositories([]);
     release();
     await settle();
     expect(dialog()).toBeNull();
+    expect(repoMotion(FULL_NAME)).toBe('exiting');
+
+    await settleMotion();
     expect(repoRows()).toHaveLength(0);
   });
 

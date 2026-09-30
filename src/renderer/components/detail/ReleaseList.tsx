@@ -45,6 +45,7 @@ export function ReleaseList({ releases, owner, name }: ReleaseListProps) {
               <ExternalLinkButton
                 target={{ kind: 'release', owner, name, tagName: release.tagName }}
                 label={`在 GitHub 打开发版 ${release.tagName}`}
+                linkStyle
                 className="break-all font-mono text-[13px] text-accent transition-colors duration-150 ease-out hover:underline active:text-accent-hover"
               >
                 {release.tagName}

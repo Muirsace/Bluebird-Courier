@@ -25,6 +25,7 @@ export function TrendRangeSelector({ value, onChange }: TrendRangeSelectorProps)
               key={range}
               type="button"
               aria-pressed={active}
+              data-button-motion="compact"
               onClick={() => onChange(range)}
               className={`h-full border-l border-default px-3 text-xs transition-colors duration-150 ease-out first:border-l-0 focus-visible:outline-offset-[-3px] ${
                 active
