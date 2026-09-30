@@ -1,12 +1,12 @@
-/** 渲染层交互测试的公共装置：桩 window.octo + react-query 容器 + DOM 查询与事件辅助。 */
+/** 渲染层交互测试的公共装置：桩 window.bluebirdCourier + react-query 容器 + DOM 查询与事件辅助。 */
 import type { ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
-import type { AddRepositoryResult, AccessTokenResult, Detail, Glance, GitHubExternalTarget, OctoBridge, OpenExternalResult, Snapshot } from '../../src/shared/types';
-import { App } from '../../src/renderer/App';
+import type { AddRepositoryResult, AccessTokenResult, Detail, Glance, GitHubExternalTarget, BluebirdCourierBridge, OpenExternalResult, Snapshot } from '../../src/shared/types';
+import { App } from '../../src/renderer/pages/App';
 import { ThemeProvider } from '../../src/renderer/lib/theme';
 
 // react 18.3 的 act 需要这个环境标志，否则会在控制台告警
@@ -83,12 +83,13 @@ export interface StubCalls {
   refreshGlance: number;
   fetchDetail: number;
   addRepository: number;
+  inspectRepositoryInput: number;
   removeRepository: number;
   openGitHubExternal: number;
 }
 
 export interface StubHandle {
-  api: OctoBridge;
+  api: BluebirdCourierBridge;
   calls: StubCalls;
   /** 桩里当前的偏好项（updateSettings 成功后同步）。 */
   readonly preferences: Record<string, string>;
@@ -205,13 +206,14 @@ export function createStub(options: StubOptions = {}): StubHandle {
     refreshGlance: 0,
     fetchDetail: 0,
     addRepository: 0,
+    inspectRepositoryInput: 0,
     removeRepository: 0,
     openGitHubExternal: 0,
   };
   const externalTargets: GitHubExternalTarget[] = [];
   const addInputs: string[] = [];
 
-  const api: OctoBridge = {
+  const api: BluebirdCourierBridge = {
     async accessTokenState() {
       calls.accessTokenState += 1;
       return { configured: true };
@@ -252,6 +254,13 @@ export function createStub(options: StubOptions = {}): StubHandle {
       const repository = makeGlance(nextId, fullName);
       repositories = [repository, ...repositories];
       return { ok: true, repository, error: null };
+    },
+    async inspectRepositoryInput(input) {
+      calls.inspectRepositoryInput += 1;
+      const match = input.trim().match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/#?]+)\/?$/i);
+      return match
+        ? { ok: true, owner: match[1]!, name: match[2]! }
+        : { ok: false, message: '请输入 GitHub 仓库地址' };
     },
     async removeRepository() {
       calls.removeRepository += 1;
@@ -368,7 +377,7 @@ export async function renderApp(stub: StubHandle): Promise<RenderResult> {
 
 /** 在同样的 Provider 组合里渲染任意节点（测试自定义探针时用）。 */
 export async function renderNode(stub: StubHandle, node: ReactNode): Promise<RenderResult> {
-  window.octo = stub.api;
+  window.bluebirdCourier = stub.api;
   installMatchMedia();
   const container = document.createElement('div');
   document.body.append(container);

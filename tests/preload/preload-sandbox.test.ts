@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import { IPC_CHANNELS } from '../../src/shared/ipc';
-import type { OctoBridge } from '../../src/shared/types';
+import type { BluebirdCourierBridge } from '../../src/shared/types';
 
 /**
  * 回归测试接缝：preload 构建产物在 Electron 沙箱语义下必须自包含。
@@ -31,6 +31,7 @@ const GATEWAY_METHODS = [
   'updateSettings',
   'listRepositories',
   'addRepository',
+  'inspectRepositoryInput',
   'removeRepository',
   'refreshGlance',
   'fetchDetail',
@@ -91,11 +92,11 @@ describe('preload 沙箱自包含（启动即报"无法读取访问令牌状态"
     expect(loadError).toBeNull();
   });
 
-  it('contextBridge 暴露 octo 网关与全部用例方法', () => {
+  it('contextBridge 暴露 bluebirdCourier 网关与全部用例方法', () => {
     const { exposed, loadError } = loadPreloadUnderSandbox();
     expect(loadError).toBeNull();
     expect(exposed).toHaveLength(1);
-    expect(exposed[0]?.name).toBe('octo');
+    expect(exposed[0]?.name).toBe('bluebirdCourier');
     expect(Object.keys(exposed[0]?.api ?? {}).sort()).toEqual([...GATEWAY_METHODS].sort());
   });
 
@@ -121,8 +122,8 @@ describe('preload 沙箱自包含（启动即报"无法读取访问令牌状态"
       invoke?.();
       expect(loaded.invokedChannels, `方法 ${method} 的通道`).toEqual([IPC_CHANNELS[method]]);
     }
-    // 类型层面同样锁死：暴露的形状就是 OctoBridge
-    const _bridgeCheck: OctoBridge = api as unknown as OctoBridge;
+    // 类型层面同样锁死：暴露的形状就是 BluebirdCourierBridge
+    const _bridgeCheck: BluebirdCourierBridge = api as unknown as BluebirdCourierBridge;
     void _bridgeCheck;
   });
 });

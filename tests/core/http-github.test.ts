@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createHttpGitHub } from '../../src/main/core/github/http-github';
+import { createHttpGitHub } from '../../src/main/core/adapters/github/http-github';
 import { normalizeError } from '../../src/main/facade/errors';
 
 /** 永不返回的 fetch：只在收到中止信号时 reject，模拟连接挂起。 */
@@ -11,6 +11,55 @@ function hangingFetch(): typeof fetch {
 }
 
 describe('GitHub HTTP 适配器', () => {
+  it('保留 Issue 与 Pull Request 的 body，并将空 body 归一为 null', async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify([
+          {
+            number: 42,
+            title: '一个议题',
+            body: '问题复现步骤与背景',
+            state: 'open',
+            user: { login: 'octocat' },
+            updated_at: '2026-09-25T02:00:00.000Z',
+          },
+          {
+            number: 57,
+            title: '一个合并请求',
+            body: null,
+            state: 'closed',
+            user: null,
+            updated_at: '2026-09-25T07:20:00.000Z',
+            pull_request: { url: 'https://api.github.com/repos/octo/demo/pulls/57' },
+          },
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch;
+
+    const issues = await createHttpGitHub(fetchImpl).listIssues('ghp_any', 'octo/demo');
+
+    expect(issues).toEqual([
+      {
+        kind: 'issue',
+        number: 42,
+        title: '一个议题',
+        body: '问题复现步骤与背景',
+        state: 'open',
+        authorName: 'octocat',
+        updatedAt: '2026-09-25T02:00:00.000Z',
+      },
+      {
+        kind: 'pull',
+        number: 57,
+        title: '一个合并请求',
+        body: null,
+        state: 'closed',
+        authorName: null,
+        updatedAt: '2026-09-25T07:20:00.000Z',
+      },
+    ]);
+  });
+
   it('请求挂起时按超时中止，并归一到网络失败', async () => {
     const github = createHttpGitHub(hangingFetch(), 20);
 
@@ -21,7 +70,7 @@ describe('GitHub HTTP 适配器', () => {
       (reason: unknown) => reason,
     );
 
-    expect(error).toMatchObject({ name: 'TimeoutError' });
+    expect(error).toMatchObject({ name: 'PortFailure', kind: 'network' });
     expect(normalizeError(error)).toMatchObject({ kind: 'network' });
   });
 });

@@ -1,4 +1,4 @@
-import type { EffectiveTheme } from '../../shared/theme';
+import type { EffectiveTheme } from '../../shared/types';
 
 /** 趋势图配色：Chart.js 只接受完整色值，不能是 CSS 通道三元组。 */
 export interface ChartPalette {

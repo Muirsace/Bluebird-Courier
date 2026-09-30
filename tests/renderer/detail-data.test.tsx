@@ -66,11 +66,11 @@ function makeCommit(index: number, message?: string): CommitItem {
 }
 
 function makeIssue(number: number, state: 'open' | 'closed' = 'open'): IssueItem {
-  return { number, title: `议题 ${number}`, state, authorName: 'octocat', updatedAt: daysAgoIso(1, 9) };
+  return { number, title: `议题 ${number}`, body: `议题 ${number} 的正文`, state, authorName: 'octocat', updatedAt: daysAgoIso(1, 9) };
 }
 
 function makePull(number: number, state: 'open' | 'closed' = 'open'): PullRequestItem {
-  return { number, title: `合并请求 ${number}`, state, authorName: 'hubot', updatedAt: daysAgoIso(2, 9) };
+  return { number, title: `合并请求 ${number}`, body: `合并请求 ${number} 的正文`, state, authorName: 'hubot', updatedAt: daysAgoIso(2, 9) };
 }
 
 // ---------- 纯函数：tag 分类必须保守 ----------
@@ -248,6 +248,21 @@ describe('议题与合并请求 · 有数据与无数据', () => {
     expect(text).toContain('合并请求');
     expect(text).toContain('1 条');
     expect(listRows()).toHaveLength(3);
+  });
+
+  it('展示 GitHub 返回的 Issue / PR 正文', async () => {
+    await render(
+      <IssuesAndPulls
+        issues={[{ ...makeIssue(1), body: 'Issue 正文内容' }]}
+        pullRequests={[{ ...makePull(2), body: 'PR 正文内容' }]}
+        owner={REPO.owner}
+        name={REPO.name}
+      />,
+    );
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Issue 正文内容');
+    expect(text).toContain('PR 正文内容');
   });
 
   it('类型用文字区分，不只靠颜色', async () => {

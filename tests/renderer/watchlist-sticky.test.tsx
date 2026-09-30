@@ -235,7 +235,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     )?.[0] ?? '';
     const reducedTransform =
       css.match(/\.watchlist-add-field,\s*\.watchlist-add-action,\s*\.watchlist-inline-message\s*\{[^}]*\}/)?.[0] ?? '';
-    const app = readFileSync(resolve(process.cwd(), 'src/renderer/App.tsx'), 'utf8');
+    const app = readFileSync(resolve(process.cwd(), 'src/renderer/pages/App.tsx'), 'utf8');
     const header = readFileSync(
       resolve(process.cwd(), 'src/renderer/components/watchlist/WatchlistHeader.tsx'),
       'utf8',

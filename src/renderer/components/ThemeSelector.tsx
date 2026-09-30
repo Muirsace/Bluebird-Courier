@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { THEME_PREFERENCES } from '../../shared/theme';
-import type { ThemePreference } from '../../shared/theme';
+import { THEME_PREFERENCES } from '../../shared/types';
+import type { ThemePreference } from '../../shared/types';
 import { useTheme } from '../lib/theme';
 
 const LABELS: Record<ThemePreference, string> = {

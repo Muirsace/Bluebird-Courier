@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { AddRepositoryResult, Glance, NormalizedError } from '../../../shared/types';
-import { parseRepoInput } from '../../../shared/repo-input';
+import { parseRepoInput } from '../../lib/repo-input';
 import { describeError } from '../../lib/errors';
 import { Spinner } from '../Spinner';
 

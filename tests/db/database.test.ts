@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { openDatabase } from '../../src/main/core/db/database';
+import { openDatabase } from '../../src/main/core/infra/database';
 
 const opened: Database.Database[] = [];
 const tempDirs: string[] = [];

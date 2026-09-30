@@ -50,20 +50,20 @@ describe('全量信息抓取（详情页）', () => {
 
     const detail = (await h().facade.fetchDetail(id)).detail!;
     expect(detail.issues).toEqual([
-      { number: 42, title: '清单页刷新按钮无反馈', state: 'open', authorName: 'user-a', updatedAt: '2026-09-25T02:00:00.000Z' },
+      { number: 42, title: '清单页刷新按钮无反馈', body: '刷新按钮应该显示进行中的状态。', state: 'open', authorName: 'user-a', updatedAt: '2026-09-25T02:00:00.000Z' },
     ]);
     expect(detail.pullRequests).toEqual([
-      { number: 57, title: 'feat: 详情页构建徽章', state: 'open', authorName: 'user-b', updatedAt: '2026-09-25T07:20:00.000Z' },
+      { number: 57, title: 'feat: 详情页构建徽章', body: '为详情页增加构建状态展示。', state: 'open', authorName: 'user-b', updatedAt: '2026-09-25T07:20:00.000Z' },
     ]);
   });
 
   it('构建结论归一为构建状态徽章', async () => {
-    const cases: Array<{ conclusion: string | null; status: string | null; expected: string }> = [
-      { conclusion: 'success', status: 'completed', expected: 'success' },
-      { conclusion: 'failure', status: 'completed', expected: 'failure' },
-      { conclusion: 'timed_out', status: 'completed', expected: 'failure' },
-      { conclusion: 'cancelled', status: 'completed', expected: 'neutral' },
-      { conclusion: null, status: 'in_progress', expected: 'pending' },
+    const cases: Array<{ resultDescription: string | null; status: 'success' | 'failure' | 'pending' | 'neutral'; expected: string }> = [
+      { resultDescription: 'success', status: 'success', expected: 'success' },
+      { resultDescription: 'failure', status: 'failure', expected: 'failure' },
+      { resultDescription: 'timed_out', status: 'failure', expected: 'failure' },
+      { resultDescription: 'cancelled', status: 'neutral', expected: 'neutral' },
+      { resultDescription: null, status: 'pending', expected: 'pending' },
     ];
     for (const testCase of cases) {
       harness?.destroy();
@@ -71,7 +71,7 @@ describe('全量信息抓取（详情页）', () => {
         build: {
           workflowName: 'ci',
           status: testCase.status,
-          conclusion: testCase.conclusion,
+          resultDescription: testCase.resultDescription,
           url: null,
           finishedAt: null,
         },
