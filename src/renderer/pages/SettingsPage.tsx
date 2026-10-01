@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, TransitionEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NormalizedError, AccessTokenResult } from '../../shared/types';
@@ -59,6 +59,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   const accessTokenValueRef = useRef('');
   const requestIdRef = useRef(0);
   const savedTimerRef = useRef<number | null>(null);
+  const onSavedRef = useRef(onSaved);
+  useLayoutEffect(() => { onSavedRef.current = onSaved; }, [onSaved]);
 
   useEffect(() => {
     return () => {
@@ -129,7 +131,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         if (savedTimerRef.current !== null) window.clearTimeout(savedTimerRef.current);
         savedTimerRef.current = window.setTimeout(() => {
           savedTimerRef.current = null;
-          onSaved();
+          onSavedRef.current();
         }, 900);
       } else {
         updateFeedback({ kind: 'error', message: tokenErrorMessage(errorFrom(result)) });

@@ -106,12 +106,14 @@ export function DetailPage({
    */
   const repoContextSentinelRef = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sentinel = repoContextSentinelRef.current;
     // 没有布局引擎（测试环境）时不装观察器：顶部栏保持不接管
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    let live = true;
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!live) return;
         const entry = entries[0];
         if (!entry) return;
         if (entry.intersectionRatio === 0) onRepositoryContextChange(true);
@@ -120,8 +122,8 @@ export function DetailPage({
       { root: appScrollRoot(sentinel), threshold: [0, 1] },
     );
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [onRepositoryContextChange]);
+    return () => { live = false; observer.disconnect(); };
+  }, [onRepositoryContextChange, workspace]);
   /**
    * Tabs 吸附态。吸附线是"顶部栏下沿"，所以哨兵放在吸附线正上方一个顶部栏高度处：
    * 它越过视口顶端的那一刻，正好就是 Tabs 抵达吸附线的那一刻。
@@ -132,18 +134,20 @@ export function DetailPage({
   const tabsSentinelRef = useRef<HTMLSpanElement>(null);
   const [tabsStuck, setTabsStuck] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sentinel = tabsSentinelRef.current;
     // 没有布局引擎（测试环境）时不装观察器：stuck 恒为 false，不影响语义与 ARIA
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    let live = true;
     const observer = new IntersectionObserver((entries) => {
+      if (!live) return;
       const entry = entries[0];
       if (!entry) return;
       setTabsStuck(!entry.isIntersecting);
     }, { root: appScrollRoot(sentinel) });
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, []);
+    return () => { live = false; observer.disconnect(); };
+  }, [workspace]);
 
   /**
    * 记下"这一次 Tab 切换要播内容进场"。
@@ -168,6 +172,15 @@ export function DetailPage({
    * 新 Tab 更矮时还会把 scrollY 直接夹掉，那时再读 tabsStuck 已经不是触发切换时的状态了。
    */
   const resetTabScrollRef = useRef(false);
+  const previousLayoutRef = useRef(workspace);
+  useLayoutEffect(() => {
+    if (previousLayoutRef.current === workspace) return;
+    previousLayoutRef.current = workspace;
+    setTabsStuck(false);
+    onRepositoryContextChange(false);
+    setTabContentSwitched(null);
+    resetTabScrollRef.current = false;
+  }, [workspace, onRepositoryContextChange]);
 
   const selectTab = useCallback(
     (id: DetailTabId): void => {
@@ -224,7 +237,7 @@ export function DetailPage({
 
   // 首次抓取的揭示窗口。首帧就有数据（缓存命中）直接算 ready，所以只播一次；
   // 手动重新抓取时旧数据一直都在，阶段早已离开 loading，也不会重播。
-  const reveal = useDetailReveal(detail !== null, DETAIL_REVEAL_TOTAL_MS);
+  const reveal = useDetailReveal(detail !== null, DETAIL_REVEAL_TOTAL_MS, workspace);
   /** 真·抓取中：刷新时旧数据仍在，这里不算 pending，表头与内容都保持原样。 */
   const pending = detailQuery.isPending && !detail;
 

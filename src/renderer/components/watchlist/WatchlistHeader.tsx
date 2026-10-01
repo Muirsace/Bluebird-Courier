@@ -7,6 +7,7 @@ import type { AddRepositoryOutcome } from './AddRepositoryForm';
 
 interface WatchlistHeaderProps {
   sidebar?: boolean;
+  active?: boolean;
   /** 当前清单里的仓库数量；读取中为 null（此时不显示数量，避免先显示 0 再跳数）。 */
   repositoryCount: number | null;
   repositories: Glance[];
@@ -21,6 +22,7 @@ interface WatchlistHeaderProps {
 /** 清单页标题与唯一一组页面操作。 */
 export function WatchlistHeader({
   sidebar = false,
+  active = true,
   repositoryCount,
   repositories,
   adding,
@@ -35,21 +37,24 @@ export function WatchlistHeader({
 
   useLayoutEffect(() => {
     // Desktop Chrome 在列表滚动根之外，既不用吸附，也不再安装 toolbar Observer。
-    if (sidebar) return;
+    setToolbarStuck(false);
+    if (sidebar || !active) return;
     const sentinel = toolbarSentinelRef.current;
     const appHeader = document.querySelector<HTMLElement>('.app-global-header');
     if (!sentinel || !appHeader || typeof IntersectionObserver === 'undefined') return;
     const scrollRoot = appScrollRoot(sentinel);
 
     let observer: IntersectionObserver | null = null;
+    let live = true;
     const observeAtHeader = (): void => {
+      if (!live) return;
       observer?.disconnect();
       // Read the rendered Header height because IntersectionObserver rootMargin cannot use CSS vars.
       const headerHeight = scrollRoot ? 0 : appHeader.getBoundingClientRect().height;
       const stickyTop = scrollRoot?.getBoundingClientRect().top ?? headerHeight;
       setToolbarStuck(sentinel.getBoundingClientRect().top <= stickyTop);
       observer = new IntersectionObserver(
-        ([entry]) => setToolbarStuck(entry ? !entry.isIntersecting : false),
+        ([entry]) => { if (live) setToolbarStuck(entry ? !entry.isIntersecting : false); },
         { root: scrollRoot, rootMargin: `-${headerHeight}px 0px 0px 0px`, threshold: 0 },
       );
       observer.observe(sentinel);
@@ -61,10 +66,11 @@ export function WatchlistHeader({
     resizeObserver?.observe(appHeader);
 
     return () => {
+      live = false;
       observer?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, [sidebar]);
+  }, [sidebar, active]);
 
   const Heading = sidebar ? 'h2' : 'h1';
 
@@ -85,6 +91,7 @@ export function WatchlistHeader({
       <div className="watchlist-page-toolbar" data-stuck={toolbarStuck ? 'true' : undefined}>
         <div className="watchlist-toolbar flex w-full flex-wrap items-start gap-2">
           <AddRepositoryForm
+            active={active}
             repositories={repositories}
             adding={adding}
             onSubmit={onAdd}

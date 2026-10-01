@@ -75,7 +75,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     const toolbar = document.querySelector('.watchlist-page-toolbar');
     const addForm = document.querySelector('.watchlist-add-form');
     const refresh = buttonByText('全部刷新');
-    expect(toolbar?.parentElement).toBe(page);
+    expect(toolbar?.closest('.watchlist-page')).toBe(page);
     expect(toolbar?.previousElementSibling?.querySelector('h1')?.textContent).toBe('监控清单');
     expect(toolbar?.contains(addForm)).toBe(true);
     expect(toolbar?.contains(refresh)).toBe(true);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
@@ -11,6 +12,7 @@ import { Loading } from '../components/Loading';
 import { RepositorySidebarRow } from '../components/watchlist/RepositorySidebarRow';
 import { RepoRow } from '../components/RepoRow';
 import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
+import { PageSlot, usePageHost } from '../components/shell/PageHost';
 import { prefersReducedMotion, revealScrollFallbackMs } from '../lib/motion';
 import type { AddRepositoryOutcome, AddRepositoryPosition } from '../components/watchlist/AddRepositoryForm';
 
@@ -34,6 +36,7 @@ interface WatchlistPageProps {
   onGoSettings: () => void;
   /** Only the desktop Sidebar uses the compact switcher. */
   sidebar?: boolean;
+  active?: boolean;
   selectedRepositoryId?: number | null;
   onRepositoryRemoved?: (repositoryId: number) => void;
 }
@@ -59,10 +62,14 @@ function focusAfterRemoval(repositoryId: number): void {
   button?.focus();
 }
 
-export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
+export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, active = true, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
   const RepositoryItem = sidebar ? RepositorySidebarRow : RepoRow;
   const pageRef = useRef<HTMLDivElement>(null);
   const listViewportRef = useRef<HTMLDivElement>(null);
+  const chromeHost = usePageHost();
+  const layoutRef = useRef({ sidebar, active });
+  const onRepositoryRemovedRef = useRef(onRepositoryRemoved);
+  const addedLayoutRef = useRef(sidebar);
   const queryClient = useQueryClient();
   const listQuery = useQuery({
     queryKey: ['repositories'],
@@ -77,6 +84,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
   const [highlightRequest, setHighlightRequest] = useState<{
     repositoryId: number;
     token: number;
+    sidebar: boolean;
   } | null>(null);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   /** 仅用于退场期间保留列表容器与空态时序；卡片 DOM 本身由 AnimatePresence 管理。 */
@@ -85,7 +93,21 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const pendingViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
   const highlightSequenceRef = useRef(0);
-  const cancelRevealRef = useRef<(() => void) | null>(null);
+  const cancelRevealRef = useRef<((settleFeedback?: boolean) => void) | null>(null);
+  useLayoutEffect(() => {
+    onRepositoryRemovedRef.current = onRepositoryRemoved;
+    const previous = layoutRef.current;
+    layoutRef.current = { sidebar, active };
+    if (previous.sidebar === sidebar && previous.active === active) return;
+    // 旧 scrollport 的定位不继续驱动新布局，列表替换也不被当成新加入。
+    cancelRevealRef.current?.(true);
+    cancelRevealRef.current = null;
+    pendingViewportAnchorRef.current = null;
+    setPendingReveal(null);
+    setNewlyAddedId(null);
+    setExitingIds([]);
+    setHighlightRequest(null);
+  }, [sidebar, active, onRepositoryRemoved]);
 
   const startReveal = useCallback((
     repositoryId: number,
@@ -135,7 +157,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
       finished = true;
       cleanup();
       cancelRevealRef.current = null;
-      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current });
+      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current, sidebar: layoutRef.current.sidebar });
       onRevealSettled();
     };
     const handleScroll = (): void => {
@@ -166,9 +188,14 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
       fallback = window.setTimeout(finish, revealScrollFallbackMs(Math.abs(targetOf() - scrollRoot.scrollTop)));
       verifyFrame = window.requestAnimationFrame(verifyStarted);
     }
-    cancelRevealRef.current = () => {
+    cancelRevealRef.current = (settleFeedback = false) => {
       finished = true;
       cleanup();
+      if (settleFeedback && behavior === 'smooth') {
+        (shellRoot ?? window).scrollTo({ top: scrollRoot.scrollTop, behavior: 'instant' });
+      }
+      // 中断定位也交还表单的反馈生命周期，避免永久卡在 revealing。
+      if (settleFeedback) onRevealSettled();
     };
   }, []);
 
@@ -255,7 +282,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
 
   /** 退场播完仅交接焦点；数据删除与 DOM 保留分别由请求结果和 Motion 负责。 */
   const handleExited = useCallback((repositoryId: number) => {
-    focusAfterRemoval(repositoryId);
+    if (layoutRef.current.active) focusAfterRemoval(repositoryId);
   }, []);
 
   /** 新增失败由表单局部展示；重复响应刷新本地清单以提供对应仓库的详情入口。 */
@@ -276,9 +303,10 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
       newCardPosition = nearTop ? 'visible' : 'offscreen';
       if (result.repository) {
         pendingViewportAnchorRef.current = null;
-        setNewlyAddedId(nearTop ? result.repository.id : null);
+        addedLayoutRef.current = layoutRef.current.sidebar;
+        setNewlyAddedId(nearTop && layoutRef.current.active ? result.repository.id : null);
 
-        if (!nearTop) {
+        if (!nearTop && layoutRef.current.active) {
           pendingViewportAnchorRef.current = {
             repositoryId: result.repository.id,
             scrollTop,
@@ -325,7 +353,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
    */
   async function handleRemove(repositoryId: number): Promise<void> {
     await getApi().removeRepository(repositoryId);
-    onRepositoryRemoved?.(repositoryId);
+    onRepositoryRemovedRef.current?.(repositoryId);
     // 请求成功的当下就停止交互，覆盖 Motion 启动 exit 之前的提交窗口。
     const slot = document.querySelector<HTMLElement>(`ul.repo-list > li[data-repository-id="${repositoryId}"]`);
     slot?.setAttribute('inert', '');
@@ -344,6 +372,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
     <>
       <WatchlistHeader
         sidebar={sidebar}
+        active={active}
         repositoryCount={listQuery.data ? repositories.length : null}
         repositories={repositories}
         adding={adding}
@@ -376,7 +405,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
   ) : listUnavailable ? null : (
     <>
       <ul className={`repo-list${sidebar ? ' repository-sidebar-list' : ''}`} hidden={displayed.length === 0 && exitingIds.length === 0}>
-        <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
+        <AnimatePresence key={`${sidebar}:${active}`} initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
           {displayed.map((repo) => (
             <RepositoryItem
               key={repo.id}
@@ -385,9 +414,9 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
               onOpen={onOpenDetail}
               onRemove={handleRemove}
               refreshing={refreshing}
-              justAdded={repo.id === newlyAddedId}
+              justAdded={repo.id === newlyAddedId && addedLayoutRef.current === sidebar}
               highlightRequest={
-                repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
+                repo.id === highlightRequest?.repositoryId && highlightRequest.sidebar === sidebar ? highlightRequest.token : undefined
               }
               onEntered={handleEntered}
               removing={exitingIds.length > 0}
@@ -406,16 +435,19 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
   );
 
   return (
+    <>
     <div ref={pageRef} className="watchlist-page min-w-0" data-sidebar={sidebar}>
       {sidebar ? (
         <>
-          <div className="watchlist-sidebar-chrome">{chrome}</div>
+          <div className="watchlist-sidebar-chrome"><PageSlot host={chromeHost} /></div>
           {/* layoutScroll 属于实际列表 scrollport；行与 Presence 的 Motion 保持原样。 */}
           <motion.div ref={listViewportRef} layoutScroll className="repository-list-viewport" data-app-scroll-root="sidebar">
             <div className="repository-list-content">{listContent}</div>
           </motion.div>
         </>
-      ) : <>{chrome}{listContent}</>}
+      ) : <><PageSlot host={chromeHost} />{listContent}</>}
     </div>
+    {createPortal(chrome, chromeHost)}
+    </>
   );
 }

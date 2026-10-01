@@ -13,6 +13,7 @@ export interface AddRepositoryOutcome {
 }
 
 interface AddRepositoryFormProps {
+  active?: boolean;
   repositories: Glance[];
   adding: boolean;
   onSubmit: (fullName: string) => Promise<AddRepositoryOutcome>;
@@ -68,6 +69,7 @@ function findRepository(repositories: Glance[], fullName: string): Glance | null
 
 /** 添加仓库：默认折叠，复用主进程同一输入解析规则，所有反馈留在同一个 Inline Message 槽位。 */
 export function AddRepositoryForm({
+  active = true,
   repositories,
   adding,
   onSubmit,
@@ -87,6 +89,11 @@ export function AddRepositoryForm({
   const valueRef = useRef('');
   const feedbackRef = useRef<FeedbackState>({ kind: 'none' });
   const successTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    submissionId.current += 1;
+    if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
+  }, []);
 
   const updateFeedback = (next: FeedbackState): void => {
     feedbackRef.current = next;
@@ -200,14 +207,14 @@ export function AddRepositoryForm({
   }
 
   useEffect(() => {
-    if (expanded) {
+    if (active && expanded && !wasExpanded.current) {
       inputRef.current?.focus();
-    } else if (wasExpanded.current && restoreTriggerFocus.current) {
+    } else if (active && !expanded && wasExpanded.current && restoreTriggerFocus.current) {
       triggerRef.current?.focus();
     }
     restoreTriggerFocus.current = false;
     wasExpanded.current = expanded;
-  }, [expanded]);
+  }, [expanded, active]);
 
   useEffect(() => {
     if (currentMessage) {
@@ -248,7 +255,7 @@ export function AddRepositoryForm({
   }, [expanded, isDuplicate, duplicateFeedback?.phase, duplicateName, duplicateRepository, value]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || !active) return;
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -256,10 +263,10 @@ export function AddRepositoryForm({
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [expanded, collapse]);
+  }, [expanded, active, collapse]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || !active) return;
     function handlePointerDown(event: PointerEvent): void {
       if (containerRef.current?.contains(event.target as Node) || adding) return;
       if (feedbackRef.current.kind !== 'none' || hasInput || isDuplicate) return;
@@ -267,7 +274,7 @@ export function AddRepositoryForm({
     }
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [expanded, hasInput, adding, isDuplicate, collapse]);
+  }, [expanded, active, hasInput, adding, isDuplicate, collapse]);
 
   async function handleSubmit(event: FormEvent): Promise<void> {
     event.preventDefault();

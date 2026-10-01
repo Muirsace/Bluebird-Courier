@@ -1,3 +1,9 @@
+.responsive-page-host,
+.responsive-page-slot {
+  /* 布局壳迁移页面实例的容器，不增加盒模型或改变 legacy spacing。 */
+  display: contents;
+}
+
 .app-shell {
   --app-rail-width: 0px;
   --app-sidebar-width: 336px;
@@ -55,8 +61,12 @@
   border-bottom: 1px solid rgb(var(--color-border-subtle));
 }
 
-.watchlist-sidebar-chrome > :not([hidden]) ~ :not([hidden]) {
+.watchlist-sidebar-chrome .responsive-page-host > :not([hidden]) ~ :not([hidden]) {
   margin-block-start: 8px;
+}
+
+.watchlist-page[data-sidebar='false'] .responsive-page-host > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: var(--watchlist-page-gap);
 }
 
 .watchlist-page[data-sidebar='true'] > :not([hidden]) ~ :not([hidden]) {
@@ -163,22 +173,21 @@
   overflow: visible;
 }
 
-@media (min-width: 900px) {
-  html:has(.app-frame[data-desktop='true']) {
-    overflow: hidden;
-    scrollbar-gutter: auto;
-  }
+/* 与同一次 React layout commit 切换；media query 先解开高度会提前夹掉列表 scrollTop。 */
+html:has(.app-frame[data-desktop='true']) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
 
-  .app-frame[data-desktop='true'] {
-    height: 100%;
-    min-height: 0;
-    max-width: none;
-    overflow: hidden;
-  }
+.app-frame[data-desktop='true'] {
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  overflow: hidden;
+}
 
-  .app-frame[data-desktop='true'] > main {
-    flex: 1;
-    min-height: 0;
-    padding: 0;
-  }
+.app-frame[data-desktop='true'] > main {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
 }

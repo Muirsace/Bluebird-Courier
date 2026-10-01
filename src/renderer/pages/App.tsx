@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Glance, AccessTokenState } from '../../shared/types';
 import lightBrandMark from '../assets/bluebird-mark-light.svg';
@@ -7,6 +8,7 @@ import { getApi } from '../lib/api';
 import { useDesktopShell } from '../lib/app-layout';
 import { AppShell } from '../components/shell/AppShell';
 import { DesktopSidebarHeader } from '../components/shell/DesktopSidebarHeader';
+import { PageSlot, usePageHost } from '../components/shell/PageHost';
 import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { ErrorBar } from '../components/ErrorBar';
 import { PageTransition } from '../components/PageTransition';
@@ -42,8 +44,10 @@ function navButtonClass(disabled: boolean): string {
 
 export function App() {
   const queryClient = useQueryClient();
-  const desktop = useDesktopShell();
   const workspaceRef = useRef<HTMLElement>(null);
+  const workspaceHost = usePageHost();
+  const watchlistHost = usePageHost();
+  const sidebarScrollRef = useRef(0);
   const [view, setView] = useState<View>('watchlist');
   const [selected, setSelected] = useState<SelectedRepo | null>(null);
   /** 上一次导航的方向；null 表示还没导航过（首屏不播切换动画）。 */
@@ -64,6 +68,17 @@ export function App() {
    * 为 true 时顶部栏在品牌右侧接管当前仓库名——只在详情里成立，离开详情即回到 false。
    */
   const [repoContextVisible, setRepoContextVisible] = useState(false);
+  const desktop = useDesktopShell((nextDesktop) => {
+    if (nextDesktop) {
+      if (activeView === 'watchlist') watchlistScrollRef.current = window.scrollY;
+    } else {
+      sidebarScrollRef.current = watchlistHost.querySelector<HTMLElement>('[data-app-scroll-root="sidebar"]')?.scrollTop ?? sidebarScrollRef.current;
+    }
+    // resize 不是导航，旧方向和旧 scroll root 的上下文都不传给新布局。
+    setMotion(null);
+    setRepoContextVisible(false);
+  });
+  const previousDesktopRef = useRef(desktop);
 
   // 启动即查询访问令牌状态：未配置时先进设置页
   const accessTokenStateQuery = useQuery({
@@ -134,6 +149,16 @@ export function App() {
     if (!hasTokenState) return;
     const previous = previousViewRef.current;
     previousViewRef.current = activeView;
+    const layoutChanged = previousDesktopRef.current !== desktop;
+    previousDesktopRef.current = desktop;
+    if (layoutChanged) {
+      window.scrollTo({ top: !desktop && activeView === 'watchlist' ? watchlistScrollRef.current : 0, behavior: 'auto' });
+      if (desktop) {
+        const root = watchlistHost.querySelector<HTMLElement>('[data-app-scroll-root="sidebar"]');
+        if (root) root.scrollTop = sidebarScrollRef.current;
+      }
+      return;
+    }
     if (desktop) return;
     // 首屏（previous 还是 null）不做任何滚动改写；同一个视图重复进入也不该动滚动位置
     if (previous === null || previous === activeView) return;
@@ -141,7 +166,7 @@ export function App() {
       top: activeView === 'watchlist' ? watchlistScrollRef.current : 0,
       behavior: 'auto',
     });
-  }, [activeView, hasTokenState, desktop]);
+  }, [activeView, hasTokenState, desktop, watchlistHost]);
 
   // 仅导航或换仓库时重置工作区；侧栏节点与其 scrollTop 保持不动。
   useLayoutEffect(() => {
@@ -158,7 +183,9 @@ export function App() {
   useLayoutEffect(() => {
     const header = headerRef.current;
     const root = document.documentElement;
+    let live = true;
     const apply = (): void => {
+      if (!live) return;
       const height = header?.getBoundingClientRect().height ?? 0;
       root.style.setProperty('--app-header-height', `${height}px`);
       root.style.setProperty('--app-chrome-height', `${height}px`);
@@ -166,6 +193,7 @@ export function App() {
     apply();
     if (!header || typeof ResizeObserver === 'undefined') {
       return () => {
+        live = false;
         root.style.removeProperty('--app-header-height');
         root.style.removeProperty('--app-chrome-height');
       };
@@ -173,6 +201,7 @@ export function App() {
     const observer = new ResizeObserver(apply);
     observer.observe(header);
     return () => {
+      live = false;
       observer.disconnect();
       root.style.removeProperty('--app-header-height');
       root.style.removeProperty('--app-chrome-height');
@@ -202,7 +231,7 @@ export function App() {
   } else if (activeView === 'detail' && selected) {
     content = (
       <DetailPage
-        key={desktop ? selected.id : undefined}
+        key={selected.id}
         workspace={desktop}
         repositoryContextVisible={repoContextVisible}
         repositoryId={selected.id}
@@ -224,12 +253,11 @@ export function App() {
       </div>
     );
   } else {
-    content = (
-      <WatchlistPage onOpenDetail={openDetail} onGoSettings={() => navigate('settings')} />
-    );
+    content = null;
   }
 
   return (
+    <>
     <div className="app-frame mx-auto flex min-h-full w-full max-w-6xl flex-col" data-desktop={desktop}>
       {!desktop ? <header ref={headerRef} className="app-global-header sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -269,31 +297,36 @@ export function App() {
             rail={null}
             sidebarChrome={<DesktopSidebarHeader settingsActive={activeView === 'settings'} onGoSettings={() => navigate('settings')} />}
             workspaceRef={workspaceRef}
-            sidebar={configured ? (
-              <WatchlistPage
-                sidebar
-                selectedRepositoryId={activeView === 'detail' ? selected?.id : null}
-                onOpenDetail={openDetail}
-                onGoSettings={() => navigate('settings')}
-                onRepositoryRemoved={(repositoryId) => {
-                  if (selected?.id !== repositoryId) return;
-                  setSelected(null);
-                  if (activeView === 'detail') navigate('watchlist');
-                }}
-              />
-            ) : null}
-            workspace={<>{tokenRefreshError}{content}</>}
+            sidebar={configured ? <PageSlot host={watchlistHost} /> : null}
+            workspace={<>{tokenRefreshError}<PageSlot host={workspaceHost} /></>}
           />
         ) : (
           <>
             {tokenRefreshError}
             {/* key 只跟导航状态走：刷新 / Query 更新 / 主题 / resize 都不会重播 */}
             <PageTransition key={activeView} motion={motion}>
-              {content}
+              <PageSlot host={configured && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
             </PageTransition>
           </>
         )}
       </main>
     </div>
+    {configured ? createPortal(
+      <WatchlistPage
+        sidebar={desktop}
+        active={desktop || activeView === 'watchlist'}
+        selectedRepositoryId={activeView === 'detail' ? selected?.id : null}
+        onOpenDetail={openDetail}
+        onGoSettings={() => navigate('settings')}
+        onRepositoryRemoved={(repositoryId) => {
+          if (selected?.id !== repositoryId) return;
+          setSelected(null);
+          if (activeView === 'detail') navigate('watchlist');
+        }}
+      />,
+      watchlistHost,
+    ) : null}
+    {createPortal(content, workspaceHost)}
+    </>
   );
 }

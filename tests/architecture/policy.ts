@@ -12,6 +12,7 @@ export const coreAdapterTechnicalDependencies = new Set<string>(['electron']);
 export const mainIndexTechnicalDependencies = new Set<string>(['electron', 'node:fs', 'node:path']);
 export const rendererPresentationLibraries = new Set<string>([
   'react',
+  'react-dom', // Existing React DOM presentation dependency: stable page portal hosts.
   'react-dom/client',
   '@tanstack/react-query',
   'chart.js',

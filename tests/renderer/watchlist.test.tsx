@@ -236,7 +236,7 @@ describe('监控清单 · 添加仓库', () => {
     const addArea = document.querySelector('.watchlist-add-form');
     const toolbar = document.querySelector('.watchlist-page-toolbar');
     expect(page?.querySelector('.watchlist-page-heading h1')?.textContent).toBe('监控清单');
-    expect(page?.firstElementChild?.contains(addArea)).toBe(false);
+    expect(page?.querySelector('.watchlist-page-heading')?.contains(addArea)).toBe(false);
     expect(toolbar?.contains(addArea)).toBe(true);
     expect(addArea?.contains(buttonByLabel('新增仓库'))).toBe(true);
     expect(document.querySelectorAll('.watchlist-page-toolbar')).toHaveLength(1);
