@@ -1,0 +1,325 @@
+/**
+ * 卡片按下反馈。
+ *
+ * 整张卡片是一个视觉整体（连 16px 内边距与 `···` 列一起），所以位移 / 缩放 / 变灰
+ * 都落在 .repo-row 上；主点击区只负责"我被按下了"这一个信号（data-row-activator），
+ * 自己不再位移也不再变色，避免同一处出现两种反馈。
+ */
+.repo-row {
+  transition-property: translate, scale, background-color, border-color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.repo-row:has([data-row-activator]:active) {
+  background-color: rgb(var(--color-surface-active));
+  border-color: rgb(var(--color-border-strong));
+  translate: 0 1px;
+  scale: 0.985;
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
+/* Keep the row quiet while its own menu / confirmation surface is open. */
+.repo-row:has(.repo-actions-trigger[aria-expanded='true']):hover:not(:has([data-row-activator]:active)) {
+  border-color: rgb(var(--color-border-subtle));
+  background-color: rgb(var(--color-surface));
+}
+
+/**
+ * 监控清单卡片布局。Motion 接管 li 的位置与进退场，卡片内容不做尺寸补间。
+ */
+.repo-list {
+  display: flex;
+  flex-direction: column;
+  /* 保留原来 8px 间距；popLayout 的退出节点不占据 gap。 */
+  gap: 0.5rem;
+  /* popLayout 的退出卡片相对列表定位，避免相对页面定位。 */
+  position: relative;
+  /* 新增到首项时由 Watchlist 明确补偿视口，避免浏览器再做一遍隐式锚定。 */
+  overflow-anchor: none;
+}
+
+.repo-row-slot {
+  position: relative;
+  display: grid;
+  scroll-margin-top: calc(
+    var(--app-header-height, 0px) + var(--watchlist-toolbar-idle-height, 54px) + 0.75rem
+  );
+}
+
+.repo-row-clip {
+  /* 网格项默认 min-width/min-height: auto：不归零的话，超长仓库名会把卡片撑出容器宽度 */
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Enter / exit / layout 由 Motion 负责；CSS 高亮只改变边框与背景颜色。 */
+.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row {
+  animation: repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
+}
+
+/* 「查看位置」只提示已存在的卡片。 */
+.repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
+  animation: repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes repo-card-highlight {
+  from {
+    border-color: rgb(var(--color-accent-border));
+    background-color: rgb(var(--color-accent-soft));
+  }
+
+  to {
+    border-color: rgb(var(--color-border-subtle));
+    background-color: rgb(var(--color-surface));
+  }
+}
+
+/* 页面区块间距与标题下方的吸附哨兵共用同一值，哨兵本身不参与布局。 */
+.watchlist-page {
+  --watchlist-page-gap: 1rem;
+  --watchlist-toolbar-idle-height: 54px;
+}
+
+.watchlist-page > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: var(--watchlist-page-gap);
+}
+
+.watchlist-toolbar-sentinel {
+  position: absolute;
+  top: calc(100% + var(--watchlist-page-gap));
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+/**
+ * Watchlist 页面级操作栏：同一 DOM 在普通流与吸附状态间移动。
+ * 54px 最小高度、36px 控件和透明 1px 边框始终占位；状态只换背景与边框颜色。
+ */
+.watchlist-page-toolbar {
+  position: sticky;
+  top: var(--app-header-height, 0px);
+  z-index: 5;
+  width: 100%;
+  min-height: 54px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  padding-block: 8px;
+  border-bottom: 1px solid transparent;
+  background-color: transparent;
+  transition:
+    background-color 130ms var(--motion-ease-out),
+    border-color 130ms var(--motion-ease-out);
+}
+
+.watchlist-page-toolbar[data-stuck='true'] {
+  border-bottom-color: rgb(var(--color-border-subtle));
+  background-color: rgb(var(--color-app));
+}
+
+/* The outer width motion is independent of the input/action tracks below. */
+.watchlist-add-form {
+  position: relative;
+  flex: 0 1 auto;
+  width: 7.5rem;
+  max-width: 100%;
+  overflow: hidden;
+  transition: width 150ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.watchlist-add-form[data-expanded='true'] {
+  width: 32rem;
+  overflow: visible;
+  transition-duration: 190ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.watchlist-add-content {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0;
+}
+
+.watchlist-add-control-row {
+  grid-template-columns: minmax(0, 1fr) 0rem;
+  column-gap: 0;
+  overflow: clip;
+  overflow-clip-margin: 3px;
+  /* Let the visual exit finish before reclaiming its horizontal space. */
+  transition:
+    grid-template-columns 150ms var(--motion-ease-out) 70ms,
+    column-gap 150ms var(--motion-ease-out) 70ms;
+}
+
+.watchlist-add-content[data-action-visible='true'] .watchlist-add-control-row {
+  grid-template-columns: minmax(0, 1fr) 6rem;
+  column-gap: 0.5rem;
+  transition:
+    grid-template-columns 190ms var(--motion-ease-out),
+    column-gap 190ms var(--motion-ease-out);
+}
+
+.watchlist-add-trigger {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 7.5rem;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 150ms var(--motion-ease-in),
+    visibility 0s,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    border-color 120ms var(--motion-ease-out),
+    color 120ms var(--motion-ease-out);
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-trigger {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 150ms var(--motion-ease-in),
+    visibility 0s 150ms,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    border-color 120ms var(--motion-ease-out),
+    color 120ms var(--motion-ease-out);
+}
+
+.watchlist-add-field {
+  opacity: 0;
+  transform: translateX(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 1, 1),
+    transform 150ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s 150ms;
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-field {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: 0s;
+}
+
+.watchlist-add-content .watchlist-add-action {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(.86);
+  transform-origin: center;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    background-color 150ms var(--motion-ease-in),
+    border-color 150ms var(--motion-ease-in),
+    color 150ms var(--motion-ease-in),
+    opacity 90ms var(--motion-ease-in),
+    transform 90ms var(--motion-ease-in),
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    visibility 0s 90ms,
+    pointer-events 0s allow-discrete;
+}
+
+.watchlist-add-content[data-action-visible='true'] .watchlist-add-action {
+  opacity: 1;
+  transform: scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    background-color 150ms var(--motion-ease-out),
+    border-color 150ms var(--motion-ease-out),
+    color 150ms var(--motion-ease-out),
+    opacity 120ms var(--motion-ease-out) 90ms,
+    transform 120ms var(--motion-ease-out) 90ms,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    visibility 0s,
+    pointer-events 0s 90ms allow-discrete;
+}
+
+.watchlist-add-content[data-action-visible='true'] .watchlist-add-action:disabled {
+  opacity: 0.6;
+}
+
+.watchlist-add-action-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.watchlist-add-spinner {
+  border-color: rgb(var(--color-accent-contrast));
+  border-top-color: transparent;
+}
+
+/* The row height, not a transform on the repository list, moves following content. */
+.watchlist-inline-message {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition:
+    grid-template-rows 130ms cubic-bezier(0.4, 0, 1, 1),
+    opacity 130ms cubic-bezier(0.4, 0, 1, 1),
+    transform 130ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.watchlist-inline-message[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-duration: 170ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 35rem) {
+  /* Reserve the refresh action's row during the width tween at narrow widths. */
+  .watchlist-add-form[data-expanded='true'] {
+    width: calc(100% - 7rem);
+    min-width: min(16rem, 100%);
+  }
+}
+
+/* Cascade compatibility: narrow Settings rules stay after Watchlist, as in the original stylesheet. */
+@media (max-width: 35rem) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .settings-row-label {
+    padding-top: 0;
+  }
+
+  .settings-token-heading {
+    align-items: flex-start;
+  }
+}
+
+/* Cascade compatibility: global focus stays at the end, as in the original stylesheet. */
+/* 输入框与按钮的统一聚焦轮廓（两种主题下都使用独立的焦点色） */
+*:focus-visible {
+  outline: 2px solid rgb(var(--color-focus-ring));
+  outline-offset: 1px;
+}

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readRendererStyles } from './support/styles';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act } from 'react';
@@ -328,7 +329,7 @@ describe('Compact Context · 结构与无障碍', () => {
 });
 
 describe('Compact Context · 样式不变量', () => {
-  const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+  const css = readRendererStyles().replace(
     /\/\*[\s\S]*?\*\//g,
     '',
   );

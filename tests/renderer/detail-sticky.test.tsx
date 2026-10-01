@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readRendererStyles } from './support/styles';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { RenderResult, StubHandle } from './helpers';
@@ -221,7 +220,7 @@ describe('Detail Tabs 吸附 · 结构与状态', () => {
    * 写死 top 数值、改宽度 / 外边距、加毛玻璃或阴影都会让"吸附只是布局行为"这条失效。
    */
   it('样式表：吸附容器只改纵向定位，stuck 只换分隔线颜色', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+    const css = readRendererStyles().replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );
@@ -251,7 +250,7 @@ describe('Detail Tabs 吸附 · 结构与状态', () => {
   });
 
   it('Reduced Motion 下吸附态的换色同样瞬时（由全局降级规则接管）', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8');
+    const css = readRendererStyles();
     const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(reduced).toContain('transition-duration: 0.01ms !important');
   });

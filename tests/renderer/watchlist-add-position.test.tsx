@@ -10,8 +10,10 @@ import {
   makeGlance,
   renderApp,
   repoRows,
+  repoMotionForSlot,
   resetReducedMotion,
   settle,
+  settleMotion,
   setReducedMotion,
   submitForm,
   typeInto,
@@ -129,7 +131,7 @@ describe('Watchlist 新增位置', () => {
     await addRepository('octo/new-top');
 
     expect(watchlistSlotIds()).toEqual(['4', '1', '2', '3']);
-    expect(repoRows()[0]?.dataset.motion).toBe('entering');
+    expect(repoMotionForSlot(repoRows()[0])).toBe('entering');
     expect(repoRows()[0]?.dataset.highlight).toBe('true');
     expect(buttonByText('查看位置')).toBeNull();
     expect(scrollToCalls).toHaveLength(0);
@@ -147,7 +149,7 @@ describe('Watchlist 新增位置', () => {
     await addRepository('octo/new-scrolled');
 
     expect(watchlistSlotIds()).toEqual(['9', '1', '2', '3', '4', '5', '6', '7', '8']);
-    expect(repoRows()[0]?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(repoRows()[0])).toBe('idle');
     expect(repoRows()[0]?.dataset.highlight).toBeUndefined();
     expect(scrollToCalls).toEqual([{ top: 790, behavior: 'instant' }]);
     expect(buttonByText('查看位置')).not.toBeNull();
@@ -198,7 +200,7 @@ describe('Watchlist 新增位置', () => {
     expect(buttonByText('查看位置')?.disabled).toBe(true);
     expect(document.querySelector('.watchlist-page-heading h1')?.textContent).toBe('监控清单');
     expect(newCard?.dataset.highlightOnly).toBeUndefined();
-    expect(newCard?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     // 提示在滚动期间保持可见：还没到位就收起会让工具栏变矮，卡片会被再挪一次。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
     expect(buttonByText('查看位置')?.disabled).toBe(true);
@@ -206,7 +208,7 @@ describe('Watchlist 新增位置', () => {
 
     await finishSmoothReveal();
     expect(newCard?.dataset.highlightOnly).toBe('true');
-    expect(newCard?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     expect(newCard?.dataset.highlight).toBeUndefined();
     // 到位后不是立刻收起，先停留一段（等用户看见高亮）。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
@@ -311,7 +313,7 @@ describe('Watchlist 新增位置', () => {
       await new Promise((resolve) => setTimeout(resolve, 1600));
     });
 
-    expect(newCard.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     expect(newCard.dataset.highlightOnly).toBe('true');
     expect(newCard.dataset.highlight).toBeUndefined();
     // 兜底收尾同样先停留再收起：1600ms 时消息已关，内容再走 130ms 退场。
@@ -340,7 +342,7 @@ describe('Watchlist 新增位置', () => {
       window.dispatchEvent(new Event('scrollend'));
     });
     expect(newCard.dataset.highlight).toBeUndefined();
-    expect(newCard.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
   });
 
   it('卡片一直没出现时定位请求不会锁死提示，用户仍能清除', async () => {
@@ -353,6 +355,7 @@ describe('Watchlist 新增位置', () => {
     ));
     await click(buttonByText('全部刷新'));
     await settle();
+    await settleMotion(250);
     expect(watchlistSlotIds()).not.toContain('9');
 
     await click(buttonByText('查看位置'));
@@ -379,6 +382,7 @@ describe('Watchlist 新增位置', () => {
     ));
     await click(buttonByText('全部刷新'));
     await settle();
+    await settleMotion(250);
     expect(watchlistSlotIds()).not.toContain('9');
     expect(buttonByText('查看位置')).not.toBeNull();
 
@@ -405,7 +409,7 @@ describe('Watchlist 新增位置', () => {
       expect(call.options).toEqual({ behavior: 'smooth', block: 'center' });
     }
     await finishSmoothReveal();
-    expect(newCard?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     expect(newCard?.dataset.highlightOnly).toBe('true');
     expect(newCard?.dataset.highlight).toBeUndefined();
     expect(handle.calls.fetchDetail).toBe(0);
@@ -441,7 +445,7 @@ describe('Watchlist 新增位置', () => {
     expect(scrollIntoViewCalls).toHaveLength(1);
     expect(scrollIntoViewCalls[0]?.target.matches('li[data-repository-id]')).toBe(true);
     expect(scrollIntoViewCalls[0]?.options).toEqual({ behavior: 'smooth', block: 'center' });
-    expect(newCard.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     // 滚动调用发生在点击的事件周期内，提示不排在它前面也不等它，而是在到位后才收。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
     await finishSmoothReveal();
@@ -470,13 +474,13 @@ describe('Watchlist 新增位置', () => {
     expect(scrollToCalls).toHaveLength(0);
     expect(scrollIntoViewCalls).toHaveLength(1);
     expect(scrollIntoViewCalls[0]?.options).toEqual({ behavior: 'auto', block: 'center' });
-    expect(newCard?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     expect(newCard?.dataset.highlightOnly).toBeUndefined();
     await act(async () => {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     });
     expect(newCard?.dataset.highlightOnly).toBe('true');
-    expect(newCard?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(newCard)).toBe('idle');
     // 降级路径同样要"到位后停留一段再收"。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
     await act(async () => {

@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readRendererStyles } from './support/styles';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CommitItem, ReleaseItem } from '../../src/shared/types';
@@ -14,6 +13,7 @@ import {
   renderApp,
   repoOpenButton,
   repoSlot,
+  repoMotionForSlot,
   resetSystemTheme,
   settle,
   setSystemTheme,
@@ -333,7 +333,7 @@ describe('页面切换 · 详情 Tab', () => {
    * 这里只卡区间不卡死数值：改时长/改位移幅度都行，改回全透明淡入或大位移就红。
    */
   it('内容进场不淡入：起手接近不透明，位移只有几像素', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+    const css = readRendererStyles().replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );
@@ -362,7 +362,7 @@ describe('页面切换 · 返回清单不重播卡片动画', () => {
     await goBack();
 
     const slot = repoSlot('octocat/Hello-World');
-    expect(slot?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(slot)).toBe('idle');
     expect(slot?.dataset.highlight).toBeUndefined();
     expect(document.querySelectorAll('main ul > li')).toHaveLength(1);
   });
@@ -374,7 +374,7 @@ describe('页面切换 · Reduced Motion 降级机制', () => {
    * 位移全部关掉、indicator 立即落位。真实引擎下的表现由验证台人工核对。
    */
   it('样式表在 prefers-reduced-motion 下关掉位移与过渡', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8');
+    const css = readRendererStyles();
     const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
 
     expect(reduced).toContain('.view-transition');

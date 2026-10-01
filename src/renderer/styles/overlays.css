@@ -1,0 +1,166 @@
+/* Small entrance only: mounted menus and popovers do not shift surrounding layout. */
+.overlay-enter {
+  animation: overlay-enter 140ms ease-out both;
+  transform-origin: top right;
+}
+
+@keyframes overlay-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/**
+ * 仓库操作浮层（RepositoryActionSurface）：`···` 菜单与移除确认共用同一个外壳。
+ *
+ * 三层各管一件事，互不覆盖：
+ *   positioner —— 上下翻转、与触发器的间距、max-width / max-height（尺寸只认 CSS 变量）
+ *   surface    —— 边框 / 圆角 / 阴影 + 进场退场（只做 opacity / translate / scale）
+ *   content    —— 菜单 → 确认的交叉淡化，外壳宽高跟着内容连续变化
+ *
+ * 尺寸补间走 keyframes + CSS 变量而不是 transition：换内容时"起始尺寸"必须显式给出，
+ * 否则 height 从具体值到另一个具体值拿不到 before-change style，会直接跳变。
+ * placement 的位移只落在 positioner 上，永远不写进 surface 的 enter / close transform。
+ */
+.repository-action-positioner {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  width: var(--overlay-width);
+  height: var(--overlay-height, auto);
+  max-width: var(--overlay-max-width, calc(100vw - 24px));
+  max-height: var(--overlay-max-height, none);
+}
+
+.repository-action-positioner[data-placement='bottom'] {
+  top: 100%;
+  margin-top: 8px;
+}
+
+.repository-action-positioner[data-placement='top'] {
+  bottom: 100%;
+  margin-bottom: 8px;
+}
+
+/* 换内容：外壳从旧尺寸连续长到新尺寸，中间不跳变。 */
+.repository-action-positioner[data-swapping='true'] {
+  animation: repository-action-resize 170ms var(--motion-ease-out);
+}
+
+@keyframes repository-action-resize {
+  from {
+    width: var(--overlay-from-width);
+    height: var(--overlay-from-height);
+  }
+
+  to {
+    width: var(--overlay-to-width);
+    height: var(--overlay-to-height);
+  }
+}
+
+.repository-action-surface {
+  position: relative;
+  height: 100%;
+  animation: repository-action-enter 160ms var(--motion-ease-out) both;
+}
+
+/* 从 trigger 那一侧长出来：方向跟着 placement 走 */
+.repository-action-surface[data-placement='bottom'] {
+  --overlay-enter-shift: -4px;
+  --overlay-close-shift: -2px;
+  transform-origin: top right;
+}
+
+.repository-action-surface[data-placement='top'] {
+  --overlay-enter-shift: 4px;
+  --overlay-close-shift: 2px;
+  transform-origin: bottom right;
+}
+
+/* 只在换内容期间裁剪：平时必须可见，否则菜单项的 focus ring 会被切掉。 */
+.repository-action-surface[data-swapping='true'] {
+  overflow: hidden;
+}
+
+/* 上下都放不下时才内部滚动；此时横向也只能一起裁，避免 auto 那块溢出。 */
+.repository-action-surface[data-clamped='true'] {
+  overflow: hidden auto;
+}
+
+.repository-action-surface[data-closing='true'] {
+  animation: repository-action-close 120ms var(--motion-ease-in) forwards;
+  pointer-events: none;
+}
+
+@keyframes repository-action-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--overlay-enter-shift)) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes repository-action-close {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(var(--overlay-close-shift)) scale(0.99);
+  }
+}
+
+.repository-action-content {
+  position: relative;
+}
+
+/* 旧内容留在原地淡出：脱流、不参与布局、不吃指针，宽度仍是它自己那一档。 */
+.repository-action-content-out {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--overlay-from-width);
+  pointer-events: none;
+  animation: repository-action-content-out 170ms var(--motion-ease-out) forwards;
+}
+
+.repository-action-content-out + .repository-action-content-in {
+  animation: repository-action-content-in 170ms var(--motion-ease-out);
+}
+
+@keyframes repository-action-content-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(-3px);
+  }
+}
+
+@keyframes repository-action-content-in {
+  from {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

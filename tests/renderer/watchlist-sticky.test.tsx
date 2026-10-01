@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readRendererStyles } from './support/styles';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act } from 'react';
@@ -213,7 +214,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
   });
 
   it('使用 Header 实测高度、页面背景和低于浮层的层级；不改工具栏宽度', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+    const css = readRendererStyles().replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );
@@ -229,9 +230,8 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
       css.match(
         /@media\s*\(max-width:\s*35rem\)\s*\{[\s\S]*?\.watchlist-add-form\[data-expanded='true'\]\s*\{[^}]*\}/,
       )?.[0] ?? '';
-    const controlRow = css.match(/\.watchlist-add-control-row\s*\{[^}]*\}/)?.[0] ?? '';
     const reducedTransitions = css.match(
-      /\.watchlist-add-form,\s*\.watchlist-add-content,\s*\.watchlist-add-field,\s*\.watchlist-add-trigger,\s*\.watchlist-add-action,\s*\.watchlist-inline-message\s*\{[^}]*\}/,
+      /\.watchlist-add-form,\s*\.watchlist-add-content,\s*\.watchlist-add-control-row,\s*\.watchlist-add-field,\s*\.watchlist-add-trigger,\s*\.watchlist-add-action,\s*\.watchlist-inline-message\s*\{[^}]*\}/,
     )?.[0] ?? '';
     const reducedTransform =
       css.match(/\.watchlist-add-field,\s*\.watchlist-add-action,\s*\.watchlist-inline-message\s*\{[^}]*\}/)?.[0] ?? '';
@@ -271,7 +271,6 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(message).toContain('display: grid');
     expect(message).toContain('grid-template-rows: 0fr');
     expect(message).not.toContain('position: absolute');
-    expect(controlRow).toContain('grid-template-columns: minmax(0, 1fr) 6rem');
     expect(reducedTransitions).toContain('transition: none !important');
     expect(reducedTransform).toContain('transform: none !important');
     expect(header).toContain('watchlist-toolbar flex w-full flex-wrap items-start gap-2');

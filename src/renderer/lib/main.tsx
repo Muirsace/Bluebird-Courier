@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'motion/react';
 import { App } from '../pages/App';
 import { ThemeProvider } from './theme';
 import '../styles.css';
@@ -24,7 +25,9 @@ if (!container) {
 createRoot(container).render(
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
-      <App />
+      <MotionConfig reducedMotion="user">
+        <App />
+      </MotionConfig>
     </ThemeProvider>
   </QueryClientProvider>,
 );

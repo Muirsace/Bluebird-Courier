@@ -153,7 +153,7 @@ export function AddRepositoryForm({
           : invalid || hasRemoteError
           ? 'clear'
           : 'join';
-  const actionVisible = expanded;
+  const actionVisible = expanded && hasInput;
   // 定位进行中只锁「查看位置」自己：卡在 revealing（例如目标卡片一直没提交）时，
   // 用户仍然能靠这个按钮清掉成功提示，不留下关不掉的反馈。
   const actionDisabled =
@@ -293,8 +293,6 @@ export function AddRepositoryForm({
 
     const result = outcome.result;
     if (result.ok) {
-      valueRef.current = '';
-      setValue('');
       updateFeedback({
         kind: 'success',
         repository: {
@@ -340,8 +338,9 @@ export function AddRepositoryForm({
       <form
         onSubmit={(event) => void handleSubmit(event)}
         className="watchlist-add-content grid min-w-0"
+        data-action-visible={actionVisible}
       >
-        <div className="watchlist-add-control-row grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-x-2">
+        <div className="watchlist-add-control-row grid min-w-0 items-start">
           <div className="watchlist-add-field min-w-0" aria-hidden={!expanded}>
             <input
               ref={inputRef}
@@ -395,7 +394,7 @@ export function AddRepositoryForm({
             tabIndex={actionVisible ? 0 : -1}
             aria-busy={adding}
             aria-label={actionAriaLabel}
-            className={`watchlist-add-action relative inline-flex h-9 self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${
+            className={`watchlist-add-action relative inline-flex h-9 self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed ${
               requestedAction === 'added'
                 ? 'border border-default bg-surface-raised text-secondary'
                 : requestedAction === 'clear'

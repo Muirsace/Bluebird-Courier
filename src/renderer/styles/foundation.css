@@ -1,0 +1,94 @@
+html {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-app text-primary antialiased;
+  font-family: system-ui, "Segoe UI", sans-serif;
+}
+
+/**
+ * 公共 Button 交互层。
+ *
+ * 所有真 <button> 在这里统一拿到按下 / 释放反馈，组件只负责配色
+ * （hover / active 用 semantic token），页面里不再各写 active:translate-y / active:scale。
+ *
+ * 按压用 translate / scale 两个独立属性而不是 transform：它们与组件自己的 transform
+ * （例如「加入」按钮的 scale 进 / 出场）叠加而非互相覆盖，且只影响绘制、不改布局尺寸。
+ */
+button {
+  /* 普通按钮；紧凑导航与图标按钮通过 data-button-motion 调力度 */
+  --button-press-scale: 0.985;
+  transition-property: translate, scale, background-color, border-color, color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+/* 组件里自带的 transition-colors / duration / ease 只表达配色；按下与回弹的时序一律由本层接管 */
+button.transition-colors {
+  transition-property: translate, scale, background-color, border-color, color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+button:enabled {
+  cursor: pointer;
+}
+
+/* 按下：快速进入；释放走上面那条 130ms ease-out，不 overshoot */
+button:not(:disabled):active {
+  translate: 0 1px;
+  scale: var(--button-press-scale);
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
+/* 图标按钮可以略明显；Tab / 分段控件这类紧凑导航更克制 */
+button[data-button-motion='icon'] {
+  --button-press-scale: 0.96;
+}
+
+button[data-button-motion='compact'] {
+  --button-press-scale: 0.99;
+}
+
+/* 菜单行与文字链只保留颜色反馈，不位移也不缩放 */
+button[data-button-motion='surface']:not(:disabled):active,
+button[data-button-motion='link']:not(:disabled):active {
+  translate: none;
+  scale: none;
+}
+
+/* 禁用：完全不产生按压反馈（不位移、不缩放，颜色也不会变） */
+button:disabled {
+  cursor: not-allowed;
+  translate: none;
+  scale: none;
+}
+
+/* Chromium/Electron scrollbar stays visible but uses the active semantic palette. */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(var(--color-app));
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid rgb(var(--color-app));
+  border-radius: 9999px;
+  background: rgb(var(--color-border-strong));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-surface-active));
+}

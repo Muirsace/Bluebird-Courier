@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readRendererStyles } from './support/styles';
 import { act } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
@@ -131,7 +130,7 @@ describe('仓库操作浮层 · 分层与动画参数', () => {
   });
 
   it('进场 / 关闭 / 尺寸补间 / 内容交叉淡化的时长都写死在样式表里，没有 transition-all', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8');
+    const css = readRendererStyles();
 
     expect(css).toContain('.repository-action-positioner');
     expect(css).toContain('repository-action-enter 160ms var(--motion-ease-out)');
