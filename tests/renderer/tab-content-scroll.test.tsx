@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readRendererStyles } from './support/styles';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Glance } from '../../src/shared/types';
@@ -634,7 +633,7 @@ describe('落点的结构与样式不变量', () => {
   });
 
   it('样式表：落点 = 顶部栏 + Tabs 两个实测高度 + 安全间距，且不做滚动动画', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+    const css = readRendererStyles().replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );

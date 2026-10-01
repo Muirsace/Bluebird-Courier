@@ -1,0 +1,103 @@
+/**
+ * Page / View Transition Motion。
+ *
+ * 只包 main 里的内容区：Header、导航、Logo、背景都在它外面，切换时完全静止。
+ * 三个层级给三种方向感，一律不横向推出视口（最多 10px），也不做 spring：
+ * top（同级顶级页）/ forward（父级 → 子级）/ back（子级 → 父级）。
+ *
+ * 只做 enter：旧内容随重挂载立即消失，新内容用同一套 ease-out 快速淡入。
+ * 不走 exit + enter 串行，所以整段最长就是这里的 210ms。
+ */
+.view-transition {
+  width: 100%;
+  min-width: 0;
+}
+
+.view-transition[data-view-motion='top'] {
+  animation: view-enter-y 170ms var(--motion-ease-out);
+}
+
+.view-transition[data-view-motion='forward'] {
+  animation: view-enter-x-forward 210ms var(--motion-ease-out);
+}
+
+.view-transition[data-view-motion='back'] {
+  animation: view-enter-x-back 180ms var(--motion-ease-out);
+}
+
+/*
+ * 详情内部 Tab 内容是同级视图切换：不给方向，只做很轻的 Y。
+ *
+ * 注意它**不是**淡入：旧内容随重挂载立即消失，新内容从 0.98 起手。
+ * 从 0 淡入会让整块内容区在整段动画里接近透明——浅色主题下白卡片消失、灰底暴露，
+ * 看起来就是"闪一下"。0.98 → 1 的亮度差人眼不可辨，落位感完全交给那 2px。
+ */
+.tab-panel-enter {
+  animation: tab-panel-soft-enter 140ms var(--motion-ease-out) backwards;
+}
+
+@keyframes view-enter-y {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes view-enter-x-forward {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes view-enter-x-back {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tab-panel-soft-enter {
+  from {
+    opacity: 0.98;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/**
+ * Tab Indicator：单一可动下划线。
+ *
+ * 几何按激活 Tab 实测后由组件写成 inline transform / width，这里只负责过渡与画。
+ * 绝对定位所以不参与布局；pointer-events: none 所以永远不吃点击、也不影响 focus ring。
+ */
+.tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background-color: rgb(var(--color-accent));
+  pointer-events: none;
+  transition:
+    transform 180ms var(--motion-ease-out),
+    width 180ms var(--motion-ease-out);
+}

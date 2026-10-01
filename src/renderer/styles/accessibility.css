@@ -1,0 +1,134 @@
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .overlay-enter {
+    animation: none;
+    transform: none;
+  }
+
+  .watchlist-add-form,
+  .watchlist-add-content,
+  .watchlist-add-control-row,
+  .watchlist-add-field,
+  .watchlist-add-trigger,
+  .watchlist-add-action,
+  .watchlist-inline-message {
+    transition: none !important;
+  }
+
+  .github-token-feedback {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .theme-segment-slider {
+    transition: none !important;
+  }
+
+  .watchlist-add-field,
+  .watchlist-add-action,
+  .watchlist-inline-message {
+    transform: none !important;
+  }
+
+  /* 新增：位移 / 缩放 / grid tween 全部关掉，卡片直接出现在最终位置与样式上。 */
+  .repo-row-slot[data-motion='entering'],
+  .repo-row-slot[data-motion='exiting'],
+  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+    animation: none !important;
+  }
+
+  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* 删除：空间立即收回，只留一次极短的透明度淡出。 */
+  .repo-row-slot[data-motion='exiting'] {
+    grid-template-rows: 0fr;
+  }
+
+  .repo-row-slot[data-motion='exiting'] > .repo-row-clip {
+    overflow: hidden;
+  }
+
+  .repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
+    animation: repo-card-fade-out 40ms linear forwards !important;
+    transform: none;
+  }
+
+  /* Button：按下 / 释放仍然看到颜色变深，但不再位移、不再缩放 */
+  button,
+  button.transition-colors {
+    transition-property: background-color, border-color, color;
+  }
+
+  button:not(:disabled):active {
+    translate: none;
+    scale: none;
+  }
+
+  .theme-segment-button:not(:disabled):active {
+    translate: none !important;
+    scale: none !important;
+  }
+
+  /* 卡片：按下仍然变灰，但整卡不再下压 */
+  .repo-row:has([data-row-activator]:active) {
+    translate: none;
+    scale: none;
+  }
+
+  /* 页面 / Tab 切换：不做位移也不做淡入，直接换内容；indicator 立即落位 */
+  /* 用 !important：降级必须压过任何带属性选择器的动画规则，与上面几条保持一致 */
+  .view-transition,
+  .tab-panel-enter {
+    animation: none !important;
+  }
+
+  /*
+   * Compact Repository Context：只留一次极短的透明度变化，不做 X 位移。
+   * 可见性逻辑本身不受影响——它由 JS 的状态决定，这里只降级运动。
+   */
+  .compact-repo-context,
+  .compact-repo-context[data-visible='true'] {
+    transform: none !important;
+    transition: opacity 40ms linear !important;
+  }
+
+  .tab-indicator {
+    transition: none !important;
+  }
+
+  /* 仓库操作浮层：不做位移 / 缩放 / 尺寸补间，直接换位置与内容。
+     关闭时也走不了 animationend，由组件那条兜底计时器（40ms）立即收尾。 */
+  .repository-action-surface,
+  .repository-action-positioner[data-swapping='true'],
+  .repository-action-content-out,
+  .repository-action-content-out + .repository-action-content-in {
+    animation: none !important;
+  }
+
+  /* 详情揭示：不做错峰 / 位移 / 交叉淡化，数据到达那一刻直接就是最终样子。
+     JS 侧同样不会进入 revealing（useDetailReveal 看到开关就直接 ready），这里是第二道保险。 */
+  .detail-reveal-item,
+  .detail-loading-slot[data-state='exiting'] .loading-panel,
+  .detail-loading-slot[data-state='exiting'] .loading-spinner,
+  .detail-loading-slot[data-state='exiting'] .loading-text,
+  .detail-fact-to,
+  .detail-refetch-label {
+    animation: none !important;
+  }
+
+  /* 不做交叉淡化，旧值就没有存在意义：别让它盖在真值上 */
+  .detail-fact-from {
+    display: none;
+  }
+}

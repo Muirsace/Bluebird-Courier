@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readRendererStyles } from './support/styles';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act } from 'react';
@@ -213,7 +214,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
   });
 
   it('使用 Header 实测高度、页面背景和低于浮层的层级；不改工具栏宽度', () => {
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+    const css = readRendererStyles().replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );

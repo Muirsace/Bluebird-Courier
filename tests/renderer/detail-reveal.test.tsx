@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readRendererStyles } from './support/styles';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GlanceFact } from '../../src/renderer/components/GlanceFact';
@@ -277,7 +276,7 @@ describe('详情揭示 · 失败与降级', () => {
 
   it('样式表：揭示只用 opacity / transform，且降级规则齐全', () => {
     // 去掉注释再切片：注释里会提到 tab-panel-enter（说明"为什么不能抑制它"），那是文字不是规则
-    const css = readFileSync(resolve(process.cwd(), 'src/renderer/styles.css'), 'utf8').replace(
+    const css = readRendererStyles().replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );
