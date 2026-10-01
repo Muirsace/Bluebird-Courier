@@ -19,6 +19,8 @@ import { RevealItem } from '../components/detail/RevealItem';
 import { TrendTab } from '../components/detail/TrendTab';
 
 interface DetailPageProps {
+  /** 由 App 现有响应式状态决定；单栏保留完整的页面导航。 */
+  workspace: boolean;
   repositoryId: number;
   fullName: string;
   /** 上报"页面顶部那块 Repository Header 是否已滚出视口"，由 App 决定顶部栏要不要接管仓库名。 */
@@ -54,6 +56,7 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
 }
 
 export function DetailPage({
+  workspace,
   repositoryId,
   fullName,
   onRepositoryContextChange,
@@ -198,6 +201,8 @@ export function DetailPage({
    * 优先级不依赖两者谁先注册。
    */
   useEffect(() => {
+    // 常驻 Sidebar 的工作区不承担“返回父页”导航；单栏仍复用原来的 Back / Esc 路径。
+    if (workspace) return;
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape') return;
       if (event.defaultPrevented || event.isComposing) return;
@@ -206,7 +211,7 @@ export function DetailPage({
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onBack]);
+  }, [onBack, workspace]);
 
   const fetchedDetail = detailQuery.data?.detail ?? null;
   const keptDetail = lastDetail && lastDetail.id === repositoryId ? lastDetail.detail : null;
@@ -221,13 +226,14 @@ export function DetailPage({
   const pending = detailQuery.isPending && !detail;
 
   return (
-    <div className="space-y-4">
+    <div className="detail-page space-y-4" data-workspace={workspace}>
       {/*
         表头与它的哨兵同属一个定位容器：哨兵的落点由 CSS 按顶部栏实测高度从这块区域的下沿往上量，
         所以包装层只提供包含块，不参与视觉（表头仍是这一个，没有复制）。
       */}
       <div className="repo-context-scope">
         <RepositoryHeader
+          workspace={workspace}
           fullName={fullName}
           repository={repository}
           fetching={detailQuery.isFetching}

@@ -143,11 +143,13 @@ describe('Desktop AppShell', () => {
     expect(tab('概览')?.tabIndex).toBe(0);
   });
 
-  it('桌面导航不写 window 滚动，详情返回空态', async () => {
+  it('桌面详情没有 Back，导航不写 window 滚动', async () => {
     await mount();
     const scroll = vi.spyOn(window, 'scrollTo');
     await open();
-    await click(buttonByText('← 返回监控清单'));
+    expect(buttonByText('← 返回监控清单')).toBeNull();
+    await click(navButton('设置'));
+    await click(navButton('监控清单'));
     await settle();
     expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
     expect(scroll).not.toHaveBeenCalled();

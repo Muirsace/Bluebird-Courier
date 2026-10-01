@@ -101,6 +101,8 @@ export function App() {
   }
 
   function openDetail(repo: Glance): void {
+    // 再选当前仓库是 no-op，也不清掉已经接管身份的 Compact Context。
+    if (desktop && view === 'detail' && selected?.id === repo.id) return;
     setSelected({ id: repo.id, fullName: repo.fullName });
     navigate('detail');
   }
@@ -200,6 +202,7 @@ export function App() {
     content = (
       <DetailPage
         key={desktop ? selected.id : undefined}
+        workspace={desktop}
         repositoryId={selected.id}
         fullName={selected.fullName}
         onRepositoryContextChange={setRepoContextVisible}
