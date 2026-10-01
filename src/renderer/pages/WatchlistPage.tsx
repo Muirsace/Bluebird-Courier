@@ -8,6 +8,7 @@ import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
 import { Loading } from '../components/Loading';
+import { RepositorySidebarRow } from '../components/watchlist/RepositorySidebarRow';
 import { RepoRow } from '../components/RepoRow';
 import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
 import { prefersReducedMotion, revealScrollFallbackMs } from '../lib/motion';
@@ -31,6 +32,10 @@ interface PendingReveal {
 interface WatchlistPageProps {
   onOpenDetail: (repo: Glance) => void;
   onGoSettings: () => void;
+  /** Only the desktop Sidebar uses the compact switcher. */
+  sidebar?: boolean;
+  selectedRepositoryId?: number | null;
+  onRepositoryRemoved?: (repositoryId: number) => void;
 }
 
 /**
@@ -54,7 +59,8 @@ function focusAfterRemoval(repositoryId: number): void {
   button?.focus();
 }
 
-export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps) {
+export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
+  const RepositoryItem = sidebar ? RepositorySidebarRow : RepoRow;
   const pageRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const listQuery = useQuery({
@@ -318,6 +324,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
    */
   async function handleRemove(repositoryId: number): Promise<void> {
     await getApi().removeRepository(repositoryId);
+    onRepositoryRemoved?.(repositoryId);
     // 请求成功的当下就停止交互，覆盖 Motion 启动 exit 之前的提交窗口。
     const slot = document.querySelector<HTMLElement>(`ul.repo-list > li[data-repository-id="${repositoryId}"]`);
     slot?.setAttribute('inert', '');
@@ -364,12 +371,13 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
         <Loading label="正在加载监控清单…" />
       ) : listUnavailable ? null : (
         <>
-          <ul className="repo-list" hidden={displayed.length === 0 && exitingIds.length === 0}>
+          <ul className={`repo-list${sidebar ? ' repository-sidebar-list' : ''}`} hidden={displayed.length === 0 && exitingIds.length === 0}>
             <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
               {displayed.map((repo) => (
-                <RepoRow
+                <RepositoryItem
                   key={repo.id}
                   repo={repo}
+                  selected={repo.id === selectedRepositoryId}
                   onOpen={onOpenDetail}
                   onRemove={handleRemove}
                   refreshing={refreshing}

@@ -38,7 +38,9 @@
 
   /* 卡片位移与退出淡出由 Motion 降级；CSS 仍关闭两种颜色高亮。 */
   .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
-  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row,
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row {
     animation: none !important;
   }
 
@@ -82,6 +84,11 @@
   }
 
   .tab-indicator {
+    transition: none !important;
+  }
+
+  /* Universal reduced duration must not create a default `all` transition on coordinates. */
+  .repository-action-positioner[data-shell-overlay='true'] {
     transition: none !important;
   }
 

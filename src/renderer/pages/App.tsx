@@ -264,7 +264,17 @@ export function App() {
             rail={null}
             workspaceRef={workspaceRef}
             sidebar={configured ? (
-              <WatchlistPage onOpenDetail={openDetail} onGoSettings={() => navigate('settings')} />
+              <WatchlistPage
+                sidebar
+                selectedRepositoryId={activeView === 'detail' ? selected?.id : null}
+                onOpenDetail={openDetail}
+                onGoSettings={() => navigate('settings')}
+                onRepositoryRemoved={(repositoryId) => {
+                  if (selected?.id !== repositoryId) return;
+                  setSelected(null);
+                  if (activeView === 'detail') navigate('watchlist');
+                }}
+              />
             ) : null}
             workspace={<>{tokenRefreshError}{content}</>}
           />

@@ -163,6 +163,65 @@ export function RepositoryActionSurface({
     };
   }, [remeasure]);
 
+  // Top layer follows transform-only springs and instant reduced-motion layout.
+  // Coordinates are written before paint; state alone can lag one frame behind the anchor.
+  const followAnchor = useCallback((): void => {
+    const trigger = triggerRef.current;
+    const positioner = positionerRef.current;
+    if (!shellOverlay || !layout || !trigger || !positioner) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const placement = chooseOverlayPlacement({
+      triggerRect, overlayHeight: layout.height,
+      viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+    });
+    const right = window.innerWidth - triggerRect.right;
+    const edge = placement.placement === 'bottom'
+      ? triggerRect.bottom + 8 : window.innerHeight - triggerRect.top + 8;
+    positioner.style.setProperty('--overlay-right', `${right}px`);
+    positioner.style.setProperty('--overlay-top', placement.placement === 'bottom' ? `${edge}px` : 'auto');
+    positioner.style.setProperty('--overlay-bottom', placement.placement === 'top' ? `${edge}px` : 'auto');
+    positioner.style.setProperty('--overlay-max-height', `${placement.maxHeight}px`);
+    positioner.dataset.placement = placement.placement;
+    if (surfaceRef.current) {
+      surfaceRef.current.dataset.placement = placement.placement;
+      surfaceRef.current.dataset.clamped = layout.height > placement.maxHeight ? 'true' : 'false';
+    }
+  }, [shellOverlay, triggerRef, layout?.height]);
+
+  // A Watchlist commit can reposition the anchor between two animation frames.
+  useLayoutEffect(() => { followAnchor(); });
+
+  useEffect(() => {
+    if (!shellOverlay) return;
+    let frame = 0;
+    const followFrame = (): void => {
+      followAnchor();
+      frame = window.requestAnimationFrame(followFrame);
+    };
+    frame = window.requestAnimationFrame(followFrame);
+    // Parent Motion / toolbar commits can move the anchor after child layout effects.
+    // Observe only while open, and ignore our own position writes to avoid feedback.
+    const root = appScrollRoot(triggerRef.current);
+    const observer = root ? new MutationObserver((records) => {
+      if (records.some((record) => !positionerRef.current?.contains(record.target))) followAnchor();
+    }) : null;
+    if (root) observer?.observe(root, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['style', 'class', 'data-open'],
+    });
+    // Native layout can finish after RAF (e.g. the inline success message expands).
+    // ResizeObserver runs before paint and supplies that last position correction.
+    const content = root?.firstElementChild;
+    const resizeObserver = content && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(followAnchor) : null;
+    if (content) resizeObserver?.observe(content);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      resizeObserver?.disconnect();
+    };
+  }, [shellOverlay, followAnchor, triggerRef]);
+
   // 内容尺寸变化（错误提示出现、按钮进入 busy）也要跟着重量
   useEffect(() => {
     const content = contentRef.current;
