@@ -217,6 +217,8 @@
   display: flex;
   align-items: center;
   pointer-events: none;
+  /* Also blocks the universal Reduced Motion duration from creating an implicit all transition. */
+  transition: none;
 }
 
 .workspace-repo-context[data-visible='true'] {
@@ -229,6 +231,18 @@
 
 .workspace-repo-context .compact-repo-context {
   max-width: 100%;
+  /* The absolute 1.5rem host and sticky offsets are never animated. */
+  transform: translateY(var(--ui-context-shift));
+  transition:
+    opacity var(--ui-context-exit-ms) var(--motion-ease-in),
+    transform var(--ui-context-exit-ms) var(--motion-ease-in);
+}
+
+.workspace-repo-context .compact-repo-context[data-visible='true'] {
+  transform: translateY(0);
+  transition:
+    opacity var(--ui-context-enter-ms) var(--motion-ease-out),
+    transform var(--ui-context-enter-ms) var(--motion-ease-out);
 }
 
 .workspace-repo-context .compact-repo-context > span:last-child {
@@ -282,4 +296,26 @@ html:has(.app-frame[data-desktop='true']) {
   flex: 1;
   min-height: 0;
   padding: 0;
+}
+
+/* The keyed DetailPage is replaced immediately; there is no old-repo exit or queue. */
+.detail-page[data-workspace-enter='true'] {
+  animation: workspace-repo-enter var(--ui-workspace-enter-ms) var(--motion-ease-out);
+}
+
+/* One complete Workspace entrance owns switched repos, including delayed first fetches.
+   Keep the existing initial-app data reveal, but do not stack its section/metric entrances here. */
+.detail-page[data-workspace-switch='true'] .detail-reveal-item,
+.detail-page[data-workspace-switch='true'] .detail-fact-to,
+.detail-page[data-workspace-switch='true'] .detail-refetch-label {
+  animation: none;
+}
+
+.detail-page[data-workspace-switch='true'] .detail-fact-from {
+  display: none;
+}
+
+@keyframes workspace-repo-enter {
+  from { opacity: var(--ui-workspace-opacity); transform: translateY(var(--ui-workspace-shift)); }
+  to { opacity: 1; transform: translateY(0); }
 }

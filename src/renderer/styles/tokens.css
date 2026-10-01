@@ -7,6 +7,18 @@
 :root {
   --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* Shell interaction tweens; list Presence/spring and overlays keep their own contracts. */
+  --ui-selected-ms: 140ms;
+  --ui-context-surface-ms: 100ms;
+  --ui-context-enter-ms: 140ms;
+  --ui-context-exit-ms: 100ms;
+  --ui-context-shift: -3px;
+  --ui-workspace-enter-ms: 130ms;
+  --ui-workspace-shift: 2px;
+  --ui-workspace-opacity: 0.88;
+  --ui-feedback-enter-ms: 120ms;
+  --ui-feedback-exit-ms: 90ms;
+  --ui-feedback-shift: -2px;
 }
 
 /**

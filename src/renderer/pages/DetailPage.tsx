@@ -24,6 +24,7 @@ import { TrendTab } from '../components/detail/TrendTab';
 interface DetailPageProps {
   /** 由 App 现有响应式状态决定；单栏保留完整的页面导航。 */
   workspace: boolean;
+  workspaceRepoSwitch?: boolean;
   repositoryContextVisible: boolean;
   repositoryId: number;
   fullName: string;
@@ -61,6 +62,7 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
 
 export function DetailPage({
   workspace,
+  workspaceRepoSwitch = false,
   repositoryContextVisible,
   repositoryId,
   fullName,
@@ -247,7 +249,9 @@ export function DetailPage({
   const pending = detailQuery.isPending && !detail;
 
   return (
-    <div className="detail-page space-y-4" data-workspace={workspace}>
+    <div className="detail-page space-y-4" data-workspace={workspace}
+      data-workspace-switch={workspace && workspaceRepoSwitch || undefined}
+      data-workspace-enter={workspace && workspaceRepoSwitch && detail !== null || undefined}>
       {/*
         表头与它的哨兵同属一个定位容器：哨兵的落点由 CSS 按顶部栏实测高度从这块区域的下沿往上量，
         所以包装层只提供包含块，不参与视觉（表头仍是这一个，没有复制）。

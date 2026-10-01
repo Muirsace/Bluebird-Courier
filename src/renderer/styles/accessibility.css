@@ -26,6 +26,18 @@
     transition: none !important;
   }
 
+  .watchlist-inline-message > div,
+  .watchlist-inline-message[data-open='true'] > div,
+  .repository-sidebar-row,
+  .repository-sidebar-row::before {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .detail-page[data-workspace-enter='true'] {
+    animation: none !important;
+  }
+
   .github-token-feedback {
     transition: none !important;
     transform: none !important;

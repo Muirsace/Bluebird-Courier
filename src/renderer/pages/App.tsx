@@ -51,6 +51,8 @@ export function App() {
   const sidebarScrollRef = useRef(0);
   const [view, setView] = useState<View>('watchlist');
   const [selected, setSelected] = useState<SelectedRepo | null>(null);
+  // Only a running Desktop repo → repo navigation owns this entrance, never layout/theme changes.
+  const [workspaceRepoSwitch, setWorkspaceRepoSwitch] = useState(false);
   /** 上一次导航的方向；null 表示还没导航过（首屏不播切换动画）。 */
   const [motion, setMotion] = useState<PageMotion | null>(null);
   /**
@@ -77,6 +79,7 @@ export function App() {
     }
     // resize 不是导航，旧方向和旧 scroll root 的上下文都不传给新布局。
     setMotion(null);
+    setWorkspaceRepoSwitch(false);
     setRepoContextVisible(false);
   });
   const previousDesktopRef = useRef(desktop);
@@ -99,6 +102,7 @@ export function App() {
    * 离开清单前顺手记住滚动位置，等这个视图真的换掉就来不及了。
    */
   function navigate(to: View): void {
+    if (to !== 'detail') setWorkspaceRepoSwitch(false);
     if (!desktop && activeView === 'watchlist' && to !== 'watchlist') {
       watchlistScrollRef.current = window.scrollY;
     }
@@ -120,6 +124,7 @@ export function App() {
   function openDetail(repo: Glance): void {
     // 再选当前仓库是 no-op，也不清掉已经接管身份的 Compact Context。
     if (desktop && view === 'detail' && selected?.id === repo.id) return;
+    setWorkspaceRepoSwitch(desktop && activeView === 'detail' && selected !== null);
     setSelected({ id: repo.id, fullName: repo.fullName });
     navigate('detail');
   }
@@ -228,6 +233,7 @@ export function App() {
       <DetailPage
         key={selected.id}
         workspace={desktop}
+        workspaceRepoSwitch={workspaceRepoSwitch}
         repositoryContextVisible={repoContextVisible}
         repositoryId={selected.id}
         fullName={selected.fullName}
