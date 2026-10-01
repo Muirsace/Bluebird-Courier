@@ -130,9 +130,30 @@ describe('Desktop repository object actions', () => {
     vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 288, 180));
     await click(menuItem('从监控清单移除')); await settle();
     expect(surface()).toBe(positioner); expect(dialog()).not.toBeNull();
-    expect(positioner.dataset.placement).toBe('top');
+    expect(parseFloat(positioner.style.getPropertyValue('--overlay-y'))).toBeGreaterThanOrEqual(VIEWPORT_SAFE_GAP);
     expect(parseFloat(positioner.style.getPropertyValue('--overlay-right'))).toBeGreaterThanOrEqual(VIEWPORT_SAFE_GAP);
-    expect(parseFloat(positioner.style.getPropertyValue('--overlay-bottom'))).toBeGreaterThanOrEqual(VIEWPORT_SAFE_GAP);
+  });
+
+  it.each([104, 200])('confirmation grows right from the stable menu left edge at x=%i', async (x) => {
+    await mount(); await rightClick(B, x, 160);
+    const positioner = surface()!;
+    const right = parseFloat(positioner.style.getPropertyValue('--overlay-right'));
+    const menuLeft = window.innerWidth - right - 176;
+    const menuTop = positioner.style.getPropertyValue('--overlay-y');
+    await click(menuItem('从监控清单移除')); await settle();
+    expect(surface()).toBe(positioner);
+    const width = parseFloat(positioner.style.getPropertyValue('--overlay-width'));
+    const left = window.innerWidth - parseFloat(positioner.style.getPropertyValue('--overlay-right')) - width;
+    expect(left).toBe(menuLeft);
+    expect(parseFloat(positioner.style.getPropertyValue('--overlay-left'))).toBe(menuLeft);
+    expect(positioner.style.getPropertyValue('--overlay-y')).toBe(menuTop);
+  });
+
+  it('confirmation clamps to the viewport right edge when its larger width does not fit', async () => {
+    await mount(); await rightClick(B, window.innerWidth - 200, 160);
+    const positioner = surface()!;
+    await click(menuItem('从监控清单移除')); await settle();
+    expect(parseFloat(positioner.style.getPropertyValue('--overlay-right'))).toBe(VIEWPORT_SAFE_GAP);
   });
 
   it('menu / confirmation / row focus transfers never scroll the context source list', async () => {

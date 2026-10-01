@@ -59,6 +59,8 @@ export function RepositoryActionSurface({
   const [shellOverlay, setShellOverlay] = useState(false);
   /** 上一次内容尺寸：换内容时"从小到大"这件事需要一个起点。 */
   const previousSizeRef = useRef<SurfaceSize | null>(null);
+  /** Keep the resolved menu's top-left origin through content swaps. */
+  const contextMenuOriginRef = useRef<ContextPoint | null>(null);
   const previousContentRef = useRef<{ stage: SurfaceStage; node: ReactNode } | null>(null);
   /** 换内容期间的旧内容：留在 out 层淡出，新内容在流里淡入。 */
   const [swap, setSwap] = useState<{ outgoing: ReactNode; from: SurfaceSize } | null>(null);
@@ -84,7 +86,20 @@ export function RepositoryActionSurface({
     const borderY = surface.offsetHeight - surface.clientHeight;
     const height = Math.round(content.getBoundingClientRect().height) + borderY;
 
-    const contextLayout = contextPoint ? chooseContextPlacement(contextPoint, width, height, window.innerWidth, window.innerHeight) : undefined;
+    let contextLayout = contextPoint ? chooseContextPlacement(contextPoint, width, height, window.innerWidth, window.innerHeight) : undefined;
+    if (contextLayout && stage === 'menu') contextMenuOriginRef.current = {
+      x: window.innerWidth - contextLayout.right - width,
+      y: contextLayout.placement === 'top'
+        ? window.innerHeight - contextLayout.edge - Math.min(height, contextLayout.maxHeight) : contextLayout.edge,
+    };
+    if (contextLayout && stage === 'confirm' && contextMenuOriginRef.current) {
+      // Desktop content swaps keep the menu's top-left origin; only viewport collisions may move it.
+      const left = Math.max(VIEWPORT_SAFE_GAP, Math.min(contextMenuOriginRef.current.x,
+        window.innerWidth - VIEWPORT_SAFE_GAP - width));
+      const top = Math.max(VIEWPORT_SAFE_GAP, Math.min(contextMenuOriginRef.current.y,
+        window.innerHeight - VIEWPORT_SAFE_GAP - Math.min(height, contextLayout.maxHeight)));
+      contextLayout = { ...contextLayout, placement: 'bottom', right: window.innerWidth - left - width, edge: top };
+    }
     const placement = contextLayout ?? chooseOverlayPlacement({
       triggerRect,
       overlayHeight: height,
@@ -264,6 +279,10 @@ export function RepositoryActionSurface({
   const height = layout?.height ?? null;
 
   const style = {
+    '--overlay-left': `${window.innerWidth - (layout?.right ?? 0) - width}px`,
+    '--overlay-y': `${placement === 'top'
+      ? window.innerHeight - (layout?.edge ?? 0) - Math.min(height ?? 0, layout?.maxHeight ?? 0)
+      : layout?.edge ?? 0}px`,
     '--overlay-right': `${layout?.right ?? 0}px`,
     '--overlay-top': placement === 'bottom' ? `${layout?.edge ?? 0}px` : 'auto',
     '--overlay-bottom': placement === 'top' ? `${layout?.edge ?? 0}px` : 'auto',
