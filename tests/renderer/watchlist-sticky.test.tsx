@@ -241,7 +241,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
       'utf8',
     );
     const form = readFileSync(
-      resolve(process.cwd(), 'src/renderer/components/watchlist/AddRepositoryForm.tsx'),
+      resolve(process.cwd(), 'src/renderer/components/watchlist/RepositoryOmnibox.tsx'),
       'utf8',
     );
 

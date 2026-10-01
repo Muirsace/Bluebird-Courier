@@ -84,6 +84,54 @@
   width: 100%;
 }
 
+.watchlist-sidebar-chrome .watchlist-page-heading {
+  align-items: center;
+}
+
+.repository-refresh-icon,
+.repository-omnibox-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+.repository-refresh-icon {
+  mask-image: url('./assets/icons/refresh-cw.svg');
+}
+
+.watchlist-add-form[data-omnibox='true'] {
+  transition: none;
+}
+
+.watchlist-add-form[data-omnibox='true'] .watchlist-add-field {
+  position: relative;
+}
+
+.repository-omnibox-icon {
+  position: absolute;
+  inset: 9px auto auto 10px;
+  color: rgb(var(--color-text-muted));
+  pointer-events: none;
+  mask-image: url('./assets/icons/search.svg');
+}
+
+.watchlist-add-form[data-omnibox='true'] input {
+  padding-inline-start: 34px;
+}
+
+.watchlist-add-form[data-omnibox='true'] .add-repository-status {
+  overflow-wrap: anywhere;
+}
+
+.sidebar-refresh-spinner {
+  border-color: currentColor;
+  border-top-color: transparent;
+}
+
 .repository-list-viewport {
   flex: 1;
   min-height: 0;

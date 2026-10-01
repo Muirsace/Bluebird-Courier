@@ -440,6 +440,18 @@ export async function click(element: Element | null | undefined): Promise<void> 
   });
 }
 
+/** Desktop 常驻输入；Narrow 通过原新增入口展开。 */
+export async function openAddInput(): Promise<HTMLInputElement> {
+  const input = document.querySelector<HTMLInputElement>('#add-repository-input');
+  if (!input) throw new Error('未找到添加仓库输入框');
+  if (input.disabled) await click(buttonByLabel('新增仓库'));
+  return input;
+}
+
+export function refreshAllButton(): HTMLButtonElement | null {
+  return buttonByLabel('全部刷新') ?? buttonByText('全部刷新') ?? buttonByText('刷新中…');
+}
+
 export async function pressEscape(): Promise<void> {
   await act(async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

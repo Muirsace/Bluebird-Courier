@@ -1,4 +1,8 @@
 @media (prefers-reduced-motion: reduce) {
+  .sidebar-refresh-spinner {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {

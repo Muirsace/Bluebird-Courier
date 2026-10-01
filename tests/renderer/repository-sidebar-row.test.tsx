@@ -39,8 +39,6 @@ async function mount(repositories: Glance[] = [makeGlance(1, A), makeGlance(2, B
   await settle();
 }
 async function add(name: string): Promise<void> {
-  const trigger = document.querySelector('.watchlist-add-trigger')!;
-  if (trigger.getAttribute('aria-expanded') !== 'true') await click(trigger);
   const input = document.querySelector<HTMLInputElement>('#add-repository-input')!;
   await typeInto(input, name);
   await submitForm(input.form!);

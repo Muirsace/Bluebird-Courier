@@ -3,7 +3,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RenderResult, StubHandle } from './helpers';
 import {
-  buttonByText, click, createStub, makeGlance, menuItem, navButton, renderApp,
+  buttonByText, click, createStub, makeGlance, menuItem, navButton, openAddInput, refreshAllButton, renderApp,
   repoActionsButton, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
   resetSystemTheme, setReducedMotion, setSystemTheme, setViewportWidth, settle,
   settleMotion, submitForm, tab, typeInto,
@@ -215,7 +215,7 @@ describe('scroll belongs to the active layout', () => {
 describe('in-progress Watchlist interactions', () => {
   it.each([1152, 899])('Add input and form expansion survive both modes from %ipx without focus jumps', async (width) => {
     await mount(width);
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     await typeInto(input(), 'facebook/react');
     const field = input();
     const focus = vi.spyOn(field, 'focus');
@@ -232,7 +232,7 @@ describe('in-progress Watchlist interactions', () => {
 
   it('an Add request and its feedback stay single through layout changes', async () => {
     await mount();
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     await typeInto(input(), 'owner/new');
     const finish = stub.holdNextAdd();
     await submitForm(input().form!);
@@ -252,7 +252,7 @@ describe('in-progress Watchlist interactions', () => {
   it('offscreen success retains View location, without automatically scrolling or submitting on resize', async () => {
     await mount();
     list().scrollTop = 800;
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     await typeInto(input(), 'owner/new');
     await submitForm(input().form!);
     await settle();
@@ -269,15 +269,15 @@ describe('in-progress Watchlist interactions', () => {
     await mount();
     const finish = stub.holdNextRefresh();
     const calls = stub.calls.refreshGlance;
-    await click(buttonByText('全部刷新'));
+    await click(refreshAllButton());
     for (const next of [899, 1152, 480]) {
       await resize(next);
-      expect(buttonByText('刷新中…')?.disabled).toBe(true);
+      expect(refreshAllButton()?.disabled).toBe(true);
       expect(stub.calls.refreshGlance).toBe(calls + 1);
     }
     await act(async () => finish());
     await settle();
-    expect(buttonByText('全部刷新')?.disabled).toBe(false);
+    expect(refreshAllButton()?.disabled).toBe(false);
   });
 
   it('an interrupted View location releases old scroll listeners and cannot highlight the new layout from stale events', async () => {
@@ -285,7 +285,7 @@ describe('in-progress Watchlist interactions', () => {
     list().scrollTop = 800;
     Object.defineProperty(list(), 'clientHeight', { configurable: true, value: 600 });
     Object.defineProperty(list(), 'scrollHeight', { configurable: true, value: 3000 });
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     await typeInto(input(), 'owner/new');
     await submitForm(input().form!); await settle();
     const oldRoot = list();
@@ -345,7 +345,7 @@ describe('in-progress Watchlist interactions', () => {
 
   it('resize during add enter / delete exit leaves no inert or exiting nodes', async () => {
     await mount();
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     await typeInto(input(), 'owner/new');
     await submitForm(input().form!);
     await settle();

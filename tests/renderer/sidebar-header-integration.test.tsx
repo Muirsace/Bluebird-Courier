@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Glance } from '../../src/shared/types';
 import type { RenderResult, StubHandle } from './helpers';
 import {
-  buttonByText, click, createStub, makeGlance, menuItem, navButton, renderApp,
+  buttonByText, click, createStub, makeGlance, menuItem, navButton, refreshAllButton, renderApp,
   repoActionsButton, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
   resetSystemTheme, setReducedMotion, setSystemTheme, setViewportWidth,
   settle, settleMotion, submitForm, typeInto,
@@ -43,7 +43,6 @@ async function open(name = 'owner/A'): Promise<void> {
   await settle();
 }
 async function add(name: string): Promise<void> {
-  await click(document.querySelector('.watchlist-add-trigger'));
   const input = document.querySelector<HTMLInputElement>('#add-repository-input')!;
   await typeInto(input, name);
   await submitForm(input.form!);
@@ -69,8 +68,9 @@ describe('App Chrome ownership / 900px boundary', () => {
     expect(document.querySelectorAll('button[aria-label="设置"]')).toHaveLength(1);
     expect(chrome()?.querySelector('h2')?.textContent).toBe('监控清单');
     expect(count()).toBe('2');
-    expect(chrome()?.contains(document.querySelector('.watchlist-add-trigger'))).toBe(true);
-    expect(chrome()?.contains(buttonByText('全部刷新'))).toBe(true);
+    expect(chrome()?.querySelector('.watchlist-add-trigger')).toBeNull();
+    expect(chrome()?.contains(document.querySelector('#add-repository-input'))).toBe(true);
+    expect(chrome()?.contains(refreshAllButton())).toBe(true);
     expect(viewport().contains(brand())).toBe(false);
     expect(viewport().contains(chrome())).toBe(false);
     expect(viewport().dataset.appScrollRoot).toBe('sidebar');
@@ -180,18 +180,18 @@ describe('Sidebar actions / list scroll contract', () => {
     await mount();
     const release = stub.holdNextRefresh();
     const before = stub.calls.refreshGlance;
-    await click(buttonByText('全部刷新'));
+    await click(refreshAllButton());
     await settle();
-    const busy = buttonByText('刷新中…')!;
+    const busy = refreshAllButton()!;
     expect(busy.disabled).toBe(true);
     expect(busy.getAttribute('aria-busy')).toBe('true');
     await click(busy);
     expect(stub.calls.refreshGlance).toBe(before + 1);
     await act(async () => release());
     await settle();
-    expect(buttonByText('全部刷新')?.disabled).toBe(false);
+    expect(refreshAllButton()?.disabled).toBe(false);
     stub.api.refreshGlance = async () => { throw new Error('fixture'); };
-    await click(buttonByText('全部刷新'));
+    await click(refreshAllButton());
     await settle();
     expect(chrome()?.textContent).toContain('抓取失败，请稍后重试');
     expect(viewport().textContent).not.toContain('抓取失败，请稍后重试');
@@ -240,8 +240,8 @@ describe('Sidebar actions / list scroll contract', () => {
   it('0 repos retain count / actions / list empty state and Workspace Empty', async () => {
     await mount([]);
     expect(count()).toBe('0');
-    expect(chrome()?.querySelector('.watchlist-add-trigger')).not.toBeNull();
-    expect(buttonByText('全部刷新')?.disabled).toBe(false);
+    expect(chrome()?.querySelector<HTMLInputElement>('#add-repository-input')?.disabled).toBe(false);
+    expect(refreshAllButton()?.disabled).toBe(false);
     expect(viewport().textContent).toContain('还没有监控仓库');
     expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
   });

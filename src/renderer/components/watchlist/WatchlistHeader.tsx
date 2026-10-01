@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { AddRepositoryForm } from './AddRepositoryForm';
+import { RepositoryOmnibox } from './RepositoryOmnibox';
 import { Spinner } from '../Spinner';
 import { appScrollRoot } from '../../lib/app-layout';
 import type { Glance } from '../../../shared/types';
@@ -73,14 +73,36 @@ export function WatchlistHeader({
   }, [sidebar, active]);
 
   const Heading = sidebar ? 'h2' : 'h1';
+  const count = repositoryCount !== null ? (
+    <span className={`watchlist-count ${sidebar ? 'text-xs text-muted' : 'text-sm text-secondary'}`} aria-label={`${repositoryCount} 个仓库`}>
+      {repositoryCount}{sidebar ? '' : ' 个仓库'}
+    </span>
+  ) : null;
+  const refresh = (
+    <button
+      type="button"
+      onClick={onRefresh}
+      disabled={refreshing}
+      aria-busy={refreshing}
+      aria-label={sidebar ? '全部刷新' : undefined}
+      title={sidebar ? '全部刷新' : undefined}
+      data-button-motion={sidebar ? 'icon' : undefined}
+      className={sidebar
+        ? 'sidebar-refresh inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-secondary transition-colors hover:bg-surface-hover hover:text-primary active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60'
+        : 'ml-auto flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60'}
+    >
+      {sidebar ? (refreshing
+        ? <Spinner className="sidebar-refresh-spinner h-4 w-4" />
+        : <span className="repository-refresh-icon" aria-hidden="true" />
+      ) : <>{refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}{refreshing ? '刷新中…' : '全部刷新'}</>}
+    </button>
+  );
 
   return (
     <>
       <div className="watchlist-page-heading relative flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <Heading className={`${sidebar ? 'text-base' : 'text-xl'} font-semibold text-primary`}>监控清单</Heading>
-        {repositoryCount !== null ? (
-          <span className="watchlist-count text-sm text-secondary" aria-label={`${repositoryCount} 个仓库`}>{repositoryCount}{sidebar ? '' : ' 个仓库'}</span>
-        ) : null}
+        {sidebar ? <div className="watchlist-title-actions flex items-center gap-2">{count}{refresh}</div> : count}
         {!sidebar ? <span
           ref={toolbarSentinelRef}
           aria-hidden="true"
@@ -90,7 +112,8 @@ export function WatchlistHeader({
 
       <div className="watchlist-page-toolbar" data-stuck={toolbarStuck ? 'true' : undefined}>
         <div className="watchlist-toolbar flex w-full flex-wrap items-start gap-2">
-          <AddRepositoryForm
+          <RepositoryOmnibox
+            sidebar={sidebar}
             active={active}
             repositories={repositories}
             adding={adding}
@@ -98,16 +121,7 @@ export function WatchlistHeader({
             onOpenRepository={onOpenRepository}
             onViewPosition={onViewPosition}
           />
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            aria-busy={refreshing}
-            className="ml-auto flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}
-            {refreshing ? '刷新中…' : '全部刷新'}
-          </button>
+          {!sidebar ? refresh : null}
         </div>
       </div>
     </>

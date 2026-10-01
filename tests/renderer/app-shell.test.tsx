@@ -3,7 +3,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RenderResult, StubHandle } from './helpers';
 import {
-  buttonByText, click, createStub, makeGlance, navButton, renderApp,
+  buttonByText, click, createStub, makeGlance, navButton, openAddInput, renderApp,
   repoActionsButton, repoOpenButton, resetSystemTheme, setViewportWidth,
   settle, submitForm, tab, typeInto,
 } from './helpers';
@@ -54,7 +54,7 @@ describe('Desktop AppShell', () => {
     await mount();
     const list = sidebar().querySelector('.watchlist-page');
     const slot = sidebar();
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     const input = document.querySelector<HTMLInputElement>('#add-repository-input')!;
     await typeInto(input, 'draft/repo');
     listViewport().scrollTop = 420;
@@ -114,7 +114,7 @@ describe('Desktop AppShell', () => {
       configurable: true,
       get: () => repoOpenButton('new/Repo') ? 2600 : 2400,
     });
-    await click(document.querySelector('.watchlist-add-trigger'));
+    await openAddInput();
     await typeInto(document.querySelector<HTMLInputElement>('#add-repository-input')!, 'new/Repo');
     await settle();
     await submitForm(document.querySelector<HTMLFormElement>('.watchlist-add-form form')!);
