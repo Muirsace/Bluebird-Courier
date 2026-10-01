@@ -1,0 +1,233 @@
+// @vitest-environment happy-dom
+import { act } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RenderResult, StubHandle } from './helpers';
+import {
+  buttonByText, click, createStub, makeGlance, navButton, renderApp,
+  repoActionsButton, repoOpenButton, resetSystemTheme, setViewportWidth,
+  settle, submitForm, tab, typeInto,
+} from './helpers';
+
+let view: RenderResult | null = null;
+const sidebar = (): HTMLElement => document.querySelector<HTMLElement>('.app-shell-sidebar')!;
+const workspace = (): HTMLElement => document.querySelector<HTMLElement>('.app-shell-workspace')!;
+
+beforeEach(() => setViewportWidth(1152));
+afterEach(async () => {
+  await view?.unmount();
+  view = null;
+  setViewportWidth(768);
+  resetSystemTheme();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+async function mount(configured = true): Promise<StubHandle> {
+  const stub = createStub({ repositories: [makeGlance(1, 'owner/A'), makeGlance(2, 'owner/B')] });
+  stub.api.accessTokenState = async () => ({ configured });
+  view = await renderApp(stub);
+  await settle();
+  return stub;
+}
+
+async function open(name = 'owner/A'): Promise<void> {
+  await click(repoOpenButton(name));
+  await settle();
+}
+
+describe('Desktop AppShell', () => {
+  it('提供三个槽位，隐藏 Rail，未选仓库时不自动抓取详情', async () => {
+    const stub = await mount();
+    const shell = document.querySelector('.app-shell')!;
+    expect([...shell.children].map((node) => node.className)).toEqual([
+      'app-shell-rail', 'app-shell-sidebar', 'app-shell-workspace',
+    ]);
+    expect(shell.querySelector<HTMLElement>('.app-shell-rail')?.hidden).toBe(true);
+    expect(sidebar().querySelector('.watchlist-page')).not.toBeNull();
+    expect(workspace().querySelector('.workspace-empty')?.textContent).toContain('从左侧选择一个仓库');
+    expect(stub.calls.fetchDetail).toBe(0);
+    expect(document.querySelector('.view-transition')).toBeNull();
+  });
+
+  it('仓库选择只替换 Workspace，清单节点、输入状态与侧栏滚动保持', async () => {
+    await mount();
+    const list = sidebar().querySelector('.watchlist-page');
+    const slot = sidebar();
+    await click(document.querySelector('.watchlist-add-trigger'));
+    const input = document.querySelector<HTMLInputElement>('#add-repository-input')!;
+    await typeInto(input, 'draft/repo');
+    slot.scrollTop = 420;
+    await open();
+    expect(sidebar()).toBe(slot);
+    expect(sidebar().querySelector('.watchlist-page')).toBe(list);
+    expect(input.isConnected).toBe(true);
+    expect(input.value).toBe('draft/repo');
+    expect(sidebar().scrollTop).toBe(420);
+    expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
+    expect(sidebar().querySelector('.repo-context-scope')).toBeNull();
+    workspace().scrollTop = 650;
+    await open('owner/B');
+    expect(workspace().scrollTop).toBe(0);
+    expect(sidebar().scrollTop).toBe(420);
+    expect(sidebar().querySelector('.watchlist-page')).toBe(list);
+    expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/B');
+  });
+
+  it('换仓库重新显示概览，Refresh 保持滚动且只刷新当前仓库', async () => {
+    const stub = await mount();
+    await open();
+    await click(tab('发版'));
+    await open('owner/B');
+    expect(tab('概览')?.getAttribute('aria-selected')).toBe('true');
+    workspace().scrollTop = 250;
+    sidebar().scrollTop = 300;
+    const before = stub.calls.fetchDetail;
+    await click(buttonByText('重新抓取'));
+    await settle();
+    expect(stub.calls.fetchDetail).toBe(before + 1);
+    expect(workspace().scrollTop).toBe(250);
+    expect(sidebar().scrollTop).toBe(300);
+  });
+
+  it('Settings 显示在 Workspace，返回空态时 Sidebar 仍保持', async () => {
+    await mount();
+    const list = sidebar().querySelector('.watchlist-page');
+    sidebar().scrollTop = 420;
+    await click(navButton('设置'));
+    await settle();
+    expect(workspace().querySelector('.settings-page')).not.toBeNull();
+    expect(sidebar().querySelector('.watchlist-page')).toBe(list);
+    expect(sidebar().scrollTop).toBe(420);
+    await click(navButton('监控清单'));
+    await settle();
+    expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
+    expect(sidebar().scrollTop).toBe(420);
+  });
+
+  it('新增仓库的视口补偿归 Sidebar，不改变 Workspace', async () => {
+    await mount();
+    const slot = sidebar();
+    slot.scrollTop = 420;
+    workspace().scrollTop = 180;
+    Object.defineProperty(slot, 'scrollHeight', {
+      configurable: true,
+      get: () => repoOpenButton('new/Repo') ? 2600 : 2400,
+    });
+    await click(document.querySelector('.watchlist-add-trigger'));
+    await typeInto(document.querySelector<HTMLInputElement>('#add-repository-input')!, 'new/Repo');
+    await settle();
+    await submitForm(document.querySelector<HTMLFormElement>('.watchlist-add-form form')!);
+    await settle();
+    expect(repoOpenButton('new/Repo')).not.toBeNull();
+    expect(slot.scrollTop).toBe(620);
+    expect(workspace().scrollTop).toBe(180);
+    expect(document.body.textContent).toContain('查看位置');
+  });
+
+  it('未配置令牌仍走启动闸门，侧栏不触发刷新', async () => {
+    const stub = await mount(false);
+    expect(workspace().querySelector('#accessToken-input')).not.toBeNull();
+    expect(sidebar().querySelector('.watchlist-page')).toBeNull();
+    expect(navButton('监控清单')?.disabled).toBe(true);
+    expect(stub.calls.listRepositories).toBe(0);
+  });
+
+  it('不把焦点拉进 Workspace，Repo 与 Detail Tabs 仍为可聚焦按钮', async () => {
+    await mount();
+    const button = repoOpenButton('owner/A')!;
+    button.focus();
+    await open();
+    expect(document.activeElement).toBe(button);
+    expect(button.type).toBe('button');
+    expect(button.tabIndex).toBe(0);
+    expect(tab('概览')?.tabIndex).toBe(0);
+  });
+
+  it('桌面导航不写 window 滚动，详情返回空态', async () => {
+    await mount();
+    const scroll = vi.spyOn(window, 'scrollTo');
+    await open();
+    await click(buttonByText('← 返回监控清单'));
+    await settle();
+    expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('Detail 两个观察器使用 Workspace，Watchlist 使用 Sidebar', async () => {
+    const records: Array<{ target?: Element; options?: IntersectionObserverInit }> = [];
+    class Observer {
+      record: (typeof records)[number];
+      constructor(_callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        this.record = { options };
+        records.push(this.record);
+      }
+      observe(target: Element): void { this.record.target = target; }
+      disconnect(): void {}
+    }
+    vi.stubGlobal('IntersectionObserver', Observer);
+    await mount();
+    await open();
+    const rootFor = (selector: string): Element | Document | null | undefined =>
+      records.find((record) => record.target?.matches(selector))?.options?.root;
+    expect(rootFor('.watchlist-toolbar-sentinel')).toBe(sidebar());
+    expect(rootFor('.detail-tabs-sentinel')).toBe(workspace());
+    expect(rootFor('.repo-context-sentinel')).toBe(workspace());
+  });
+
+  it('Sidebar 菜单进入 top layer，原 DOM 归属不变', async () => {
+    const show = vi.fn();
+    const hide = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'showPopover', { configurable: true, value: show });
+    Object.defineProperty(HTMLElement.prototype, 'hidePopover', { configurable: true, value: hide });
+    try {
+      await mount();
+      await click(repoActionsButton('owner/A'));
+      await settle();
+      const surface = sidebar().querySelector<HTMLElement>('.repository-action-positioner')!;
+      expect(surface.dataset.shellOverlay).toBe('true');
+      expect(surface.getAttribute('popover')).toBe('manual');
+      expect(show).toHaveBeenCalledOnce();
+      expect(document.activeElement?.getAttribute('role')).toBe('menuitem');
+      await view?.unmount();
+      view = null;
+      expect(hide).toHaveBeenCalledOnce();
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).showPopover;
+      delete (HTMLElement.prototype as Partial<HTMLElement>).hidePopover;
+    }
+  });
+});
+
+describe('900px breakpoint / legacy navigation', () => {
+  it.each([900, 1366])('%ipx 使用双栏', async (width) => {
+    setViewportWidth(width);
+    await mount();
+    expect(document.querySelector('.app-shell')).not.toBeNull();
+  });
+
+  it.each([899, 768, 480])('%ipx 仍整页下钻、返回恢复与 PageTransition', async (width) => {
+    setViewportWidth(width);
+    await mount();
+    expect(document.querySelector('.app-shell')).toBeNull();
+    document.documentElement.scrollTop = 420;
+    await open();
+    expect(document.querySelector('.watchlist-page')).toBeNull();
+    expect(document.querySelector<HTMLElement>('.view-transition')?.dataset.viewMotion).toBe('forward');
+    await click(buttonByText('← 返回监控清单'));
+    await settle();
+    expect(document.querySelector('.watchlist-page')).not.toBeNull();
+    expect(document.documentElement.scrollTop).toBe(420);
+    document.documentElement.scrollTop = 0;
+  });
+
+  it('窗口跨过 breakpoint 时保留当前仓库导航', async () => {
+    await mount();
+    await open();
+    await act(async () => setViewportWidth(768));
+    expect(document.querySelector('.app-shell')).toBeNull();
+    expect(document.querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
+    await act(async () => setViewportWidth(900));
+    expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
+    expect(sidebar().querySelector('.watchlist-page')).not.toBeNull();
+  });
+});

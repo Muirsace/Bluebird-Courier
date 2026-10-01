@@ -17,14 +17,17 @@ import { ThemeProvider } from '../../src/renderer/lib/theme';
 
 let systemTheme: 'light' | 'dark' = 'light';
 let reducedMotion = false;
+let viewportWidth = 768;
+const desktopListeners = new Set<() => void>();
 const mediaListeners = new Set<() => void>();
 const reducedMotionListeners = new Set<() => void>();
 
 function installMatchMedia(): void {
   // 按查询串分别回答：主题读 prefers-color-scheme，动画降级读 prefers-reduced-motion。
   const matchMedia = (query: string): MediaQueryList => {
-    const listeners = query.includes('prefers-reduced-motion') ? reducedMotionListeners : mediaListeners;
+    const listeners = query === '(min-width: 900px)' ? desktopListeners : query.includes('prefers-reduced-motion') ? reducedMotionListeners : mediaListeners;
     const matchesNow = (): boolean => {
+      if (query === '(min-width: 900px)') return viewportWidth >= 900;
       if (query.includes('prefers-reduced-motion')) return reducedMotion;
       if (query.includes('prefers-color-scheme')) return systemTheme === 'dark';
       return false;
@@ -52,6 +55,11 @@ function installMatchMedia(): void {
     return list as unknown as MediaQueryList;
   };
   window.matchMedia = matchMedia as unknown as typeof window.matchMedia;
+}
+
+export function setViewportWidth(width: number): void {
+  viewportWidth = width;
+  for (const listener of desktopListeners) listener();
 }
 
 /** 模拟 Windows 切深色 / 浅色：改系统值并通知监听者，等价于 prefers-color-scheme 变化。 */

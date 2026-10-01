@@ -1,0 +1,95 @@
+.app-shell {
+  --app-rail-width: 0px;
+  --app-sidebar-width: 336px;
+  display: grid;
+  grid-template-columns: var(--app-rail-width) var(--app-sidebar-width) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell-rail {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.app-shell-sidebar,
+.app-shell-workspace {
+  /* 顶部栏在滚动槽位之外：Sticky 的吸附线就是各槽位的上沿。 */
+  --app-header-height: 0px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* 留白属于内容层，不能放在 scrollport 上，否则 sticky 停靠线会被 padding 下推。 */
+.app-shell-slot-content {
+  display: flex;
+  min-height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  padding: 20px 16px;
+}
+
+.app-shell-sidebar {
+  grid-column: 2;
+  border-right: 1px solid rgb(var(--color-border-subtle));
+}
+
+.app-shell-workspace {
+  grid-column: 3;
+}
+
+.workspace-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.app-shell-workspace .detail-tab-content-anchor {
+  min-height: calc(100vh - var(--app-chrome-height, 0px) - var(--detail-tabs-height, 0px) - 28px);
+}
+
+/* 菜单使用原有 DOM / 交互，仅在 Shell 内进入 Chromium top layer，避开滚动裁剪。 */
+.repository-action-positioner[data-shell-overlay='true'] {
+  position: fixed;
+  inset: auto;
+  right: var(--overlay-right);
+  top: var(--overlay-top);
+  bottom: var(--overlay-bottom);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+
+@media (min-width: 900px) {
+  html:has(.app-frame[data-desktop='true']) {
+    overflow: hidden;
+    scrollbar-gutter: auto;
+  }
+
+  .app-frame[data-desktop='true'] {
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    overflow: hidden;
+  }
+
+  .app-frame[data-desktop='true'] > header {
+    flex-shrink: 0;
+  }
+
+  .app-frame[data-desktop='true'] > main {
+    flex: 1;
+    min-height: 0;
+    padding: 0;
+  }
+}

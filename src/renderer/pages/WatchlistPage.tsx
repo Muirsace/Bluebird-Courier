@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
+import { appScrollRoot } from '../lib/app-layout';
 import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
@@ -54,6 +55,7 @@ function focusAfterRemoval(repositoryId: number): void {
 }
 
 export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps) {
+  const pageRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const listQuery = useQuery({
     queryKey: ['repositories'],
@@ -89,14 +91,16 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     pendingViewportAnchorRef.current = null;
     setPendingReveal((current) => (current?.repositoryId === repositoryId ? null : current));
 
-    const scrollRoot = document.scrollingElement ?? document.documentElement;
-    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const shellRoot = appScrollRoot(pageRef.current);
+    const scrollRoot = shellRoot ?? document.scrollingElement ?? document.documentElement;
+    const scrollEvents = shellRoot ?? window;
+    const viewportHeight = shellRoot?.clientHeight ?? (document.documentElement.clientHeight || window.innerHeight);
     const targetOf = (): number => {
       const rect = target.getBoundingClientRect();
       const maxScrollTop = Math.max(0, scrollRoot.scrollHeight - viewportHeight);
       return Math.min(
         maxScrollTop,
-        Math.max(0, scrollRoot.scrollTop + rect.top + rect.height / 2 - viewportHeight / 2),
+        Math.max(0, scrollRoot.scrollTop + rect.top - (shellRoot?.getBoundingClientRect().top ?? 0) + rect.height / 2 - viewportHeight / 2),
       );
     };
     const behavior =
@@ -113,8 +117,8 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     let verifyFrame = 0;
     let verifyAttempts = 0;
     const cleanup = (): void => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('scrollend', handleScrollEnd);
+      scrollEvents.removeEventListener('scroll', handleScroll);
+      scrollEvents.removeEventListener('scrollend', handleScrollEnd);
       window.clearTimeout(fallback);
       window.cancelAnimationFrame(settleFrame);
       window.cancelAnimationFrame(verifyFrame);
@@ -150,8 +154,8 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     if (behavior === 'auto') {
       settleFrame = window.requestAnimationFrame(finish);
     } else {
-      window.addEventListener('scroll', handleScroll, { passive: true });
-      window.addEventListener('scrollend', handleScrollEnd);
+      scrollEvents.addEventListener('scroll', handleScroll, { passive: true });
+      scrollEvents.addEventListener('scrollend', handleScrollEnd);
       fallback = window.setTimeout(finish, revealScrollFallbackMs(Math.abs(targetOf() - scrollRoot.scrollTop)));
       verifyFrame = window.requestAnimationFrame(verifyStarted);
     }
@@ -181,10 +185,11 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     }
 
     pendingViewportAnchorRef.current = null;
-    const scrollRoot = document.scrollingElement ?? document.documentElement;
+    const shellRoot = appScrollRoot(pageRef.current);
+    const scrollRoot = shellRoot ?? document.scrollingElement ?? document.documentElement;
     const heightDelta = scrollRoot.scrollHeight - pending.scrollHeight;
     if (heightDelta !== 0) {
-      window.scrollTo({
+      (shellRoot ?? window).scrollTo({
         top: Math.max(0, pending.scrollTop + heightDelta),
         behavior: 'instant',
       });
@@ -258,7 +263,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
         }
         return { result, newCardPosition };
       }
-      const scrollRoot = document.scrollingElement ?? document.documentElement;
+      const scrollRoot = appScrollRoot(pageRef.current) ?? document.scrollingElement ?? document.documentElement;
       const scrollTop = scrollRoot.scrollTop;
       const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
       newCardPosition = nearTop ? 'visible' : 'offscreen';
@@ -328,7 +333,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const listUnavailable = listQuery.isError && !listQuery.data;
 
   return (
-    <div className="watchlist-page min-w-0">
+    <div ref={pageRef} className="watchlist-page min-w-0">
       <WatchlistHeader
         repositoryCount={listQuery.data ? repositories.length : null}
         repositories={repositories}

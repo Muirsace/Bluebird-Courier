@@ -4,6 +4,8 @@ import type { Glance, AccessTokenState } from '../../shared/types';
 import lightBrandMark from '../assets/bluebird-mark-light.svg';
 import darkBrandMark from '../assets/bluebird-mark-dark.svg';
 import { getApi } from '../lib/api';
+import { useDesktopShell } from '../lib/app-layout';
+import { AppShell } from '../components/shell/AppShell';
 import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { ErrorBar } from '../components/ErrorBar';
 import { PageTransition } from '../components/PageTransition';
@@ -13,7 +15,7 @@ import { DetailPage } from './DetailPage';
 import { SettingsPage } from './SettingsPage';
 import { WatchlistPage } from './WatchlistPage';
 
-/** 顶级页面只有两个：监控清单（含仓库详情这一层）与设置。 */
+/** 复用轻量导航：桌面 watchlist 对应空工作区，detail + selected 对应仓库，settings 对应设置。 */
 type View = 'watchlist' | 'detail' | 'settings';
 
 interface SelectedRepo {
@@ -39,6 +41,8 @@ function navButtonClass(disabled: boolean): string {
 
 export function App() {
   const queryClient = useQueryClient();
+  const desktop = useDesktopShell();
+  const workspaceRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<View>('watchlist');
   const [selected, setSelected] = useState<SelectedRepo | null>(null);
   /** 上一次导航的方向；null 表示还没导航过（首屏不播切换动画）。 */
@@ -46,7 +50,7 @@ export function App() {
   /**
    * 滚动位置归属清单：只有清单会被恢复，其余页面一律从头开始。
    *
-   * 全应用共用同一个 window 滚动条，所以离开清单时就得把位置记下来——DOM 一换，
+   * 小窗口共用同一个 window 滚动条，所以离开清单时就得把位置记下来——DOM 一换，
    * 浏览器马上按新页面的高度把 scrollY 夹掉，等到 layout effect 里再读只剩被夹过的值。
    */
   const watchlistScrollRef = useRef(0);
@@ -78,13 +82,13 @@ export function App() {
    * 离开清单前顺手记住滚动位置，等这个视图真的换掉就来不及了。
    */
   function navigate(to: View): void {
-    if (activeView === 'watchlist' && to !== 'watchlist') {
+    if (!desktop && activeView === 'watchlist' && to !== 'watchlist') {
       watchlistScrollRef.current = window.scrollY;
     }
     // 每次导航都从"隐藏"起步：刚进详情时 Repository Header 还在顶部，仓库身份由它自己交代；
     // 离开详情时也不让它留在顶部栏里。
     setRepoContextVisible(false);
-    setMotion(motionFor(view, to));
+    setMotion(desktop ? null : motionFor(view, to));
     setView(to);
   }
 
@@ -108,6 +112,14 @@ export function App() {
   // 读不到任何状态才整页阻断；已有缓存时后台刷新失败不应把界面清空
   const tokenStateFailed = accessTokenStateQuery.isError;
   const hasTokenState = accessTokenStateQuery.data !== undefined;
+  const tokenRefreshError = tokenStateFailed && hasTokenState ? (
+    <div className="mb-4">
+      <ErrorBar
+        error={{ kind: 'unknown', message: '访问令牌状态刷新失败，正在沿用上次读取的状态' }}
+        action={{ label: '重试', onClick: () => void accessTokenStateQuery.refetch() }}
+      />
+    </div>
+  ) : null;
 
   /**
    * 导航的滚动收尾，必须赶在浏览器 paint 前：晚一帧用户就会先看见详情的中段，
@@ -119,13 +131,19 @@ export function App() {
     if (!hasTokenState) return;
     const previous = previousViewRef.current;
     previousViewRef.current = activeView;
+    if (desktop) return;
     // 首屏（previous 还是 null）不做任何滚动改写；同一个视图重复进入也不该动滚动位置
     if (previous === null || previous === activeView) return;
     window.scrollTo({
       top: activeView === 'watchlist' ? watchlistScrollRef.current : 0,
       behavior: 'auto',
     });
-  }, [activeView, hasTokenState]);
+  }, [activeView, hasTokenState, desktop]);
+
+  // 仅导航或换仓库时重置工作区；侧栏节点与其 scrollTop 保持不动。
+  useLayoutEffect(() => {
+    if (desktop && workspaceRef.current) workspaceRef.current.scrollTop = 0;
+  }, [desktop, activeView, selected?.id]);
 
   /**
    * 顶部栏实测高度写成 CSS 变量：详情里的 Tabs 吸附时停在它下沿，哨兵也靠它定落点。
@@ -140,16 +158,21 @@ export function App() {
     const root = document.documentElement;
     const apply = (): void => {
       root.style.setProperty('--app-header-height', `${header.getBoundingClientRect().height}px`);
+      root.style.setProperty('--app-chrome-height', `${header.getBoundingClientRect().height}px`);
     };
     apply();
     if (typeof ResizeObserver === 'undefined') {
-      return () => root.style.removeProperty('--app-header-height');
+      return () => {
+        root.style.removeProperty('--app-header-height');
+        root.style.removeProperty('--app-chrome-height');
+      };
     }
     const observer = new ResizeObserver(apply);
     observer.observe(header);
     return () => {
       observer.disconnect();
       root.style.removeProperty('--app-header-height');
+      root.style.removeProperty('--app-chrome-height');
     };
   }, []);
 
@@ -176,12 +199,24 @@ export function App() {
   } else if (activeView === 'detail' && selected) {
     content = (
       <DetailPage
+        key={desktop ? selected.id : undefined}
         repositoryId={selected.id}
         fullName={selected.fullName}
         onRepositoryContextChange={setRepoContextVisible}
         onBack={() => navigate('watchlist')}
         onGoSettings={() => navigate('settings')}
       />
+    );
+  } else if (desktop) {
+    content = (
+      <div className="workspace-empty">
+        <span className="app-brand-mark" aria-hidden="true">
+          <img src={lightBrandMark} alt="" className="app-brand-mark-light" />
+          <img src={darkBrandMark} alt="" className="app-brand-mark-dark" />
+        </span>
+        <h2 className="text-base font-semibold text-primary">青鸟信使</h2>
+        <p className="text-sm text-secondary">从左侧选择一个仓库<br />查看概览、发版、提交与趋势</p>
+      </div>
     );
   } else {
     content = (
@@ -190,7 +225,7 @@ export function App() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col">
+    <div className="app-frame mx-auto flex min-h-full w-full max-w-6xl flex-col" data-desktop={desktop}>
       <header ref={headerRef} className="sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -224,18 +259,24 @@ export function App() {
       </header>
 
       <main className="flex-1 px-4 py-5">
-        {tokenStateFailed && hasTokenState ? (
-          <div className="mb-4">
-            <ErrorBar
-              error={{ kind: 'unknown', message: '访问令牌状态刷新失败，正在沿用上次读取的状态' }}
-              action={{ label: '重试', onClick: () => void accessTokenStateQuery.refetch() }}
-            />
-          </div>
-        ) : null}
-        {/* key 只跟导航状态走：刷新 / Query 更新 / 主题 / resize 都不会换节点，也就不会重播 */}
-        <PageTransition key={activeView} motion={motion}>
-          {content}
-        </PageTransition>
+        {desktop ? (
+          <AppShell
+            rail={null}
+            workspaceRef={workspaceRef}
+            sidebar={configured ? (
+              <WatchlistPage onOpenDetail={openDetail} onGoSettings={() => navigate('settings')} />
+            ) : null}
+            workspace={<>{tokenRefreshError}{content}</>}
+          />
+        ) : (
+          <>
+            {tokenRefreshError}
+            {/* key 只跟导航状态走：刷新 / Query 更新 / 主题 / resize 都不会重播 */}
+            <PageTransition key={activeView} motion={motion}>
+              {content}
+            </PageTransition>
+          </>
+        )}
       </main>
     </div>
   );

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useQuery } from '@tanstack/react-query';
 import type { Detail, DetailResult } from '../../shared/types';
 import { getApi } from '../lib/api';
+import { appScrollRoot } from '../lib/app-layout';
 import { useDetailReveal } from '../lib/detail-reveal';
 import { DETAIL_REVEAL_MOTION, DETAIL_REVEAL_TOTAL_MS } from '../lib/motion';
 import { ErrorBar } from '../components/ErrorBar';
@@ -110,7 +111,7 @@ export function DetailPage({
         if (entry.intersectionRatio === 0) onRepositoryContextChange(true);
         else if (entry.intersectionRatio === 1) onRepositoryContextChange(false);
       },
-      { threshold: [0, 1] },
+      { root: appScrollRoot(sentinel), threshold: [0, 1] },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -133,7 +134,7 @@ export function DetailPage({
       const entry = entries[0];
       if (!entry) return;
       setTabsStuck(!entry.isIntersecting);
-    });
+    }, { root: appScrollRoot(sentinel) });
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);

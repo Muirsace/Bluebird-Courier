@@ -3,6 +3,7 @@ import type { AnimationEvent as ReactAnimationEvent, CSSProperties, ReactNode, R
 import { motionCompletionMs, OVERLAY_MOTION, prefersReducedMotion } from '../../lib/motion';
 import { chooseOverlayPlacement, overlayMaxWidth, VIEWPORT_SAFE_GAP } from '../../lib/overlay-placement';
 import type { OverlayPlacementResult } from '../../lib/overlay-placement';
+import { appScrollRoot } from '../../lib/app-layout';
 
 /** 两种内容的宽度（对应 w-44 / w-72）：换内容时外壳按这两个值连续过渡，不是瞬变。 */
 const STAGE_WIDTH = { menu: 176, confirm: 288 } as const;
@@ -25,7 +26,7 @@ interface SurfaceSize {
   height: number;
 }
 
-type SurfaceLayout = OverlayPlacementResult & SurfaceSize & { clamped: boolean };
+type SurfaceLayout = OverlayPlacementResult & SurfaceSize & { clamped: boolean; right: number; edge: number };
 
 /**
  * `···` 菜单与移除确认共用的那一个浮层外壳。
@@ -52,6 +53,7 @@ export function RepositoryActionSurface({
   const contentRef = useRef<HTMLDivElement>(null);
   /** null = 还没量过：首帧先按保守值画，布局效果会在 paint 前用实测值纠正。 */
   const [layout, setLayout] = useState<SurfaceLayout | null>(null);
+  const [shellOverlay, setShellOverlay] = useState(false);
   /** 上一次内容尺寸：换内容时"从小到大"这件事需要一个起点。 */
   const previousSizeRef = useRef<SurfaceSize | null>(null);
   const previousContentRef = useRef<{ stage: SurfaceStage; node: ReactNode } | null>(null);
@@ -68,6 +70,7 @@ export function RepositoryActionSurface({
     if (!positioner || !surface || !content || !trigger) return;
 
     const triggerRect = trigger.getBoundingClientRect();
+    setShellOverlay(appScrollRoot(trigger) !== null);
     // 宽度只由 stage 与视口决定，先落到 DOM：确认框比菜单宽，换行位置不同、高度也不同，
     // 所以高度必须在最终宽度下量。
     const width = Math.min(STAGE_WIDTH[stage], overlayMaxWidth(triggerRect, window.innerWidth));
@@ -84,6 +87,8 @@ export function RepositoryActionSurface({
       viewportHeight: window.innerHeight,
     });
     const clamped = height > placement.maxHeight;
+    const right = window.innerWidth - triggerRect.right;
+    const edge = placement.placement === 'bottom' ? triggerRect.bottom + 8 : window.innerHeight - triggerRect.top + 8;
 
     // 值没变就不写 state：滚动与 resize 会高频触发这里
     setLayout((prev) =>
@@ -92,10 +97,12 @@ export function RepositoryActionSurface({
       prev.width === width &&
       prev.height === height &&
       prev.clamped === clamped &&
+      prev.right === right &&
+      prev.edge === edge &&
       prev.maxHeight === placement.maxHeight &&
       prev.maxWidth === placement.maxWidth
         ? prev
-        : { ...placement, width, height, clamped },
+        : { ...placement, width, height, clamped, right, edge },
     );
     previousSizeRef.current = { width, height };
   }, [stage, measureKey, triggerRef]);
@@ -127,6 +134,18 @@ export function RepositoryActionSurface({
   useLayoutEffect(() => {
     measure();
   }, [measure]);
+
+  // Top layer 保留 DOM 归属，现有 contains / Esc / 焦点逻辑仍可直接复用。
+  useLayoutEffect(() => {
+    const positioner = positionerRef.current;
+    if (!shellOverlay || !positioner || typeof positioner.showPopover !== 'function') return;
+    positioner.setAttribute('popover', 'manual');
+    positioner.showPopover();
+    return () => {
+      positioner.hidePopover();
+      positioner.removeAttribute('popover');
+    };
+  }, [shellOverlay]);
 
   // 换内容期间跳过的事件在这里补一次；顺便把"正在补间"的标志交给 remeasure
   useEffect(() => {
@@ -181,6 +200,9 @@ export function RepositoryActionSurface({
   const height = layout?.height ?? null;
 
   const style = {
+    '--overlay-right': `${layout?.right ?? 0}px`,
+    '--overlay-top': placement === 'bottom' ? `${layout?.edge ?? 0}px` : 'auto',
+    '--overlay-bottom': placement === 'top' ? `${layout?.edge ?? 0}px` : 'auto',
     '--overlay-width': `${width}px`,
     '--overlay-height': height === null ? 'auto' : `${height}px`,
     '--overlay-max-width': `${layout?.maxWidth ?? window.innerWidth - VIEWPORT_SAFE_GAP * 2}px`,
@@ -195,6 +217,7 @@ export function RepositoryActionSurface({
     <div
       ref={positionerRef}
       className="repository-action-positioner"
+      data-shell-overlay={shellOverlay ? 'true' : undefined}
       data-placement={placement}
       data-swapping={swap ? 'true' : undefined}
       style={style}

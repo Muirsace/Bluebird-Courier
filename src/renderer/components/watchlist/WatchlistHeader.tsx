@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { AddRepositoryForm } from './AddRepositoryForm';
 import { Spinner } from '../Spinner';
+import { appScrollRoot } from '../../lib/app-layout';
 import type { Glance } from '../../../shared/types';
 import type { AddRepositoryOutcome } from './AddRepositoryForm';
 
@@ -34,16 +35,18 @@ export function WatchlistHeader({
     const sentinel = toolbarSentinelRef.current;
     const appHeader = document.querySelector<HTMLElement>('header');
     if (!sentinel || !appHeader || typeof IntersectionObserver === 'undefined') return;
+    const scrollRoot = appScrollRoot(sentinel);
 
     let observer: IntersectionObserver | null = null;
     const observeAtHeader = (): void => {
       observer?.disconnect();
       // Read the rendered Header height because IntersectionObserver rootMargin cannot use CSS vars.
-      const headerHeight = appHeader.getBoundingClientRect().height;
-      setToolbarStuck(sentinel.getBoundingClientRect().top <= headerHeight);
+      const headerHeight = scrollRoot ? 0 : appHeader.getBoundingClientRect().height;
+      const stickyTop = scrollRoot?.getBoundingClientRect().top ?? headerHeight;
+      setToolbarStuck(sentinel.getBoundingClientRect().top <= stickyTop);
       observer = new IntersectionObserver(
         ([entry]) => setToolbarStuck(entry ? !entry.isIntersecting : false),
-        { rootMargin: `-${headerHeight}px 0px 0px 0px`, threshold: 0 },
+        { root: scrollRoot, rootMargin: `-${headerHeight}px 0px 0px 0px`, threshold: 0 },
       );
       observer.observe(sentinel);
     };
