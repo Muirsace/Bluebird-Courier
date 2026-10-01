@@ -4,6 +4,7 @@ import type { AddRepositoryResult, Glance, NormalizedError } from '../../../shar
 import { parseRepoInput } from '../../lib/repo-input';
 import { describeError } from '../../lib/errors';
 import { Spinner } from '../Spinner';
+import { InlineFeedback } from '../StateMessage';
 
 export type AddRepositoryPosition = 'visible' | 'offscreen';
 
@@ -378,7 +379,7 @@ export function RepositoryOmnibox({
               disabled={!formOpen || adding}
               tabIndex={formOpen ? 0 : -1}
               className={`h-9 w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-focus/15 ${
-                invalid || hasRemoteError
+                hasRemoteError ? 'border-danger focus:border-danger' : invalid
                   ? 'border-warning focus:border-warning'
                   : 'border-strong focus:border-focus'
               }`}
@@ -435,17 +436,18 @@ export function RepositoryOmnibox({
           <div className="min-h-0 overflow-hidden">
             <div className="pt-1.5">
               {displayedMessage?.kind === 'invalid' ? (
-                <p
+                <InlineFeedback
                   id="add-repository-invalid"
-                  aria-live="polite"
-                  className="add-repository-status min-h-5 text-xs text-warning"
+                  announcement={messageOpen ? 'status' : undefined}
+                  tone="warning"
+                  className="add-repository-status min-h-5 text-xs"
                 >
                   请输入 owner/repo 或 GitHub 仓库地址
-                </p>
+                </InlineFeedback>
               ) : displayedMessage?.kind === 'duplicate' ? (
-                <div
+                <InlineFeedback
                   id="add-repository-duplicate"
-                  role="status"
+                  announcement={messageOpen ? 'status' : undefined}
                   className={`add-repository-status flex min-h-5 min-w-0 items-center gap-1 text-xs text-secondary ${sidebar ? 'flex-wrap' : 'overflow-hidden whitespace-nowrap'}`}
                 >
                   <span aria-hidden="true" className="shrink-0 font-medium text-success">
@@ -468,20 +470,22 @@ export function RepositoryOmnibox({
                   >
                     打开详情
                   </button>
-                </div>
+                </InlineFeedback>
               ) : displayedMessage?.kind === 'remote-error' ? (
-                <p
+                <InlineFeedback
                   id="add-repository-error"
-                  role="alert"
-                  className="add-repository-status min-h-5 break-words text-xs text-danger"
+                  announcement={messageOpen ? 'alert' : undefined}
+                  tone="danger"
+                  className="add-repository-status min-h-5 break-words text-xs"
                 >
                   {describeError(displayedMessage.error)}
-                </p>
+                </InlineFeedback>
               ) : displayedMessage?.kind === 'success' ? (
-                <div
+                <InlineFeedback
                   id="add-repository-success"
-                  role="status"
-                  className="add-repository-status flex min-h-5 min-w-0 flex-wrap items-center gap-x-1 text-xs text-success"
+                  announcement={messageOpen ? 'status' : undefined}
+                  tone="success"
+                  className="add-repository-status flex min-h-5 min-w-0 flex-wrap items-center gap-x-1 text-xs"
                 >
                   <span aria-hidden="true" className="shrink-0 font-medium">✓</span>
                   {' '}
@@ -526,7 +530,7 @@ export function RepositoryOmnibox({
                       </button>
                     </>
                   ) : null}
-                </div>
+                </InlineFeedback>
               ) : null}
             </div>
           </div>

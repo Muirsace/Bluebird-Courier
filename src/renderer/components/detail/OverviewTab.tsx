@@ -2,6 +2,7 @@ import type { Detail, IssueItem, PullRequestItem } from '../../../shared/types';
 import { DETAIL_REVEAL_MOTION } from '../../lib/motion';
 import { GlanceFact } from '../GlanceFact';
 import { Section } from '../Section';
+import { SectionMessage } from '../StateMessage';
 import { BuildStatusPanel } from './BuildStatus';
 import { CommitList } from './CommitList';
 import { IssueEmptyState, NumberedItemRow } from './IssuesAndPulls';
@@ -39,7 +40,7 @@ function RecentList({
     <div>
       <h3 className="mb-1 text-xs font-medium text-secondary">{title}</h3>
       {items.length === 0 ? (
-        <p className="text-sm text-muted">无</p>
+        <SectionMessage>{kind === 'issue' ? '暂无议题' : '暂无合并请求'}</SectionMessage>
       ) : (
         <ul className="divide-y divide-subtle">
           {items.map((item, index) => (

@@ -6,9 +6,8 @@ interface SpinnerProps {
 export function Spinner({ className = 'h-4 w-4' }: SpinnerProps) {
   return (
     <div
-      role="status"
-      aria-label="加载中"
-      className={`animate-spin rounded-full border-2 border-muted border-t-transparent ${className}`}
+      aria-hidden="true"
+      className={`state-spinner animate-spin rounded-full border-2 border-muted border-t-transparent ${className}`}
     />
   );
 }

@@ -2,6 +2,7 @@ import type { IssueItem, PullRequestItem } from '../../../shared/types';
 import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
 import { GlanceFact } from '../GlanceFact';
+import { SectionMessage } from '../StateMessage';
 
 const STATE_STYLES = {
   open: 'border-success/40 bg-success-soft text-success',
@@ -35,13 +36,15 @@ function KindBadge({ kind }: { kind: ItemKind }) {
 /** 紧凑但稳定的空态，用同一表现覆盖概览和完整 Issue & PR 列表。 */
 export function IssueEmptyState() {
   return (
-    <div className="flex min-h-[88px] items-center gap-3 rounded-md bg-surface-raised px-4 py-3 text-sm text-secondary">
+    <SectionMessage>
+      <div className="flex items-center gap-2">
       <span aria-hidden="true" className="shrink-0 font-medium text-secondary">
         ✓
       </span>
       {' '}
       <p>当前没有开放的 Issue 或 Pull Request</p>
-    </div>
+      </div>
+    </SectionMessage>
   );
 }
 
@@ -129,19 +132,17 @@ export function IssuesAndPulls({ issues, pullRequests, owner, name }: IssuesAndP
         <GlanceFact label="合并请求" value={`${pullRequests.length} 条`} />
       </div>
 
-      {issues.length > 0 ? (
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">议题</h3>
-          <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
+          {issues.length > 0 ? <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
+            : <SectionMessage>暂无议题</SectionMessage>}
         </div>
-      ) : null}
 
-      {pullRequests.length > 0 ? (
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">合并请求</h3>
-          <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
+          {pullRequests.length > 0 ? <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
+            : <SectionMessage>暂无合并请求</SectionMessage>}
         </div>
-      ) : null}
     </div>
   );
 }

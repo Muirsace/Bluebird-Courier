@@ -1,6 +1,7 @@
 import type { BuildInfo, BuildStatus } from '../../../shared/types';
 import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
+import { SectionMessage } from '../StateMessage';
 
 export const BUILD_LABELS: Record<BuildStatus, string> = {
   success: '构建通过',
@@ -56,6 +57,9 @@ export function BuildStatusPanel({
   name: string;
   showLink?: boolean;
 }) {
+  if (build.status === 'none' && !build.workflowName && !build.finishedAt && !build.conclusion && !build.url) {
+    return <SectionMessage>暂无构建记录</SectionMessage>;
+  }
   return (
     <div className={`min-w-0 rounded-r-md border-l-2 bg-surface-raised px-3 py-3 transition-colors duration-150 ease-out ${BUILD_EDGE[build.status]}`}>
       <BuildStatusBadge status={build.status} />

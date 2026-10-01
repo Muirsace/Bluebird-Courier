@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Spinner } from '../Spinner';
+import { InlineFeedback } from '../StateMessage';
 
 interface RemoveRepositoryPopoverProps {
   id: string;
@@ -40,9 +41,9 @@ export function RemoveRepositoryPopover({
         这不会删除 GitHub 仓库，只会停止在青鸟信使中监控。
       </p>
       {error ? (
-        <p role="alert" className="mt-2 text-xs text-danger">
+        <InlineFeedback announcement="alert" tone="danger" className="mt-2 text-xs">
           {error}
-        </p>
+        </InlineFeedback>
       ) : null}
       <div className="mt-3 flex justify-end gap-2">
         <button

@@ -3,6 +3,7 @@ import { formatCount } from '../../lib/format';
 import { METRIC_LABELS, orderSnapshots, summarizeMetric } from '../../lib/trend';
 import type { TrendMetricName, TrendScope } from '../../lib/trend';
 import { TrendMetric } from './TrendMetric';
+import { SectionMessage } from '../StateMessage';
 
 const METRICS: readonly TrendMetricName[] = ['stars', 'forks'];
 
@@ -22,16 +23,16 @@ export function TrendPanel({ trend, scope, compact = false }: TrendPanelProps) {
 
   if (ordered.length === 0) {
     return (
-      <p className="rounded-md bg-surface-raised px-4 py-6 text-center text-xs text-muted">
+      <SectionMessage>
         暂无趋势数据，完成更多抓取后这里会显示变化。
-      </p>
+      </SectionMessage>
     );
   }
 
   const [only] = ordered;
   if (only && ordered.length === 1) {
     return (
-      <div className="rounded-md bg-surface-raised px-4 py-4 text-xs">
+      <SectionMessage>
         <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-secondary">
           {METRICS.map((metric) => (
             <span key={metric}>
@@ -40,7 +41,7 @@ export function TrendPanel({ trend, scope, compact = false }: TrendPanelProps) {
           ))}
         </p>
         <p className="mt-1 text-muted">已有首次记录，需要更多历史记录才能生成趋势。</p>
-      </div>
+      </SectionMessage>
     );
   }
 

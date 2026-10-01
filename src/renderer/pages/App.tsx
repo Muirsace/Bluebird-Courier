@@ -13,7 +13,8 @@ import { CompactRepositoryContext } from '../components/CompactRepositoryContext
 import { ErrorBar } from '../components/ErrorBar';
 import { PageTransition } from '../components/PageTransition';
 import type { PageMotion } from '../components/PageTransition';
-import { Spinner } from '../components/Spinner';
+import { Loading } from '../components/Loading';
+import { WorkspaceMessage } from '../components/StateMessage';
 import { DetailPage } from './DetailPage';
 import { SettingsPage } from './SettingsPage';
 import { WatchlistPage } from './WatchlistPage';
@@ -211,19 +212,13 @@ export function App() {
   let content;
   if (accessTokenStateQuery.isPending) {
     content = (
-      <div className="flex items-center justify-center gap-2 py-20 text-sm text-secondary">
-        <Spinner />
-        正在启动…
-      </div>
+      <Loading label="正在启动…" />
     );
   } else if (tokenStateFailed && !hasTokenState) {
     content = (
-      <div className="mx-auto max-w-xl space-y-3 py-10">
-        <ErrorBar
-          error={{ kind: 'unknown', message: '无法读取访问令牌状态，请稍后重试' }}
-          action={{ label: '重试', onClick: () => void accessTokenStateQuery.refetch() }}
-        />
-      </div>
+      <WorkspaceMessage title="无法读取访问令牌状态" description="请稍后重试" announcement="alert">
+        <button type="button" onClick={() => void accessTokenStateQuery.refetch()} className="state-action">重试</button>
+      </WorkspaceMessage>
     );
   } else if (activeView === 'settings') {
     // 未配置访问令牌时 activeView 恒为设置页（启动闸门）
@@ -243,14 +238,12 @@ export function App() {
     );
   } else if (desktop) {
     content = (
-      <div className="workspace-empty">
-        <span className="app-brand-mark" aria-hidden="true">
+      <WorkspaceMessage className="workspace-empty" title="青鸟信使"
+        description={<>从左侧选择一个仓库<br />查看概览、发版、提交、构建和趋势</>}
+        leading={<span className="app-brand-mark" aria-hidden="true">
           <img src={lightBrandMark} alt="" className="app-brand-mark-light" />
           <img src={darkBrandMark} alt="" className="app-brand-mark-dark" />
-        </span>
-        <h2 className="text-base font-semibold text-primary">青鸟信使</h2>
-        <p className="text-sm text-secondary">从左侧选择一个仓库<br />查看概览、发版、提交与趋势</p>
-      </div>
+        </span>} />
     );
   } else {
     content = null;

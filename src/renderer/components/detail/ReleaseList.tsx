@@ -3,6 +3,7 @@ import { PRERELEASE_LABELS, classifyReleaseTag, dedupeReleaseTitle } from '../..
 import type { PrereleaseKind } from '../../lib/release';
 import { formatDate } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
+import { SectionMessage } from '../StateMessage';
 
 /**
  * 预发布类型徽章：只在 tag 里明确写了 alpha / beta / rc 时出现。
@@ -33,7 +34,7 @@ interface ReleaseListProps {
 /** 发版行：Tag（可点开 GitHub 发版页）→ 类型 → 发布日期，标题只在它与 Tag 不同时另起一行。 */
 export function ReleaseList({ releases, owner, name }: ReleaseListProps) {
   if (releases.length === 0) {
-    return <p className="text-sm text-muted">无发版</p>;
+    return <SectionMessage>暂无发版</SectionMessage>;
   }
   return (
     <ul className="divide-y divide-subtle">

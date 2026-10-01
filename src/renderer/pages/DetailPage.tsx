@@ -8,6 +8,8 @@ import { DETAIL_REVEAL_MOTION, DETAIL_REVEAL_TOTAL_MS } from '../lib/motion';
 import { ErrorBar } from '../components/ErrorBar';
 import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { Loading } from '../components/Loading';
+import { WorkspaceMessage } from '../components/StateMessage';
+import { describeError } from '../lib/errors';
 import { BuildTab } from '../components/detail/BuildTab';
 import { CommitTab } from '../components/detail/CommitTab';
 import { DetailTabs } from '../components/detail/DetailTabs';
@@ -233,6 +235,9 @@ export function DetailPage({
   const keptDetail = lastDetail && lastDetail.id === repositoryId ? lastDetail.detail : null;
   const detail = fetchedDetail ?? keptDetail;
   const fetchError = detailQuery.data?.error ?? null;
+  const detailError = fetchError ?? (detailQuery.isError
+    ? { kind: 'unknown' as const, message: '全量信息加载失败，请稍后重试' }
+    : null);
   const repository = detail?.repository;
 
   // 首次抓取的揭示窗口。首帧就有数据（缓存命中）直接算 ready，所以只播一次；
@@ -260,12 +265,12 @@ export function DetailPage({
         <span ref={repoContextSentinelRef} aria-hidden="true" className="repo-context-sentinel" />
       </div>
 
-      {fetchError ? <ErrorBar error={fetchError} onGoSettings={onGoSettings} /> : null}
-      {detailQuery.isError ? (
+      {detail && detailError ? (
         <ErrorBar
-          error={{ kind: 'unknown', message: '全量信息加载失败，请稍后重试' }}
+          error={detailError}
+          summary="重新抓取失败"
           onGoSettings={onGoSettings}
-          action={{ label: '重试', onClick: () => void detailQuery.refetch() }}
+          action={{ label: '重试', onClick: () => void detailQuery.refetch(), disabled: detailQuery.isFetching }}
         />
       ) : null}
 
@@ -282,8 +287,8 @@ export function DetailPage({
         <span ref={tabsSentinelRef} aria-hidden="true" className="detail-tabs-sentinel" />
 
         {pending || reveal === 'revealing' ? (
-          <div className="detail-loading-slot" data-state={pending ? 'visible' : 'exiting'}>
-            <Loading label="正在抓取全量信息…" />
+          <div className="detail-loading-slot" data-state={pending ? 'visible' : 'exiting'} aria-hidden={!pending}>
+            <Loading label="正在加载仓库详情…" active={pending} />
           </div>
         ) : null}
 
@@ -324,9 +329,15 @@ export function DetailPage({
             </div>
           </div>
         ) : pending ? null : (
-          <div className="rounded-lg border border-dashed border-strong bg-surface/50 px-6 py-10 text-center text-sm text-muted">
-            暂无全量信息，请点击「重新抓取」
-          </div>
+          <WorkspaceMessage title={detailError ? '加载仓库详情失败' : '暂无全量信息'}
+            description={detailError ? describeError(detailError) : '请点击「重新抓取」'}
+            announcement={detailError ? 'alert' : undefined}>
+            <button type="button" className="state-action" aria-label="重新抓取仓库详情"
+              onClick={() => void detailQuery.refetch()} disabled={detailQuery.isFetching}>重新抓取</button>
+            {detailError?.kind === 'access_token_invalid' ? (
+              <button type="button" className="state-action" onClick={onGoSettings}>去设置</button>
+            ) : null}
+          </WorkspaceMessage>
         )}
       </div>
     </div>
