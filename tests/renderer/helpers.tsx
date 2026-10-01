@@ -607,6 +607,10 @@ export function appliedTheme(): string | null {
 
 /** 顶部导航按钮（按文案取）。 */
 export function navButton(text: string): HTMLButtonElement | null {
+  if (text === '设置') {
+    const desktop = document.querySelector<HTMLButtonElement>('.desktop-sidebar-brand button[aria-label="设置"]');
+    if (desktop) return desktop;
+  }
   return (
     [...document.querySelectorAll<HTMLButtonElement>('header nav button')].find(
       (button) => button.textContent?.trim() === text,

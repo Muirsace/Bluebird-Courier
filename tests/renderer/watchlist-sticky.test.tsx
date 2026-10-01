@@ -279,7 +279,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(form).toContain('watchlist-add-action relative inline-flex h-9');
     expect(narrowAddForm).toContain('width: calc(100% - 7rem)');
     expect(narrowAddForm).toContain('min-width: min(16rem, 100%)');
-    expect(app).toContain('className="sticky top-0 z-10');
+    expect(app).toContain('app-global-header sticky top-0 z-10');
     expect(overlay).toContain('z-index: 20');
   });
 });

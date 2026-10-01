@@ -6,6 +6,7 @@ import type { Glance } from '../../../shared/types';
 import type { AddRepositoryOutcome } from './AddRepositoryForm';
 
 interface WatchlistHeaderProps {
+  sidebar?: boolean;
   /** 当前清单里的仓库数量；读取中为 null（此时不显示数量，避免先显示 0 再跳数）。 */
   repositoryCount: number | null;
   repositories: Glance[];
@@ -19,6 +20,7 @@ interface WatchlistHeaderProps {
 
 /** 清单页标题与唯一一组页面操作。 */
 export function WatchlistHeader({
+  sidebar = false,
   repositoryCount,
   repositories,
   adding,
@@ -32,8 +34,10 @@ export function WatchlistHeader({
   const [toolbarStuck, setToolbarStuck] = useState(false);
 
   useLayoutEffect(() => {
+    // Desktop Chrome 在列表滚动根之外，既不用吸附，也不再安装 toolbar Observer。
+    if (sidebar) return;
     const sentinel = toolbarSentinelRef.current;
-    const appHeader = document.querySelector<HTMLElement>('header');
+    const appHeader = document.querySelector<HTMLElement>('.app-global-header');
     if (!sentinel || !appHeader || typeof IntersectionObserver === 'undefined') return;
     const scrollRoot = appScrollRoot(sentinel);
 
@@ -60,20 +64,22 @@ export function WatchlistHeader({
       observer?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, []);
+  }, [sidebar]);
+
+  const Heading = sidebar ? 'h2' : 'h1';
 
   return (
     <>
       <div className="watchlist-page-heading relative flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="text-xl font-semibold text-primary">监控清单</h1>
+        <Heading className={`${sidebar ? 'text-base' : 'text-xl'} font-semibold text-primary`}>监控清单</Heading>
         {repositoryCount !== null ? (
-          <span className="text-sm text-secondary">{repositoryCount} 个仓库</span>
+          <span className="watchlist-count text-sm text-secondary" aria-label={`${repositoryCount} 个仓库`}>{repositoryCount}{sidebar ? '' : ' 个仓库'}</span>
         ) : null}
-        <span
+        {!sidebar ? <span
           ref={toolbarSentinelRef}
           aria-hidden="true"
           className="watchlist-toolbar-sentinel"
-        />
+        /> : null}
       </div>
 
       <div className="watchlist-page-toolbar" data-stuck={toolbarStuck ? 'true' : undefined}>

@@ -6,6 +6,7 @@ import darkBrandMark from '../assets/bluebird-mark-dark.svg';
 import { getApi } from '../lib/api';
 import { useDesktopShell } from '../lib/app-layout';
 import { AppShell } from '../components/shell/AppShell';
+import { DesktopSidebarHeader } from '../components/shell/DesktopSidebarHeader';
 import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { ErrorBar } from '../components/ErrorBar';
 import { PageTransition } from '../components/PageTransition';
@@ -156,14 +157,14 @@ export function App() {
    */
   useLayoutEffect(() => {
     const header = headerRef.current;
-    if (!header) return;
     const root = document.documentElement;
     const apply = (): void => {
-      root.style.setProperty('--app-header-height', `${header.getBoundingClientRect().height}px`);
-      root.style.setProperty('--app-chrome-height', `${header.getBoundingClientRect().height}px`);
+      const height = header?.getBoundingClientRect().height ?? 0;
+      root.style.setProperty('--app-header-height', `${height}px`);
+      root.style.setProperty('--app-chrome-height', `${height}px`);
     };
     apply();
-    if (typeof ResizeObserver === 'undefined') {
+    if (!header || typeof ResizeObserver === 'undefined') {
       return () => {
         root.style.removeProperty('--app-header-height');
         root.style.removeProperty('--app-chrome-height');
@@ -176,7 +177,7 @@ export function App() {
       root.style.removeProperty('--app-header-height');
       root.style.removeProperty('--app-chrome-height');
     };
-  }, []);
+  }, [desktop]);
 
   let content;
   if (accessTokenStateQuery.isPending) {
@@ -203,6 +204,7 @@ export function App() {
       <DetailPage
         key={desktop ? selected.id : undefined}
         workspace={desktop}
+        repositoryContextVisible={repoContextVisible}
         repositoryId={selected.id}
         fullName={selected.fullName}
         onRepositoryContextChange={setRepoContextVisible}
@@ -229,7 +231,7 @@ export function App() {
 
   return (
     <div className="app-frame mx-auto flex min-h-full w-full max-w-6xl flex-col" data-desktop={desktop}>
-      <header ref={headerRef} className="sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
+      {!desktop ? <header ref={headerRef} className="app-global-header sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className="app-brand-mark" aria-hidden="true">
@@ -259,12 +261,13 @@ export function App() {
             </button>
           </nav>
         </div>
-      </header>
+      </header> : null}
 
       <main className="flex-1 px-4 py-5">
         {desktop ? (
           <AppShell
             rail={null}
+            sidebarChrome={<DesktopSidebarHeader settingsActive={activeView === 'settings'} onGoSettings={() => navigate('settings')} />}
             workspaceRef={workspaceRef}
             sidebar={configured ? (
               <WatchlistPage

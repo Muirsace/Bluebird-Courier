@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { appScrollRoot } from '../lib/app-layout';
@@ -62,6 +62,7 @@ function focusAfterRemoval(repositoryId: number): void {
 export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
   const RepositoryItem = sidebar ? RepositorySidebarRow : RepoRow;
   const pageRef = useRef<HTMLDivElement>(null);
+  const listViewportRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const listQuery = useQuery({
     queryKey: ['repositories'],
@@ -97,7 +98,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
     pendingViewportAnchorRef.current = null;
     setPendingReveal((current) => (current?.repositoryId === repositoryId ? null : current));
 
-    const shellRoot = appScrollRoot(pageRef.current);
+    const shellRoot = appScrollRoot(listViewportRef.current ?? pageRef.current);
     const scrollRoot = shellRoot ?? document.scrollingElement ?? document.documentElement;
     const scrollEvents = shellRoot ?? window;
     const viewportHeight = shellRoot?.clientHeight ?? (document.documentElement.clientHeight || window.innerHeight);
@@ -191,7 +192,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
     }
 
     pendingViewportAnchorRef.current = null;
-    const shellRoot = appScrollRoot(pageRef.current);
+    const shellRoot = appScrollRoot(listViewportRef.current ?? pageRef.current);
     const scrollRoot = shellRoot ?? document.scrollingElement ?? document.documentElement;
     const heightDelta = scrollRoot.scrollHeight - pending.scrollHeight;
     if (heightDelta !== 0) {
@@ -269,7 +270,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
         }
         return { result, newCardPosition };
       }
-      const scrollRoot = appScrollRoot(pageRef.current) ?? document.scrollingElement ?? document.documentElement;
+      const scrollRoot = appScrollRoot(listViewportRef.current ?? pageRef.current) ?? document.scrollingElement ?? document.documentElement;
       const scrollTop = scrollRoot.scrollTop;
       const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
       newCardPosition = nearTop ? 'visible' : 'offscreen';
@@ -339,9 +340,10 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
   /** 加载失败且没有任何缓存数据：只显示错误条，不能再显示空态（否则被误读成清单被清空）。 */
   const listUnavailable = listQuery.isError && !listQuery.data;
 
-  return (
-    <div ref={pageRef} className="watchlist-page min-w-0">
+  const chrome = (
+    <>
       <WatchlistHeader
+        sidebar={sidebar}
         repositoryCount={listQuery.data ? repositories.length : null}
         repositories={repositories}
         adding={adding}
@@ -366,40 +368,54 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, sel
           action={{ label: '重试', onClick: () => void listQuery.refetch() }}
         />
       ) : null}
+    </>
+  );
 
-      {listQuery.isPending && !listQuery.data ? (
-        <Loading label="正在加载监控清单…" />
-      ) : listUnavailable ? null : (
-        <>
-          <ul className={`repo-list${sidebar ? ' repository-sidebar-list' : ''}`} hidden={displayed.length === 0 && exitingIds.length === 0}>
-            <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
-              {displayed.map((repo) => (
-                <RepositoryItem
-                  key={repo.id}
-                  repo={repo}
-                  selected={repo.id === selectedRepositoryId}
-                  onOpen={onOpenDetail}
-                  onRemove={handleRemove}
-                  refreshing={refreshing}
-                  justAdded={repo.id === newlyAddedId}
-                  highlightRequest={
-                    repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
-                  }
-                  onEntered={handleEntered}
-                  removing={exitingIds.length > 0}
-                  onExited={handleExited}
-                />
-              ))}
-            </AnimatePresence>
-          </ul>
-          {displayed.length === 0 && exitingIds.length === 0 ? (
-            <EmptyState
-              title="还没有监控仓库"
-              hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
+  const listContent = listQuery.isPending && !listQuery.data ? (
+    <Loading label="正在加载监控清单…" />
+  ) : listUnavailable ? null : (
+    <>
+      <ul className={`repo-list${sidebar ? ' repository-sidebar-list' : ''}`} hidden={displayed.length === 0 && exitingIds.length === 0}>
+        <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
+          {displayed.map((repo) => (
+            <RepositoryItem
+              key={repo.id}
+              repo={repo}
+              selected={repo.id === selectedRepositoryId}
+              onOpen={onOpenDetail}
+              onRemove={handleRemove}
+              refreshing={refreshing}
+              justAdded={repo.id === newlyAddedId}
+              highlightRequest={
+                repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
+              }
+              onEntered={handleEntered}
+              removing={exitingIds.length > 0}
+              onExited={handleExited}
             />
-          ) : null}
+          ))}
+        </AnimatePresence>
+      </ul>
+      {displayed.length === 0 && exitingIds.length === 0 ? (
+        <EmptyState
+          title="还没有监控仓库"
+          hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
+        />
+      ) : null}
+    </>
+  );
+
+  return (
+    <div ref={pageRef} className="watchlist-page min-w-0" data-sidebar={sidebar}>
+      {sidebar ? (
+        <>
+          <div className="watchlist-sidebar-chrome">{chrome}</div>
+          {/* layoutScroll 属于实际列表 scrollport；行与 Presence 的 Motion 保持原样。 */}
+          <motion.div ref={listViewportRef} layoutScroll className="repository-list-viewport" data-app-scroll-root="sidebar">
+            <div className="repository-list-content">{listContent}</div>
+          </motion.div>
         </>
-      )}
+      ) : <>{chrome}{listContent}</>}
     </div>
   );
 }

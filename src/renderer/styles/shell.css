@@ -15,12 +15,79 @@
 
 .app-shell-sidebar,
 .app-shell-workspace {
-  /* 顶部栏在滚动槽位之外：Sticky 的吸附线就是各槽位的上沿。 */
+  /* Narrow 的全局 Header 高度不参与 Desktop 滚动槽位的吸附线。 */
   --app-header-height: 0px;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+}
+
+.app-shell-sidebar {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell-sidebar-body,
+.watchlist-page[data-sidebar='true'] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.desktop-sidebar-brand {
+  display: flex;
+  flex: none;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.watchlist-sidebar-chrome {
+  flex: none;
+  min-width: 0;
+  padding: 8px 16px 12px;
+  border-bottom: 1px solid rgb(var(--color-border-subtle));
+}
+
+.watchlist-sidebar-chrome > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: 8px;
+}
+
+.watchlist-page[data-sidebar='true'] > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: 0;
+}
+
+.watchlist-sidebar-chrome .watchlist-page-toolbar {
+  position: static;
+  min-height: 0;
+  padding-block: 0;
+  border-bottom: 0;
+}
+
+.watchlist-sidebar-chrome .watchlist-add-form[data-expanded='true'] {
+  width: 100%;
+}
+
+.repository-list-viewport {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  overflow-anchor: none;
+  padding: 12px 16px 20px;
+}
+
+.repository-list-viewport .repo-row-slot {
+  /* 固定 Chrome 已在 scrollport 外，定位不再需要给旧 toolbar 让位。 */
+  scroll-margin-top: 0;
 }
 
 /* 留白属于内容层，不能放在 scrollport 上，否则 sticky 停靠线会被 padding 下推。 */
@@ -39,6 +106,32 @@
 
 .app-shell-workspace {
   grid-column: 3;
+  --workspace-context-height: 1.5rem;
+  /* 原 Compact Context 改由 Workspace 接管；sticky tabs 紧接这条身份行。 */
+  --app-header-height: var(--workspace-context-height);
+}
+
+.workspace-repo-context {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: var(--workspace-context-height);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.workspace-repo-context[data-visible='true'] {
+  background-color: rgb(var(--color-app));
+}
+
+.workspace-repo-context .compact-repo-context-divider {
+  display: none;
+}
+
+.workspace-repo-context .compact-repo-context {
+  max-width: 100%;
 }
 
 .workspace-empty {
@@ -52,7 +145,7 @@
 }
 
 .app-shell-workspace .detail-tab-content-anchor {
-  min-height: calc(100vh - var(--app-chrome-height, 0px) - var(--detail-tabs-height, 0px) - 28px);
+  min-height: calc(100vh - var(--app-chrome-height, 0px) - var(--workspace-context-height) - var(--detail-tabs-height, 0px) - 28px);
 }
 
 /* 菜单使用原有 DOM / 交互，仅在 Shell 内进入 Chromium top layer，避开滚动裁剪。 */
@@ -81,10 +174,6 @@
     min-height: 0;
     max-width: none;
     overflow: hidden;
-  }
-
-  .app-frame[data-desktop='true'] > header {
-    flex-shrink: 0;
   }
 
   .app-frame[data-desktop='true'] > main {

@@ -6,6 +6,7 @@ import { appScrollRoot } from '../lib/app-layout';
 import { useDetailReveal } from '../lib/detail-reveal';
 import { DETAIL_REVEAL_MOTION, DETAIL_REVEAL_TOTAL_MS } from '../lib/motion';
 import { ErrorBar } from '../components/ErrorBar';
+import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { Loading } from '../components/Loading';
 import { BuildTab } from '../components/detail/BuildTab';
 import { CommitTab } from '../components/detail/CommitTab';
@@ -21,9 +22,10 @@ import { TrendTab } from '../components/detail/TrendTab';
 interface DetailPageProps {
   /** 由 App 现有响应式状态决定；单栏保留完整的页面导航。 */
   workspace: boolean;
+  repositoryContextVisible: boolean;
   repositoryId: number;
   fullName: string;
-  /** 上报"页面顶部那块 Repository Header 是否已滚出视口"，由 App 决定顶部栏要不要接管仓库名。 */
+  /** 上报 Repository Header 是否已滚出视口，由 App 同步当前宿主中的 Compact Context。 */
   onRepositoryContextChange: (visible: boolean) => void;
   onBack: () => void;
   onGoSettings: () => void;
@@ -57,6 +59,7 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
 
 export function DetailPage({
   workspace,
+  repositoryContextVisible,
   repositoryId,
   fullName,
   onRepositoryContextChange,
@@ -279,6 +282,11 @@ export function DetailPage({
               durationMs={DETAIL_REVEAL_MOTION.tabsMs}
               shiftPx={DETAIL_REVEAL_MOTION.tabsShiftPx}
             >
+              {workspace ? (
+                <div className="workspace-repo-context" data-visible={repositoryContextVisible}>
+                  <CompactRepositoryContext fullName={fullName} visible={repositoryContextVisible} />
+                </div>
+              ) : null}
               <DetailTabs active={activeTab} onChange={selectTab} stuck={tabsStuck} />
             </RevealItem>
             {/*

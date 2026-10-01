@@ -15,6 +15,7 @@ const B = 'MeteorNOX/DeepSeek-Balance-Whale-Widget';
 let view: RenderResult | null = null;
 let stub: StubHandle;
 const sidebar = (): HTMLElement => document.querySelector('.app-shell-sidebar')!;
+const listViewport = (): HTMLElement => document.querySelector('.repository-list-viewport')!;
 const workspace = (): HTMLElement => document.querySelector('.app-shell-workspace')!;
 const selected = (name: string): string | null | undefined => repoOpenButton(name)?.getAttribute('aria-pressed');
 
@@ -82,7 +83,7 @@ describe('Compact Repository Sidebar', () => {
   it('switches selection while preserving row, list and Sidebar scroll identity', async () => {
     await mount();
     const slot = sidebar(), a = repoSlot(A), b = repoSlot(B), list = document.querySelector('.repo-list');
-    slot.scrollTop = 460;
+    listViewport().scrollTop = 460;
     await click(repoOpenButton(A));
     await settle();
     expect(selected(A)).toBe('true');
@@ -96,7 +97,7 @@ describe('Compact Repository Sidebar', () => {
     expect(workspace().textContent).toContain(B);
     expect(workspace().scrollTop).toBe(0);
     expect(sidebar()).toBe(slot);
-    expect(slot.scrollTop).toBe(460);
+    expect(listViewport().scrollTop).toBe(460);
     expect(repoSlot(A)).toBe(a);
     expect(repoSlot(B)).toBe(b);
     expect(document.querySelector('.repo-list')).toBe(list);
@@ -225,20 +226,21 @@ describe('Compact Repository Sidebar', () => {
     expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
   });
 
-  it('settings and returning empty clear the visible selected state', async () => {
+  it('settings clears selected state; returning to a repo selects that workspace', async () => {
     await mount();
     await click(repoOpenButton(A));
     await click(navButton('设置'));
     await settle();
     expect(selected(A)).toBe('false');
-    await click(navButton('监控清单'));
+    await click(repoOpenButton(B));
     await settle();
     expect(selected(A)).toBe('false');
+    expect(selected(B)).toBe('true');
   });
 
   it('View location targets the compact row, then highlights after Sidebar scroll settles', async () => {
     await mount(Array.from({ length: 25 }, (_, i) => makeGlance(i + 1, `owner/repo-${i}`)));
-    const root = sidebar();
+    const root = listViewport();
     root.scrollTop = 600;
     Object.defineProperty(root, 'clientHeight', { configurable: true, value: 700 });
     Object.defineProperty(root, 'scrollHeight', { configurable: true, value: 2400 });
@@ -288,7 +290,7 @@ describe('Compact Repository Sidebar', () => {
     const surface = document.querySelector<HTMLElement>('.repository-action-positioner')!;
     const before = surface.style.getPropertyValue('--overlay-top');
     top += 100;
-    await act(async () => { sidebar().append(document.createElement('div')); });
+    await act(async () => { listViewport().append(document.createElement('div')); });
     await settle();
     expect(surface.style.getPropertyValue('--overlay-top')).not.toBe(before);
     expect(surface.style.getPropertyValue('--overlay-top')).toBe(`${top + 40}px`);
@@ -299,13 +301,13 @@ describe('Compact Repository Sidebar', () => {
     const repos = Array.from({ length: 25 }, (_, i) => makeGlance(i + 1, `owner/repo-${i}`));
     await mount(repos);
     const nodes = repos.map((repo) => repoSlot(repo.fullName));
-    sidebar().scrollTop = 680;
+    listViewport().scrollTop = 680;
     for (const repo of repos) {
       await click(repoOpenButton(repo.fullName));
       await settle();
       expect(selected(repo.fullName)).toBe('true');
     }
-    expect(sidebar().scrollTop).toBe(680);
+    expect(listViewport().scrollTop).toBe(680);
     expect(repos.map((repo) => repoSlot(repo.fullName))).toEqual(nodes);
     expect(sidebar().querySelectorAll('[aria-pressed="true"]')).toHaveLength(1);
   });

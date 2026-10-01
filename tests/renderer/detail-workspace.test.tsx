@@ -14,7 +14,7 @@ let view: RenderResult | null = null;
 let stub: StubHandle;
 const repos = [makeGlance(1, 'owner/A'), makeGlance(2, 'owner/B')];
 const workspace = (): HTMLElement => document.querySelector('.app-shell-workspace')!;
-const sidebar = (): HTMLElement => document.querySelector('.app-shell-sidebar')!;
+const sidebar = (): HTMLElement => document.querySelector('.repository-list-viewport')!;
 const header = (): HTMLElement | null => document.querySelector('.repository-header');
 const heading = (): HTMLElement | null => header()?.querySelector('h1, h2') ?? null;
 const context = (): HTMLElement | null => document.querySelector('.compact-repo-context');

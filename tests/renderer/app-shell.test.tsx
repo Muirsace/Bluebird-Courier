@@ -10,6 +10,7 @@ import {
 
 let view: RenderResult | null = null;
 const sidebar = (): HTMLElement => document.querySelector<HTMLElement>('.app-shell-sidebar')!;
+const listViewport = (): HTMLElement => document.querySelector<HTMLElement>('.repository-list-viewport')!;
 const workspace = (): HTMLElement => document.querySelector<HTMLElement>('.app-shell-workspace')!;
 
 beforeEach(() => setViewportWidth(1152));
@@ -56,19 +57,19 @@ describe('Desktop AppShell', () => {
     await click(document.querySelector('.watchlist-add-trigger'));
     const input = document.querySelector<HTMLInputElement>('#add-repository-input')!;
     await typeInto(input, 'draft/repo');
-    slot.scrollTop = 420;
+    listViewport().scrollTop = 420;
     await open();
     expect(sidebar()).toBe(slot);
     expect(sidebar().querySelector('.watchlist-page')).toBe(list);
     expect(input.isConnected).toBe(true);
     expect(input.value).toBe('draft/repo');
-    expect(sidebar().scrollTop).toBe(420);
+    expect(listViewport().scrollTop).toBe(420);
     expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
     expect(sidebar().querySelector('.repo-context-scope')).toBeNull();
     workspace().scrollTop = 650;
     await open('owner/B');
     expect(workspace().scrollTop).toBe(0);
-    expect(sidebar().scrollTop).toBe(420);
+    expect(listViewport().scrollTop).toBe(420);
     expect(sidebar().querySelector('.watchlist-page')).toBe(list);
     expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/B');
   });
@@ -80,33 +81,33 @@ describe('Desktop AppShell', () => {
     await open('owner/B');
     expect(tab('概览')?.getAttribute('aria-selected')).toBe('true');
     workspace().scrollTop = 250;
-    sidebar().scrollTop = 300;
+    listViewport().scrollTop = 300;
     const before = stub.calls.fetchDetail;
     await click(buttonByText('重新抓取'));
     await settle();
     expect(stub.calls.fetchDetail).toBe(before + 1);
     expect(workspace().scrollTop).toBe(250);
-    expect(sidebar().scrollTop).toBe(300);
+    expect(listViewport().scrollTop).toBe(300);
   });
 
-  it('Settings 显示在 Workspace，返回空态时 Sidebar 仍保持', async () => {
+  it('Settings 显示在 Workspace，返回仓库时 Sidebar 仍保持', async () => {
     await mount();
     const list = sidebar().querySelector('.watchlist-page');
-    sidebar().scrollTop = 420;
+    listViewport().scrollTop = 420;
     await click(navButton('设置'));
     await settle();
     expect(workspace().querySelector('.settings-page')).not.toBeNull();
     expect(sidebar().querySelector('.watchlist-page')).toBe(list);
-    expect(sidebar().scrollTop).toBe(420);
-    await click(navButton('监控清单'));
+    expect(listViewport().scrollTop).toBe(420);
+    await open();
     await settle();
-    expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
-    expect(sidebar().scrollTop).toBe(420);
+    expect(workspace().querySelector('.repository-header')).not.toBeNull();
+    expect(listViewport().scrollTop).toBe(420);
   });
 
   it('新增仓库的视口补偿归 Sidebar，不改变 Workspace', async () => {
     await mount();
-    const slot = sidebar();
+    const slot = listViewport();
     slot.scrollTop = 420;
     workspace().scrollTop = 180;
     Object.defineProperty(slot, 'scrollHeight', {
@@ -128,7 +129,8 @@ describe('Desktop AppShell', () => {
     const stub = await mount(false);
     expect(workspace().querySelector('#accessToken-input')).not.toBeNull();
     expect(sidebar().querySelector('.watchlist-page')).toBeNull();
-    expect(navButton('监控清单')?.disabled).toBe(true);
+    expect(navButton('监控清单')).toBeNull();
+    expect(navButton('设置')?.getAttribute('aria-pressed')).toBe('true');
     expect(stub.calls.listRepositories).toBe(0);
   });
 
@@ -149,13 +151,13 @@ describe('Desktop AppShell', () => {
     await open();
     expect(buttonByText('← 返回监控清单')).toBeNull();
     await click(navButton('设置'));
-    await click(navButton('监控清单'));
+    await open();
     await settle();
-    expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
+    expect(workspace().querySelector('.repository-header')).not.toBeNull();
     expect(scroll).not.toHaveBeenCalled();
   });
 
-  it('Detail 两个观察器使用 Workspace，Watchlist 使用 Sidebar', async () => {
+  it('Detail 两个观察器使用 Workspace，固定 Watchlist Chrome 不安装吸附观察器', async () => {
     const records: Array<{ target?: Element; options?: IntersectionObserverInit }> = [];
     class Observer {
       record: (typeof records)[number];
@@ -171,7 +173,8 @@ describe('Desktop AppShell', () => {
     await open();
     const rootFor = (selector: string): Element | Document | null | undefined =>
       records.find((record) => record.target?.matches(selector))?.options?.root;
-    expect(rootFor('.watchlist-toolbar-sentinel')).toBe(sidebar());
+    expect(rootFor('.watchlist-toolbar-sentinel')).toBeUndefined();
+    expect(document.querySelector('.watchlist-toolbar-sentinel')).toBeNull();
     expect(rootFor('.detail-tabs-sentinel')).toBe(workspace());
     expect(rootFor('.repo-context-sentinel')).toBe(workspace());
   });
