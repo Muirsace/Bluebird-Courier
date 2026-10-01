@@ -1181,7 +1181,7 @@ button:disabled {
   background-color: rgb(var(--color-app));
 }
 
-/* Keep the action slot reserved so editing never changes the input width. */
+/* The outer width motion is independent of the input/action tracks below. */
 .watchlist-add-form {
   position: relative;
   flex: 0 1 auto;
@@ -1204,8 +1204,22 @@ button:disabled {
 }
 
 .watchlist-add-control-row {
+  grid-template-columns: minmax(0, 1fr) 0rem;
+  column-gap: 0;
+  overflow: clip;
+  overflow-clip-margin: 3px;
+  /* Let the visual exit finish before reclaiming its horizontal space. */
+  transition:
+    grid-template-columns 150ms var(--motion-ease-out) 70ms,
+    column-gap 150ms var(--motion-ease-out) 70ms;
+}
+
+.watchlist-add-content[data-action-visible='true'] .watchlist-add-control-row {
   grid-template-columns: minmax(0, 1fr) 6rem;
   column-gap: 0.5rem;
+  transition:
+    grid-template-columns 190ms var(--motion-ease-out),
+    column-gap 190ms var(--motion-ease-out);
 }
 
 .watchlist-add-trigger {
@@ -1260,11 +1274,12 @@ button:disabled {
   transition-delay: 0s;
 }
 
-.watchlist-add-action {
+.watchlist-add-content .watchlist-add-action {
   min-width: 0;
   width: 100%;
   overflow: hidden;
-  transform: scale(0);
+  opacity: 0;
+  transform: scale(.86);
   transform-origin: center;
   visibility: hidden;
   pointer-events: none;
@@ -1272,13 +1287,16 @@ button:disabled {
     background-color 150ms var(--motion-ease-in),
     border-color 150ms var(--motion-ease-in),
     color 150ms var(--motion-ease-in),
-    transform 130ms var(--motion-ease-in),
+    opacity 90ms var(--motion-ease-in),
+    transform 90ms var(--motion-ease-in),
     translate 130ms var(--motion-ease-out),
     scale 130ms var(--motion-ease-out),
-    visibility 0s 130ms;
+    visibility 0s 90ms,
+    pointer-events 0s allow-discrete;
 }
 
-.watchlist-add-form[data-expanded='true'] .watchlist-add-action {
+.watchlist-add-content[data-action-visible='true'] .watchlist-add-action {
+  opacity: 1;
   transform: scale(1);
   visibility: visible;
   pointer-events: auto;
@@ -1286,10 +1304,16 @@ button:disabled {
     background-color 150ms var(--motion-ease-out),
     border-color 150ms var(--motion-ease-out),
     color 150ms var(--motion-ease-out),
-    transform 170ms var(--motion-ease-out),
+    opacity 120ms var(--motion-ease-out) 90ms,
+    transform 120ms var(--motion-ease-out) 90ms,
     translate 130ms var(--motion-ease-out),
     scale 130ms var(--motion-ease-out),
-    visibility 0s;
+    visibility 0s,
+    pointer-events 0s 90ms allow-discrete;
+}
+
+.watchlist-add-content[data-action-visible='true'] .watchlist-add-action:disabled {
+  opacity: 0.6;
 }
 
 .watchlist-add-action-label {
@@ -1373,6 +1397,7 @@ button:disabled {
 
   .watchlist-add-form,
   .watchlist-add-content,
+  .watchlist-add-control-row,
   .watchlist-add-field,
   .watchlist-add-trigger,
   .watchlist-add-action,
