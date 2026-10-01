@@ -13,8 +13,23 @@ describe('Watchlist card motion ownership', () => {
       opacity: [1, 1, 0], y: [0, 1, -6], scale: [1, 0.998, 0.985],
       transition: { type: 'tween', duration: 0.15, times: [0, 0.22, 1], ease: [0.4, 0, 1, 1] },
     });
-    expect(cardLayoutTransition(false)).toEqual({ type: 'tween', duration: 0.22, ease: [0.22, 1, 0.36, 1] });
-    expect(cardLayoutTransition(true)).toEqual({ type: 'tween', duration: 0.2, ease: [0.4, 0, 1, 1] });
+  });
+
+  it('uses a bounded physics spring only for repositioning on insert and removal', () => {
+    const layout = cardLayoutTransition(false);
+    expect(cardLayoutTransition(true)).toEqual(layout);
+    expect(layout.type).toBe('spring');
+    expect(layout.stiffness).toBeGreaterThanOrEqual(350);
+    expect(layout.stiffness).toBeLessThanOrEqual(520);
+    expect(layout.damping).toBeGreaterThanOrEqual(32);
+    expect(layout.damping).toBeLessThanOrEqual(46);
+    expect(layout.mass).toBeGreaterThanOrEqual(0.65);
+    expect(layout.mass).toBeLessThanOrEqual(0.95);
+    for (const key of ['duration', 'visualDuration', 'bounce', 'ease']) {
+      expect(layout).not.toHaveProperty(key);
+    }
+    expect(cardVariants(false).enter.transition.type).toBe('tween');
+    expect(cardVariants(false).exit.transition.type).toBe('tween');
   });
 
   it('uses final transforms immediately and only a 40ms opacity exit with reduced motion', () => {

@@ -42,10 +42,12 @@ export function cardVariants(reduceMotion: boolean) {
   };
 }
 
-export function cardLayoutTransition(removing: boolean) {
+/** Only position layout uses physics; enter/exit retain their own tween transitions. */
+export function cardLayoutTransition(_removing: boolean) {
   return {
-    type: 'tween' as const,
-    duration: (removing ? REPO_MOTION.exitLayoutMs : REPO_MOTION.layoutMs) / 1000,
-    ease: removing ? easeIn : easeOut,
+    type: 'spring' as const,
+    stiffness: 440,
+    damping: 38,
+    mass: 0.8,
   };
 }
