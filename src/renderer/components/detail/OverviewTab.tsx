@@ -85,7 +85,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
         durationMs={DETAIL_REVEAL_MOTION.sectionMs}
         shiftPx={DETAIL_REVEAL_MOTION.sectionShiftPx}
       >
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="detail-overview-updates grid gap-4 lg:grid-cols-2">
           <div className="min-w-0">
             <Section title="最新发版">
               <ReleaseList releases={releases.slice(0, SUMMARY_LIMIT)} owner={owner} name={name} />
@@ -130,7 +130,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
                   value={`开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
                 />
               </div>
-              <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+              <div className="detail-overview-issues grid gap-x-6 gap-y-3 md:grid-cols-2">
                 <RecentList
                   title="最近更新的议题"
                   kind="issue"

@@ -306,7 +306,7 @@ export function DetailPage({
               内容起点：切 Tab 的滚动落点。它只是给滚动定位用的普通 div（没有 role / tabIndex），
               不是第二套语义——tabpanel 还是同一个，aria-controls / aria-labelledby 关系不变。
             */}
-            <div ref={tabContentTopRef} className="detail-tab-content-anchor">
+            <div ref={tabContentTopRef} className="detail-tab-content-anchor detail-content-responsive">
               {/*
                 刷新期间旧数据仍然有效：不灰化、不遮罩，只由表头的按钮与「正在更新…」表态。
                 key 只认 activeTab：数据更新不会换节点，也就不会把这一屏内容重新播一遍进场；

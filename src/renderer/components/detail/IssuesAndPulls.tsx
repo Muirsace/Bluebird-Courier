@@ -56,7 +56,7 @@ interface NumberedItemRowProps {
 /** 议题与合并请求共用的一行：类型 → #编号（可点开 GitHub）→ 标题 → 状态 → 作者 → 更新时间。 */
 export function NumberedItemRow({ item, kind, owner, name, showBody = true }: NumberedItemRowProps) {
   return (
-    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0">
+    <li className="detail-numbered-item flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0">
       <KindBadge kind={kind} />
       <ExternalLinkButton
         target={{ kind, owner, name, number: item.number }}
@@ -66,10 +66,12 @@ export function NumberedItemRow({ item, kind, owner, name, showBody = true }: Nu
       >
         #{item.number}
       </ExternalLinkButton>
-      <span className="min-w-0 flex-1 text-sm text-primary">{item.title}</span>
-      <StateBadge state={item.state} />
-      <span className="text-xs text-secondary">{item.authorName ?? '—'}</span>
-      <span className="text-xs text-muted">{formatRelativeTime(item.updatedAt)}</span>
+      <span className="detail-numbered-title min-w-0 flex-1 text-sm text-primary">{item.title}</span>
+      <div className="detail-numbered-meta">
+        <StateBadge state={item.state} />
+        <span className="text-xs text-secondary">{item.authorName ?? '—'}</span>
+        <span className="detail-numbered-time text-xs text-muted">{formatRelativeTime(item.updatedAt)}</span>
+      </div>
       {showBody && item.body?.trim() ? (
         <p
           className="basis-full mt-1 max-h-16 overflow-hidden whitespace-pre-line text-xs leading-5 text-secondary"

@@ -1,3 +1,66 @@
+/* Long technical text may wrap in either shell without changing Narrow's column rules. */
+.detail-content-responsive {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Only Desktop tab content is contained; Header and sticky Tabs stay outside. */
+.detail-page[data-workspace='true'] .detail-content-responsive {
+  container: detail-content / inline-size;
+}
+
+.detail-page[data-workspace='true'] .detail-overview-updates,
+.detail-page[data-workspace='true'] .detail-overview-issues,
+.detail-page[data-workspace='true'] .detail-trend-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.detail-page[data-workspace='true'] .detail-overview-updates > *,
+.detail-page[data-workspace='true'] .detail-overview-issues > *,
+.detail-page[data-workspace='true'] .detail-trend-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* At 720px content width, summary columns still have about 320px for their rows.
+ * Below that, give prose and chart axes a full column instead of shrinking type. */
+@container detail-content (max-width: 720px) {
+  .detail-page[data-workspace='true'] .detail-overview-updates,
+  .detail-page[data-workspace='true'] .detail-overview-issues,
+  .detail-page[data-workspace='true'] .detail-trend-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Narrow retains the original flat flex row and its natural reading order. */
+.detail-numbered-meta {
+  display: contents;
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-item {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-meta {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-time {
+  flex: none;
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-item > p {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .detail-page[data-workspace='true'] .repository-header {
   /* 留白沿用 Workspace 内容槽位，表头只承担底部分隔。 */
   padding: 0 0 12px;

@@ -46,7 +46,7 @@ export function TrendPanel({ trend, scope, compact = false }: TrendPanelProps) {
 
   const now = Date.now();
   return (
-    <div className={`grid min-w-0 gap-4 ${compact ? 'sm:grid-cols-2' : 'md:grid-cols-2'}`}>
+    <div className={`detail-trend-grid grid min-w-0 gap-4 ${compact ? 'sm:grid-cols-2' : 'md:grid-cols-2'}`}>
       {METRICS.map((metric) => (
         <div key={metric} className="min-w-0">
           <TrendMetric summary={summarizeMetric(ordered, metric, scope, now)} scope={scope} compact={compact} />
