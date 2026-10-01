@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { dedupeErrors } from '../lib/errors';
@@ -31,27 +32,6 @@ interface WatchlistPageProps {
   onGoSettings: () => void;
 }
 
-/** 移除已成功、正在播退场的仓库：先留在原位占位，播完才真正从列表消失。 */
-interface ExitingRepo {
-  repo: Glance;
-  /** 移除前在清单里的位置。 */
-  index: number;
-  /** 移除前排在前面的仓库 id：清单刷新后据此把它放回原位，不让它跳到队尾。 */
-  beforeIds: number[];
-}
-
-/** 把正在退场的卡片插回原位：刷新后的清单已经不返回它，但动画还没播完。 */
-function mergeExiting(repos: Glance[], exiting: ExitingRepo[]): Glance[] {
-  if (exiting.length === 0) return repos;
-  const result = [...repos];
-  for (const item of [...exiting].sort((a, b) => a.index - b.index)) {
-    if (result.some((repo) => repo.id === item.repo.id)) continue;
-    const at = result.filter((repo) => item.beforeIds.includes(repo.id)).length;
-    result.splice(Math.min(at, result.length), 0, item.repo);
-  }
-  return result;
-}
-
 /**
  * 删除完成后的焦点去向：优先下一张卡片，其次上一张，清单空了就回到新增入口。
  * 只有焦点确实悬空（原节点已卸载）或还停在这张退场卡片里时才接管，不抢用户刚移过去的焦点。
@@ -59,13 +39,14 @@ function mergeExiting(repos: Glance[], exiting: ExitingRepo[]): Glance[] {
 function focusAfterRemoval(repositoryId: number): void {
   const active = document.activeElement as HTMLElement | null;
   const detached = !active || active === document.body || !active.isConnected;
-  const insideExiting = active?.closest('[data-motion="exiting"]') != null;
+  const insideExiting = active?.closest('li.repo-row-slot[inert]') != null;
   if (!detached && !insideExiting) return;
 
   const slots = [...document.querySelectorAll<HTMLElement>('ul.repo-list > li')];
   const index = slots.findIndex((slot) => slot.dataset.repositoryId === String(repositoryId));
-  const remaining = slots.filter((slot) => slot.dataset.repositoryId !== String(repositoryId));
-  const target = remaining[index < 0 ? remaining.length - 1 : Math.min(index, remaining.length - 1)];
+  const eligible = (slot: HTMLElement): boolean =>
+    slot.dataset.repositoryId !== String(repositoryId) && !slot.hasAttribute('inert');
+  const target = slots.slice(index + 1).find(eligible) ?? slots.slice(0, index).reverse().find(eligible);
   const button =
     target?.querySelector<HTMLButtonElement>('button[aria-label^="查看 "]') ??
     document.querySelector<HTMLButtonElement>('.watchlist-add-trigger');
@@ -89,7 +70,8 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     token: number;
   } | null>(null);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
-  const [exiting, setExiting] = useState<ExitingRepo[]>([]);
+  /** 仅用于退场期间保留列表容器与空态时序；卡片 DOM 本身由 AnimatePresence 管理。 */
+  const [exitingIds, setExitingIds] = useState<number[]>([]);
   /** 已确认移除的仓库 id：即使清单还没刷新（或刷新失败）也不会让卡片弹回来。id 由 AUTOINCREMENT 分配，不复用。 */
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const pendingViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
@@ -186,11 +168,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
 
   const repositories: Glance[] = listQuery.data ?? [];
   const removed = new Set(removedIds);
-  const exitingIds = new Set(exiting.map((item) => item.repo.id));
-  const displayed = mergeExiting(
-    repositories.filter((repo) => !removed.has(repo.id)),
-    exiting,
-  );
+  const displayed = repositories.filter((repo) => !removed.has(repo.id));
 
   /** 新卡片完整落入 DOM 后、绘制前补偿顶部增加的真实高度，独立于导航返回恢复。 */
   useLayoutEffect(() => {
@@ -263,12 +241,8 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     setNewlyAddedId((prev) => (prev === repositoryId ? null : prev));
   }, []);
 
-  /** 退场播完：这时才从列表真正移除，并把焦点交给一张还存在的卡片。 */
+  /** 退场播完仅交接焦点；数据删除与 DOM 保留分别由请求结果和 Motion 负责。 */
   const handleExited = useCallback((repositoryId: number) => {
-    setExiting((prev) => prev.filter((item) => item.repo.id !== repositoryId));
-    setRemovedIds((prev) => (prev.includes(repositoryId) ? prev : [...prev, repositoryId]));
-    // 刚新增就被移除时，进场标记还挂着这张卡：一并清掉，不留指向已消失节点的状态
-    setNewlyAddedId((prev) => (prev === repositoryId ? null : prev));
     focusAfterRemoval(repositoryId);
   }, []);
 
@@ -335,20 +309,18 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
 
   /**
    * 移除失败必须抛出：确认 Popover 保持打开并就地提示，用户可重试。
-   * 成功后卡片先留在 DOM 里播退场，播完由 handleExited 真正移除。
+   * 成功后立即更新显示数据；AnimatePresence 保留旧 DOM 来播退场。
    */
   async function handleRemove(repositoryId: number): Promise<void> {
-    const index = displayed.findIndex((repo) => repo.id === repositoryId);
-    const repo = index >= 0 ? displayed[index] : undefined;
     await getApi().removeRepository(repositoryId);
-    if (repo) {
-      const beforeIds = displayed.slice(0, index).map((item) => item.id);
-      setExiting((prev) =>
-        prev.some((item) => item.repo.id === repositoryId)
-          ? prev
-          : [...prev, { repo, index, beforeIds }],
-      );
-    }
+    // 请求成功的当下就停止交互，覆盖 Motion 启动 exit 之前的提交窗口。
+    const slot = document.querySelector<HTMLElement>(`ul.repo-list > li[data-repository-id="${repositoryId}"]`);
+    slot?.setAttribute('inert', '');
+    if (slot) slot.style.pointerEvents = 'none';
+    slot?.querySelectorAll<HTMLButtonElement>('button').forEach((button) => { button.disabled = true; });
+    setRemovedIds((prev) => (prev.includes(repositoryId) ? prev : [...prev, repositoryId]));
+    setExitingIds((prev) => (prev.includes(repositoryId) ? prev : [...prev, repositoryId]));
+    setNewlyAddedId((prev) => (prev === repositoryId ? null : prev));
     await queryClient.invalidateQueries({ queryKey: ['repositories'] });
   }
 
@@ -385,30 +357,35 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
 
       {listQuery.isPending && !listQuery.data ? (
         <Loading label="正在加载监控清单…" />
-      ) : listUnavailable ? null : repositories.length === 0 && displayed.length === 0 ? (
-        <EmptyState
-          title="还没有监控仓库"
-          hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
-        />
-      ) : (
-        <ul className="repo-list">
-          {displayed.map((repo) => (
-            <RepoRow
-              key={repo.id}
-              repo={repo}
-              onOpen={onOpenDetail}
-              onRemove={handleRemove}
-              refreshing={refreshing}
-              justAdded={repo.id === newlyAddedId}
-              highlightRequest={
-                repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
-              }
-              onEntered={handleEntered}
-              exiting={exitingIds.has(repo.id)}
-              onExited={handleExited}
+      ) : listUnavailable ? null : (
+        <>
+          <ul className="repo-list" hidden={displayed.length === 0 && exitingIds.length === 0}>
+            <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
+              {displayed.map((repo) => (
+                <RepoRow
+                  key={repo.id}
+                  repo={repo}
+                  onOpen={onOpenDetail}
+                  onRemove={handleRemove}
+                  refreshing={refreshing}
+                  justAdded={repo.id === newlyAddedId}
+                  highlightRequest={
+                    repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
+                  }
+                  onEntered={handleEntered}
+                  removing={exitingIds.length > 0}
+                  onExited={handleExited}
+                />
+              ))}
+            </AnimatePresence>
+          </ul>
+          {displayed.length === 0 && exitingIds.length === 0 ? (
+            <EmptyState
+              title="还没有监控仓库"
+              hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
             />
-          ))}
-        </ul>
+          ) : null}
+        </>
       )}
     </div>
   );

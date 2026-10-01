@@ -16,6 +16,7 @@ export const rendererPresentationLibraries = new Set<string>([
   '@tanstack/react-query',
   'chart.js',
   'react-chartjs-2',
+  'motion/react',
 ]);
 
 export interface PolicyRule {

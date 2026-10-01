@@ -12,11 +12,13 @@ import {
   makeGlance,
   menu,
   menuItem,
+  navButton,
   renderApp,
   repoActionsButton,
   repoMotion,
   repoOpenButton,
   repoRows,
+  repoMotionForSlot,
   repoSlot,
   resetReducedMotion,
   setReducedMotion,
@@ -30,17 +32,17 @@ const FIRST = 'octocat/Hello-World';
 const SECOND = 'facebook/react';
 const THIRD = 'microsoft/TypeScript';
 
-/** 进场阶段的总预算：正常模式下兜底计时器的等待时长。 */
+/** 包含仍由 CSS 管理的颜色高亮与其 animationend 兜底。 */
 const ENTER_BUDGET = REPO_MOTION.highlightDelayMs + REPO_MOTION.highlightMs + REPO_MOTION.fallbackMs;
-/** 退场阶段的总预算：空间收回 + 兜底余量。 */
-const EXIT_BUDGET = REPO_MOTION.exitLayoutMs + REPO_MOTION.fallbackMs;
+/** 退场与相邻卡片的位置补间，外加两帧提交余量。 */
+const EXIT_BUDGET = REPO_MOTION.exitLayoutMs + 32;
 
 let handle: StubHandle;
 let view: RenderResult | null = null;
 
 beforeEach(() => {
   // 动画窗口全部由测试推进的虚拟时间决定：真实耗时不再影响 entering / exiting 的观测
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] });
 });
 
 afterEach(async () => {
@@ -49,6 +51,8 @@ afterEach(async () => {
     view = null;
   }
   resetReducedMotion();
+  // Flush Motion's shared frame queue before discarding the virtual clock.
+  await settleMotion(64);
   vi.useRealTimers();
 });
 
@@ -62,7 +66,8 @@ async function mount(options: StubOptions = {}): Promise<void> {
 }
 
 async function expandAddForm(): Promise<HTMLInputElement> {
-  await click(document.querySelector<HTMLButtonElement>('.watchlist-add-trigger'));
+  const trigger = document.querySelector<HTMLButtonElement>('.watchlist-add-trigger');
+  if (trigger?.getAttribute('aria-expanded') !== 'true') await click(trigger);
   await settle();
   const input = document.querySelector<HTMLInputElement>('input[aria-label^="监控仓库"]');
   if (!input) throw new Error('未找到添加仓库输入框');
@@ -95,6 +100,48 @@ function slotIds(): string[] {
 }
 
 describe('卡片动画 · 新增进场', () => {
+  it('初始已有仓库立即可见，无集体进场或高亮', async () => {
+    await mount();
+    const rows = repoRows();
+    expect(rows.every((row) => repoMotionForSlot(row) === 'idle')).toBe(true);
+    expect(rows.every((row) => !row.hasAttribute('data-highlight'))).toBe(true);
+    await settleMotion(320);
+    expect(repoRows()).toEqual(rows);
+    expect(handle.calls.fetchDetail).toBe(0);
+  });
+
+  it('空清单新增仍播放 enter，空列表容器不额外占据版面', async () => {
+    await mount({ repositories: [] });
+    expect(document.querySelector<HTMLUListElement>('.repo-list')?.hidden).toBe(true);
+    await addRepository('vercel/next.js');
+    expect(repoMotion('vercel/next.js')).toBe('entering');
+    expect(document.querySelector<HTMLUListElement>('.repo-list')?.hidden).toBe(false);
+    await settleMotion(320);
+    expect(repoMotion('vercel/next.js')).toBe('idle');
+  });
+
+  it('连续新增保留卡片节点、已有菜单及各自进场，不触发详情抓取', async () => {
+    await mount();
+    const existing = [FIRST, SECOND, THIRD].map(repoSlot);
+    const trigger = repoActionsButton(SECOND);
+    await click(trigger);
+    expect(menu()).not.toBeNull();
+    await addRepository('vercel/next.js');
+    const firstAdded = repoSlot('vercel/next.js');
+    await addRepository('vitejs/vite');
+    expect(slotIds()).toEqual(['5', '4', '1', '2', '3']);
+    [FIRST, SECOND, THIRD].forEach((name, index) => expect(repoSlot(name)).toBe(existing[index]));
+    expect(repoSlot('vercel/next.js')).toBe(firstAdded);
+    expect(repoActionsButton(SECOND)).toBe(trigger);
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    expect(repoMotion('vercel/next.js')).toBe('entering');
+    expect(repoMotion('vitejs/vite')).toBe('entering');
+    await settleMotion(320);
+    expect(repoMotion('vercel/next.js')).toBe('idle');
+    expect(repoMotion('vitejs/vite')).toBe('idle');
+    expect(handle.calls.fetchDetail).toBe(0);
+  });
+
   it('新增成功后只有新卡片进入动画，旧卡片保持静止', async () => {
     await mount();
     await addRepository('vercel/next.js');
@@ -145,11 +192,46 @@ describe('卡片动画 · 新增进场', () => {
 
     expect(repoRows()).toHaveLength(3);
     expect(slotIds()).toEqual(['1', '2', '3']);
-    expect(repoRows().every((row) => row.dataset.motion === 'idle')).toBe(true);
+    expect(repoRows().every((row) => repoMotionForSlot(row) === 'idle')).toBe(true);
   });
 });
 
 describe('卡片动画 · 移除退场', () => {
+  it('连续删除立即让数据生效，剩余卡片不重新挂载或抓取', async () => {
+    await mount();
+    const survivor = repoSlot(THIRD);
+    const listCalls = handle.calls.listRepositories;
+    handle.setRepositories([makeGlance(2, SECOND), makeGlance(3, THIRD)]);
+    await confirmRemove(FIRST);
+    handle.setRepositories([makeGlance(3, THIRD)]);
+    await confirmRemove(SECOND);
+    expect(repoMotion(FIRST)).toBe('exiting');
+    expect(repoMotion(SECOND)).toBe('exiting');
+    // Header reads authoritative query data before either retained exit DOM has finished.
+    expect(handle.calls.listRepositories).toBe(listCalls + 2);
+    expect(repoSlot(THIRD)).toBe(survivor);
+    await settleMotion(EXIT_BUDGET + 20);
+    expect(slotIds()).toEqual(['3']);
+    expect(repoSlot(THIRD)).toBe(survivor);
+    expect(repoMotion(THIRD)).toBe('idle');
+    expect(handle.calls.fetchDetail).toBe(0);
+  });
+
+  it('删除中离开并返回不复活已删除卡片，已有卡片不重播 enter', async () => {
+    await mount();
+    handle.setRepositories([makeGlance(1, FIRST), makeGlance(3, THIRD)]);
+    await confirmRemove(SECOND);
+    expect(repoMotion(SECOND)).toBe('exiting');
+    await click(navButton('设置'));
+    await settle();
+    await click(navButton('监控清单'));
+    await settle();
+    expect(slotIds()).toEqual(['1', '3']);
+    expect(repoRows().every((row) => repoMotionForSlot(row) === 'idle')).toBe(true);
+    await settleMotion(EXIT_BUDGET + 20);
+    expect(handle.calls.fetchDetail).toBe(0);
+  });
+
   it('删除成功后目标卡片进入退场，播完才从 DOM 移除且不跳到队尾', async () => {
     await mount();
     handle.setRepositories([makeGlance(1, FIRST), makeGlance(3, THIRD)]);
@@ -210,6 +292,9 @@ describe('卡片动画 · 移除退场', () => {
     expect(repoSlot(SECOND)?.getAttribute('inert')).toBe('');
     const trigger = repoActionsButton(SECOND);
     expect(trigger?.disabled).toBe(true);
+    expect(repoOpenButton(SECOND)?.disabled).toBe(true);
+    await click(repoOpenButton(SECOND));
+    expect(handle.calls.fetchDetail).toBe(0);
 
     await click(trigger);
     await settle();
@@ -252,7 +337,7 @@ describe('卡片动画 · 移除退场', () => {
     await settleMotion(EXIT_BUDGET + 20);
 
     expect(slotIds()).toEqual(['1', '2', '3']);
-    expect(repoRows().every((row) => row.dataset.motion === 'idle')).toBe(true);
+    expect(repoRows().every((row) => repoMotionForSlot(row) === 'idle')).toBe(true);
     expect(repoRows().every((row) => row.dataset.highlight === undefined)).toBe(true);
   });
 
@@ -278,25 +363,27 @@ describe('卡片动画 · 移除退场', () => {
 });
 
 describe('卡片动画 · 减少动态效果', () => {
-  it('开启后新增只保留极短窗口，不等待完整动画预算', async () => {
+  it('开启后新增立即落位，无 translate / scale，不等待完整动画预算', async () => {
     setReducedMotion(true);
     await mount();
     await addRepository('vercel/next.js');
 
-    expect(repoMotion('vercel/next.js')).toBe('entering');
+    expect(repoMotion('vercel/next.js')).toBe('idle');
+    expect(repoSlot('vercel/next.js')?.style.transform).toBe('none');
     await settleMotion(REPO_MOTION.reducedMs + 20);
 
     expect(repoMotion('vercel/next.js')).toBe('idle');
     expect(repoSlot('vercel/next.js')?.dataset.highlight).toBeUndefined();
   });
 
-  it('开启后删除立即收回空间，功能不受影响', async () => {
+  it('开启后删除只有 40ms 淡出，没有 translate / scale，功能不受影响', async () => {
     setReducedMotion(true);
     await mount();
     handle.setRepositories([makeGlance(1, FIRST), makeGlance(3, THIRD)]);
 
     await confirmRemove(SECOND);
     expect(repoMotion(SECOND)).toBe('exiting');
+    expect(repoSlot(SECOND)?.style.transform).toBe('none');
 
     await settleMotion(REPO_MOTION.reducedMs + 20);
     expect(slotIds()).toEqual(['1', '3']);

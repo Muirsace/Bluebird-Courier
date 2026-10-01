@@ -1,15 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import type { Glance } from '../../shared/types';
 import { formatCount } from '../lib/format';
-import {
-  motionCompletionMs,
-  REPO_ENTER_TOTAL_MS,
-  REPO_EXIT_TOTAL_MS,
-  REPO_MOTION,
-} from '../lib/motion';
+import { motionCompletionMs, REPO_MOTION } from '../lib/motion';
 import { formatRelativeTime } from '../lib/time';
 import { GlanceFact } from './GlanceFact';
 import { RepositoryActions } from './watchlist/RepositoryActions';
+import { cardLayoutTransition, cardVariants } from './watchlist/card-motion';
 
 interface RepoRowProps {
   repo: Glance;
@@ -23,19 +20,10 @@ interface RepoRowProps {
   onEntered?: (repositoryId: number) => void;
   /** 只播放高亮的请求序号；与首次新增进场状态分开，允许同一张卡片重复定位。 */
   highlightRequest?: number;
-  /** 移除已成功、正在播放退场；播完回报，由上层真正从列表移除。 */
-  exiting?: boolean;
+  /** 列表正在删除时，其他卡片沿用原来的收拢时长与缓动。 */
+  removing: boolean;
   onExited?: (repositoryId: number) => void;
 }
-
-/** idle → 静止；entering → 新增进场；exiting → 移除退场。 */
-type MotionPhase = 'idle' | 'entering' | 'exiting';
-
-/** 每个阶段要等哪些 keyframes 结束；齐了才收尾，否则空间会被提前掐断。 */
-const PHASE_ANIMATIONS: Record<Exclude<MotionPhase, 'idle'>, string[]> = {
-  entering: ['repo-slot-expand', 'repo-card-enter'],
-  exiting: ['repo-slot-collapse', 'repo-card-exit'],
-};
 
 /** 进场加高亮的总时长，供高亮阶段自己收尾用。 */
 const HIGHLIGHT_TOTAL_MS = REPO_MOTION.highlightDelayMs + REPO_MOTION.highlightMs;
@@ -44,10 +32,10 @@ const HIGHLIGHT_TOTAL_MS = REPO_MOTION.highlightDelayMs + REPO_MOTION.highlightM
  * 监控清单里的一张仓库卡片：仓库名 → 核心指标 → 抓取时间，三层视觉权重。
  * 主区域是真正的 button（鼠标点击与 Enter / Space 都进详情），`···` 与它平级而非嵌套。
  *
- * 卡片外层（li）用 0fr ↔ 1fr 让列表腾出 / 收回空间，本体只做 opacity / transform：
- * 弹性只属于"刚新增的这一张"，列表与其它卡片永远走正常文档流。
+ * Motion li 负责 Presence 与位置布局；CSS 继续管理本体的高亮、Hover 和按压。
+ * forwardRef 让 AnimatePresence 的 popLayout 能测量并保留同一个 li。
  */
-export function RepoRow({
+export const RepoRow = forwardRef<HTMLLIElement, RepoRowProps>(function RepoRow({
   repo,
   onOpen,
   onRemove,
@@ -56,59 +44,27 @@ export function RepoRow({
   onEntered,
   highlightRequest,
   onExited,
-  exiting = false,
-}: RepoRowProps) {
-  const [phase, setPhase] = useState<MotionPhase>(() =>
-    exiting ? 'exiting' : justAdded ? 'entering' : 'idle',
-  );
+  removing,
+}, forwardedRef) {
+  const reduceMotion = useReducedMotion() === true;
+  // 新增只在挂载时判定，连续添加另一张卡片不会截断这一张的进场。
+  const [entering, setEntering] = useState(justAdded);
+  const [exitingCard, setExitingCard] = useState(false);
   const [highlight, setHighlight] = useState(justAdded);
   const [highlightOnly, setHighlightOnly] = useState(false);
   const seenHighlightRequest = useRef<number | undefined>(undefined);
-  const slotRef = useRef<HTMLLIElement>(null);
-
-  // 移除成功由上层打开 exiting；进场只在挂载那一刻判定，后续 render 不会重播
-  useEffect(() => {
-    if (exiting) setPhase('exiting');
-  }, [exiting]);
+  const slotRef = useRef<HTMLLIElement | null>(null);
+  const setSlotRef = useCallback((node: HTMLLIElement | null): void => {
+    slotRef.current = node;
+    if (typeof forwardedRef === 'function') forwardedRef(node);
+    else if (forwardedRef) forwardedRef.current = node;
+  }, [forwardedRef]);
 
   useEffect(() => {
     if (highlightRequest === undefined || highlightRequest === seenHighlightRequest.current) return;
     seenHighlightRequest.current = highlightRequest;
     setHighlightOnly(true);
   }, [highlightRequest]);
-
-  useEffect(() => {
-    if (phase === 'idle') return;
-    const slot = slotRef.current;
-    if (!slot) return;
-
-    const expected = PHASE_ANIMATIONS[phase];
-    const seen = new Set<string>();
-    let done = false;
-    const finish = (): void => {
-      if (done) return;
-      done = true;
-      setPhase('idle');
-      if (phase === 'entering') onEntered?.(repo.id);
-      else onExited?.(repo.id);
-    };
-    // animationend 是主信号；动画被降级 / 元素提前卸载 / 引擎不派发时由兜底计时器收尾
-    const handleAnimationEnd = (event: AnimationEvent): void => {
-      if (!expected.includes(event.animationName)) return;
-      seen.add(event.animationName);
-      if (seen.size === expected.length) finish();
-    };
-
-    slot.addEventListener('animationend', handleAnimationEnd);
-    const timer = window.setTimeout(
-      finish,
-      motionCompletionMs(phase === 'entering' ? REPO_ENTER_TOTAL_MS : REPO_EXIT_TOTAL_MS),
-    );
-    return () => {
-      slot.removeEventListener('animationend', handleAnimationEnd);
-      window.clearTimeout(timer);
-    };
-  }, [phase, repo.id, onEntered, onExited]);
 
   // 新增高亮比本体活得久（本体 260ms 结束，高亮 800ms 落回普通 surface），单独收尾
   useEffect(() => {
@@ -157,24 +113,36 @@ export function RepoRow({
     };
   }, [highlightOnly]);
 
-  // 退场期间整张卡片立即失效：鼠标点不到，键盘也 Tab 不进去
-  useEffect(() => {
-    const slot = slotRef.current;
-    if (!slot) return;
-    if (phase === 'exiting') slot.setAttribute('inert', '');
-    else slot.removeAttribute('inert');
-  }, [phase]);
-
-  const exitingCard = phase === 'exiting';
-
   return (
-    <li
-      ref={slotRef}
+    <motion.li
+      ref={setSlotRef}
       className="repo-row-slot"
       data-repository-id={repo.id}
-      data-motion={phase}
       data-highlight={highlight ? 'true' : undefined}
       data-highlight-only={highlightOnly ? 'true' : undefined}
+      layout={reduceMotion ? false : 'position'}
+      initial={reduceMotion || !entering ? false : 'initial'}
+      animate={entering ? 'enter' : 'idle'}
+      exit="exit"
+      variants={cardVariants(reduceMotion)}
+      transition={{ layout: cardLayoutTransition(removing) }}
+      style={{ pointerEvents: exitingCard ? 'none' : undefined }}
+      onAnimationStart={(definition) => {
+        if (definition !== 'exit') return;
+        // Motion 生命周期接管退场语义；业务删除已完成，不再等待动画来更新数据。
+        slotRef.current?.setAttribute('inert', '');
+        setExitingCard(true);
+        setHighlight(false);
+        setHighlightOnly(false);
+      }}
+      onAnimationComplete={(definition) => {
+        if (definition === 'enter') {
+          setEntering(false);
+          onEntered?.(repo.id);
+        } else if (definition === 'exit') {
+          onExited?.(repo.id);
+        }
+      }}
     >
       <div className="repo-row-clip">
         <div className="repo-row rounded-lg border border-subtle bg-surface hover:border-strong hover:bg-surface-hover">
@@ -182,7 +150,8 @@ export function RepoRow({
             {/* 主点击区几乎铺满整张卡片：按下反馈由卡片整体承担（见 .repo-row:has([data-row-activator]:active)），按钮自己只做键盘焦点底色 */}
             <button
               type="button"
-              onClick={() => onOpen(repo)}
+              onClick={() => { if (!slotRef.current?.hasAttribute('inert')) onOpen(repo); }}
+              disabled={exitingCard}
               aria-label={`查看 ${repo.fullName} 详情`}
               title={repo.fullName}
               data-button-motion="surface"
@@ -215,6 +184,6 @@ export function RepoRow({
           </div>
         </div>
       </div>
-    </li>
+    </motion.li>
   );
-}
+});

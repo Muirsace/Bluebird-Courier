@@ -27,25 +27,22 @@
 }
 
 /**
- * 监控清单卡片进出场。
- *
- * 分工固定：外层 li 只负责 0fr ↔ 1fr 的空间腾挪（非线性、绝不 overshoot），
- * 内层卡片本体只做 opacity / transform。这样列表与其它卡片永远走正常文档流，
- * 不会整列一起弹。
+ * 监控清单卡片布局。Motion 接管 li 的位置与进退场，卡片内容不做尺寸补间。
  */
-.repo-list > li + li .repo-row {
-  /* 卡片间距挂在卡片自己身上：空间收回时它会跟着一起被裁掉，不留空隙。 */
-  margin-top: 0.5rem;
-}
-
 .repo-list {
+  display: flex;
+  flex-direction: column;
+  /* 保留原来 8px 间距；popLayout 的退出节点不占据 gap。 */
+  gap: 0.5rem;
+  /* popLayout 的退出卡片相对列表定位，避免相对页面定位。 */
+  position: relative;
   /* 新增到首项时由 Watchlist 明确补偿视口，避免浏览器再做一遍隐式锚定。 */
   overflow-anchor: none;
 }
 
 .repo-row-slot {
+  position: relative;
   display: grid;
-  grid-template-rows: 1fr;
   scroll-margin-top: calc(
     var(--app-header-height, 0px) + var(--watchlist-toolbar-idle-height, 54px) + 0.75rem
   );
@@ -57,105 +54,14 @@
   min-width: 0;
 }
 
-/* 只在动画期间裁剪：平时 overflow 必须可见，否则 ··· 菜单与确认 Popover 会被切掉。 */
-.repo-row-slot[data-motion='entering'] > .repo-row-clip,
-.repo-row-slot[data-motion='exiting'] > .repo-row-clip {
-  overflow: hidden;
-}
-
-/* 退场期间整张卡片不再接受鼠标操作（键盘侧由 inert 兜住）。 */
-.repo-row-slot[data-motion='exiting'] {
-  pointer-events: none;
-}
-
-/* 列表为新卡片腾出空间：0fr → 1fr。 */
-.repo-row-slot[data-motion='entering'] {
-  animation: repo-slot-expand 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* 移除后收回空间：1fr → 0fr。可以和本体淡出重叠，让下面的卡片自然上移。 */
-.repo-row-slot[data-motion='exiting'] {
-  animation: repo-slot-collapse 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-/* 新卡片本体：淡入 + 轻轻落入。弹簧感只属于这一张。 */
-.repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
-  animation: repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/*
- * 新增高亮：本体落位后进一次 accent，再自动回到普通 surface，只提示一次。
- * 两条动画必须写在同一条 animation 声明里——分两条规则会让后出现的简写把前一条整条顶掉，
- * 结果是卡片先"瞬间出现"、等高亮播完再重播一次进场。
- */
+/* Enter / exit / layout 由 Motion 负责；CSS 高亮只改变边框与背景颜色。 */
 .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row {
-  animation:
-    repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
+  animation: repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
 }
 
-/* 「查看位置」只提示已存在的卡片，不再播放 space-open 或 card-enter。 */
+/* 「查看位置」只提示已存在的卡片。 */
 .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
   animation: repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1);
-}
-
-/* 移除本体：先轻微蓄力，随后快速淡出，不回弹（排在最后，退场优先于高亮）。 */
-.repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
-  animation: repo-card-exit 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-@keyframes repo-slot-expand {
-  from {
-    grid-template-rows: 0fr;
-  }
-
-  to {
-    grid-template-rows: 1fr;
-  }
-}
-
-@keyframes repo-slot-collapse {
-  from {
-    grid-template-rows: 1fr;
-  }
-
-  to {
-    grid-template-rows: 0fr;
-  }
-}
-
-@keyframes repo-card-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.985);
-  }
-
-  68% {
-    opacity: 1;
-    transform: translateY(1px) scale(1.004);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes repo-card-exit {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-
-  22% {
-    opacity: 1;
-    transform: translateY(1px) scale(0.998);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.985);
-  }
 }
 
 @keyframes repo-card-highlight {
@@ -167,16 +73,6 @@
   to {
     border-color: rgb(var(--color-border-subtle));
     background-color: rgb(var(--color-surface));
-  }
-}
-
-@keyframes repo-card-fade-out {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
   }
 }
 

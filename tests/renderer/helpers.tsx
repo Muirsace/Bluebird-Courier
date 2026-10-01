@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'motion/react';
 import { vi } from 'vitest';
 import type { AddRepositoryResult, AccessTokenResult, Detail, Glance, GitHubExternalTarget, BluebirdCourierBridge, OpenExternalResult, Snapshot } from '../../src/shared/types';
 import { App } from '../../src/renderer/pages/App';
@@ -17,10 +18,12 @@ import { ThemeProvider } from '../../src/renderer/lib/theme';
 let systemTheme: 'light' | 'dark' = 'light';
 let reducedMotion = false;
 const mediaListeners = new Set<() => void>();
+const reducedMotionListeners = new Set<() => void>();
 
 function installMatchMedia(): void {
   // 按查询串分别回答：主题读 prefers-color-scheme，动画降级读 prefers-reduced-motion。
   const matchMedia = (query: string): MediaQueryList => {
+    const listeners = query.includes('prefers-reduced-motion') ? reducedMotionListeners : mediaListeners;
     const matchesNow = (): boolean => {
       if (query.includes('prefers-reduced-motion')) return reducedMotion;
       if (query.includes('prefers-color-scheme')) return systemTheme === 'dark';
@@ -33,16 +36,16 @@ function installMatchMedia(): void {
       },
       onchange: null,
       addEventListener: (_type: string, listener: () => void) => {
-        mediaListeners.add(listener);
+        listeners.add(listener);
       },
       removeEventListener: (_type: string, listener: () => void) => {
-        mediaListeners.delete(listener);
+        listeners.delete(listener);
       },
       addListener: (listener: () => void) => {
-        mediaListeners.add(listener);
+        listeners.add(listener);
       },
       removeListener: (listener: () => void) => {
-        mediaListeners.delete(listener);
+        listeners.delete(listener);
       },
       dispatchEvent: () => true,
     };
@@ -65,10 +68,11 @@ export function resetSystemTheme(): void {
 /** 模拟系统"减少动态效果"开关（下一次挂载生效）。 */
 export function setReducedMotion(reduce: boolean): void {
   reducedMotion = reduce;
+  for (const listener of reducedMotionListeners) listener();
 }
 
 export function resetReducedMotion(): void {
-  reducedMotion = false;
+  setReducedMotion(false);
 }
 
 // ---------- 桩门面 ----------
@@ -388,7 +392,9 @@ export async function renderNode(stub: StubHandle, node: ReactNode): Promise<Ren
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider>{node}</ThemeProvider>
+        <ThemeProvider>
+          <MotionConfig reducedMotion="user">{node}</MotionConfig>
+        </ThemeProvider>
       </QueryClientProvider>,
     );
   });
@@ -465,18 +471,24 @@ export function repoSlot(fullName: string): HTMLElement | null {
 
 /** 卡片当前的动画阶段：idle / entering / exiting（卡片已不在 DOM 时返回 null）。 */
 export function repoMotion(fullName: string): string | null {
-  return repoSlot(fullName)?.dataset.motion ?? null;
+  return repoMotionForSlot(repoSlot(fullName));
+}
+
+/** Observe interaction eligibility and rendered opacity, without the removed CSS phase attribute. */
+export function repoMotionForSlot(slot: HTMLElement | null | undefined): string | null {
+  if (!slot) return null;
+  if (slot.hasAttribute('inert')) return 'exiting';
+  return Number(slot.style.opacity || 1) < 1 ? 'entering' : 'idle';
 }
 
 /**
- * 等卡片动画（含"animationend 没来"的兜底计时器）走完。
- * happy-dom 不跑 CSS 动画、也不会派发 animationend，所以这里的等待就是兜底路径本身：
- * fake timers 下推进虚拟时间，真实计时器下等真实时长。
+ * 推进 Motion 帧与 CSS animationend 的兜底计时器。
+ * 虚拟时间逐帧推进并清空微任务，保留动画开始 / 完成的真实生命周期。
  */
 export async function settleMotion(ms = 500): Promise<void> {
   await act(async () => {
     if (vi.isFakeTimers()) {
-      vi.advanceTimersByTime(ms);
+      await vi.advanceTimersByTimeAsync(ms);
       return;
     }
     await new Promise<void>((resolve) => {

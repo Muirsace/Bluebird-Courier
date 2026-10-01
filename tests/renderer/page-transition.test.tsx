@@ -13,6 +13,7 @@ import {
   renderApp,
   repoOpenButton,
   repoSlot,
+  repoMotionForSlot,
   resetSystemTheme,
   settle,
   setSystemTheme,
@@ -361,7 +362,7 @@ describe('页面切换 · 返回清单不重播卡片动画', () => {
     await goBack();
 
     const slot = repoSlot('octocat/Hello-World');
-    expect(slot?.dataset.motion).toBe('idle');
+    expect(repoMotionForSlot(slot)).toBe('idle');
     expect(slot?.dataset.highlight).toBeUndefined();
     expect(document.querySelectorAll('main ul > li')).toHaveLength(1);
   });

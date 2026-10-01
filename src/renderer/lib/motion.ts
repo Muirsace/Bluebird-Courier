@@ -1,12 +1,11 @@
 /**
- * 监控清单卡片进出场的时长。数值与 styles.css 里的 keyframes 一一对应：
- * 组件、测试与"animationend 没来"的兜底都读这里的常数，不把毫秒数散落到各处。
+ * 监控清单卡片进出场的时长。Motion 沿用原来的轨迹与时长，CSS 仍负责颜色高亮。
  *
  * 弹簧感只来自新增卡片的 keyframe（-8px → +1px → 0），列表空间与其它卡片永远只有
  * 非线性缓动、没有 overshoot。
  */
 export const REPO_MOTION = {
-  /** 列表腾出 / 收回空间：0fr ↔ 1fr。 */
+  /** Motion 列表位置补间：为新增卡片让位。 */
   layoutMs: 220,
   /** 新卡片本体：淡入 + 轻轻落入。 */
   enterMs: 260,
@@ -16,18 +15,11 @@ export const REPO_MOTION = {
   /** 移除：本体快速淡出、列表空间收回，两者允许重叠。 */
   exitCardMs: 150,
   exitLayoutMs: 200,
-  /** prefers-reduced-motion：只留一次极短的透明度淡出，不做位移 / 缩放 / grid tween。 */
+  /** prefers-reduced-motion：只留一次极短的透明度淡出，不做位移 / 缩放 / layout 补间。 */
   reducedMs: 40,
   /** animationend 没派发（元素提前卸载、引擎不支持该属性动画）时的兜底余量。 */
   fallbackMs: 140,
 } as const;
-
-/** 进场阶段要等的最长一条动画结束：本体与高亮重叠，取高亮结束时刻。 */
-export const REPO_ENTER_TOTAL_MS =
-  REPO_MOTION.highlightDelayMs + REPO_MOTION.highlightMs;
-
-/** 退场阶段要等的最长一条动画结束：空间收回比本体淡出慢。 */
-export const REPO_EXIT_TOTAL_MS = Math.max(REPO_MOTION.exitCardMs, REPO_MOTION.exitLayoutMs);
 
 /**
  * 兜底计时器的等待时长。正常模式下 animationend 才是主信号，这里只是"事件没来"时的余量；

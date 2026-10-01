@@ -36,32 +36,10 @@
     transform: none !important;
   }
 
-  /* 新增：位移 / 缩放 / grid tween 全部关掉，卡片直接出现在最终位置与样式上。 */
-  .repo-row-slot[data-motion='entering'],
-  .repo-row-slot[data-motion='exiting'],
+  /* 卡片位移与退出淡出由 Motion 降级；CSS 仍关闭两种颜色高亮。 */
   .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
-  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row,
-  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
     animation: none !important;
-  }
-
-  .repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
-    opacity: 1;
-    transform: none;
-  }
-
-  /* 删除：空间立即收回，只留一次极短的透明度淡出。 */
-  .repo-row-slot[data-motion='exiting'] {
-    grid-template-rows: 0fr;
-  }
-
-  .repo-row-slot[data-motion='exiting'] > .repo-row-clip {
-    overflow: hidden;
-  }
-
-  .repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
-    animation: repo-card-fade-out 40ms linear forwards !important;
-    transform: none;
   }
 
   /* Button：按下 / 释放仍然看到颜色变深，但不再位移、不再缩放 */
