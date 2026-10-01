@@ -1,0 +1,14 @@
+@media (max-width: 35rem) {
+  .settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .settings-row-label {
+    padding-top: 0;
+  }
+
+  .settings-token-heading {
+    align-items: flex-start;
+  }
+}

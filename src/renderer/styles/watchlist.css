@@ -1,0 +1,382 @@
+/**
+ * 卡片按下反馈。
+ *
+ * 整张卡片是一个视觉整体（连 16px 内边距与 `···` 列一起），所以位移 / 缩放 / 变灰
+ * 都落在 .repo-row 上；主点击区只负责"我被按下了"这一个信号（data-row-activator），
+ * 自己不再位移也不再变色，避免同一处出现两种反馈。
+ */
+.repo-row {
+  transition-property: translate, scale, background-color, border-color;
+  transition-duration: 130ms;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.repo-row:has([data-row-activator]:active) {
+  background-color: rgb(var(--color-surface-active));
+  border-color: rgb(var(--color-border-strong));
+  translate: 0 1px;
+  scale: 0.985;
+  transition-duration: 80ms;
+  transition-timing-function: var(--motion-ease-in);
+}
+
+/* Keep the row quiet while its own menu / confirmation surface is open. */
+.repo-row:has(.repo-actions-trigger[aria-expanded='true']):hover:not(:has([data-row-activator]:active)) {
+  border-color: rgb(var(--color-border-subtle));
+  background-color: rgb(var(--color-surface));
+}
+
+/**
+ * 监控清单卡片进出场。
+ *
+ * 分工固定：外层 li 只负责 0fr ↔ 1fr 的空间腾挪（非线性、绝不 overshoot），
+ * 内层卡片本体只做 opacity / transform。这样列表与其它卡片永远走正常文档流，
+ * 不会整列一起弹。
+ */
+.repo-list > li + li .repo-row {
+  /* 卡片间距挂在卡片自己身上：空间收回时它会跟着一起被裁掉，不留空隙。 */
+  margin-top: 0.5rem;
+}
+
+.repo-list {
+  /* 新增到首项时由 Watchlist 明确补偿视口，避免浏览器再做一遍隐式锚定。 */
+  overflow-anchor: none;
+}
+
+.repo-row-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  scroll-margin-top: calc(
+    var(--app-header-height, 0px) + var(--watchlist-toolbar-idle-height, 54px) + 0.75rem
+  );
+}
+
+.repo-row-clip {
+  /* 网格项默认 min-width/min-height: auto：不归零的话，超长仓库名会把卡片撑出容器宽度 */
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 只在动画期间裁剪：平时 overflow 必须可见，否则 ··· 菜单与确认 Popover 会被切掉。 */
+.repo-row-slot[data-motion='entering'] > .repo-row-clip,
+.repo-row-slot[data-motion='exiting'] > .repo-row-clip {
+  overflow: hidden;
+}
+
+/* 退场期间整张卡片不再接受鼠标操作（键盘侧由 inert 兜住）。 */
+.repo-row-slot[data-motion='exiting'] {
+  pointer-events: none;
+}
+
+/* 列表为新卡片腾出空间：0fr → 1fr。 */
+.repo-row-slot[data-motion='entering'] {
+  animation: repo-slot-expand 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 移除后收回空间：1fr → 0fr。可以和本体淡出重叠，让下面的卡片自然上移。 */
+.repo-row-slot[data-motion='exiting'] {
+  animation: repo-slot-collapse 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* 新卡片本体：淡入 + 轻轻落入。弹簧感只属于这一张。 */
+.repo-row-slot[data-motion='entering'] > .repo-row-clip > .repo-row {
+  animation: repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * 新增高亮：本体落位后进一次 accent，再自动回到普通 surface，只提示一次。
+ * 两条动画必须写在同一条 animation 声明里——分两条规则会让后出现的简写把前一条整条顶掉，
+ * 结果是卡片先"瞬间出现"、等高亮播完再重播一次进场。
+ */
+.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row {
+  animation:
+    repo-card-enter 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
+}
+
+/* 「查看位置」只提示已存在的卡片，不再播放 space-open 或 card-enter。 */
+.repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
+  animation: repo-card-highlight 560ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* 移除本体：先轻微蓄力，随后快速淡出，不回弹（排在最后，退场优先于高亮）。 */
+.repo-row-slot[data-motion='exiting'] > .repo-row-clip > .repo-row {
+  animation: repo-card-exit 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes repo-slot-expand {
+  from {
+    grid-template-rows: 0fr;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+@keyframes repo-slot-collapse {
+  from {
+    grid-template-rows: 1fr;
+  }
+
+  to {
+    grid-template-rows: 0fr;
+  }
+}
+
+@keyframes repo-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+
+  68% {
+    opacity: 1;
+    transform: translateY(1px) scale(1.004);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes repo-card-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  22% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.998);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes repo-card-highlight {
+  from {
+    border-color: rgb(var(--color-accent-border));
+    background-color: rgb(var(--color-accent-soft));
+  }
+
+  to {
+    border-color: rgb(var(--color-border-subtle));
+    background-color: rgb(var(--color-surface));
+  }
+}
+
+@keyframes repo-card-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* 页面区块间距与标题下方的吸附哨兵共用同一值，哨兵本身不参与布局。 */
+.watchlist-page {
+  --watchlist-page-gap: 1rem;
+  --watchlist-toolbar-idle-height: 54px;
+}
+
+.watchlist-page > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: var(--watchlist-page-gap);
+}
+
+.watchlist-toolbar-sentinel {
+  position: absolute;
+  top: calc(100% + var(--watchlist-page-gap));
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+/**
+ * Watchlist 页面级操作栏：同一 DOM 在普通流与吸附状态间移动。
+ * 54px 最小高度、36px 控件和透明 1px 边框始终占位；状态只换背景与边框颜色。
+ */
+.watchlist-page-toolbar {
+  position: sticky;
+  top: var(--app-header-height, 0px);
+  z-index: 5;
+  width: 100%;
+  min-height: 54px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  padding-block: 8px;
+  border-bottom: 1px solid transparent;
+  background-color: transparent;
+  transition:
+    background-color 130ms var(--motion-ease-out),
+    border-color 130ms var(--motion-ease-out);
+}
+
+.watchlist-page-toolbar[data-stuck='true'] {
+  border-bottom-color: rgb(var(--color-border-subtle));
+  background-color: rgb(var(--color-app));
+}
+
+/* Keep the action slot reserved so editing never changes the input width. */
+.watchlist-add-form {
+  position: relative;
+  flex: 0 1 auto;
+  width: 7.5rem;
+  max-width: 100%;
+  overflow: hidden;
+  transition: width 150ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.watchlist-add-form[data-expanded='true'] {
+  width: 32rem;
+  overflow: visible;
+  transition-duration: 190ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.watchlist-add-content {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0;
+}
+
+.watchlist-add-control-row {
+  grid-template-columns: minmax(0, 1fr) 6rem;
+  column-gap: 0.5rem;
+}
+
+.watchlist-add-trigger {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 7.5rem;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 150ms var(--motion-ease-in),
+    visibility 0s,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    border-color 120ms var(--motion-ease-out),
+    color 120ms var(--motion-ease-out);
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-trigger {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 150ms var(--motion-ease-in),
+    visibility 0s 150ms,
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    border-color 120ms var(--motion-ease-out),
+    color 120ms var(--motion-ease-out);
+}
+
+.watchlist-add-field {
+  opacity: 0;
+  transform: translateX(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  transition:
+    opacity 150ms cubic-bezier(0.4, 0, 1, 1),
+    transform 150ms cubic-bezier(0.4, 0, 1, 1),
+    visibility 0s 150ms;
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-field {
+  opacity: 1;
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: 0s;
+}
+
+.watchlist-add-action {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  transform: scale(0);
+  transform-origin: center;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    background-color 150ms var(--motion-ease-in),
+    border-color 150ms var(--motion-ease-in),
+    color 150ms var(--motion-ease-in),
+    transform 130ms var(--motion-ease-in),
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    visibility 0s 130ms;
+}
+
+.watchlist-add-form[data-expanded='true'] .watchlist-add-action {
+  transform: scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    background-color 150ms var(--motion-ease-out),
+    border-color 150ms var(--motion-ease-out),
+    color 150ms var(--motion-ease-out),
+    transform 170ms var(--motion-ease-out),
+    translate 130ms var(--motion-ease-out),
+    scale 130ms var(--motion-ease-out),
+    visibility 0s;
+}
+
+.watchlist-add-action-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.watchlist-add-spinner {
+  border-color: rgb(var(--color-accent-contrast));
+  border-top-color: transparent;
+}
+
+/* The row height, not a transform on the repository list, moves following content. */
+.watchlist-inline-message {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition:
+    grid-template-rows 130ms cubic-bezier(0.4, 0, 1, 1),
+    opacity 130ms cubic-bezier(0.4, 0, 1, 1),
+    transform 130ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.watchlist-inline-message[data-open='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition-duration: 170ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 35rem) {
+  /* Reserve the refresh action's row during the width tween at narrow widths. */
+  .watchlist-add-form[data-expanded='true'] {
+    width: calc(100% - 7rem);
+    min-width: min(16rem, 100%);
+  }
+}

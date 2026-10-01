@@ -1,0 +1,129 @@
+/**
+ * Motion Language：全项目只此一套缓动，卡片进出场与 Button 按压共用。
+ * --motion-ease-out：快速启动、末端柔和减速 → 进场 / 释放 / 回弹。
+ * --motion-ease-in：快速进入目标状态 → 按下 / 收场。
+ */
+:root {
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/**
+ * 语义 Design Token。
+ *
+ * 颜色变量一律写成「空格分隔的 RGB 通道」，这样 Tailwind 侧可以拼成
+ * rgb(var(--x) / <alpha-value>)，`/40` 这类透明度修饰符照常可用。
+ * 例外是 --chart-*：Chart.js 只吃完整色值，不能是通道三元组。
+ *
+ * 主题由 <html data-theme="light|dark"> 决定，值由渲染层集中设置（见 src/renderer/lib/theme.tsx）。
+ * 组件只写语义类（bg-surface / text-muted / border-default），不再关心当前是哪个主题。
+ */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surface */
+  --color-app: 245 247 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 248 250 252;
+  --color-surface-hover: 241 245 249;
+  --color-surface-active: 226 232 240;
+
+  /* Border */
+  --color-border: 220 226 234;
+  --color-border-subtle: 233 237 242;
+  --color-border-strong: 195 204 217;
+
+  /* Text */
+  --color-text: 23 32 51;
+  --color-text-secondary: 93 105 122;
+  --color-text-muted: 102 114 133;
+
+  /* Brand accent：蓝色仅用于操作、选中、链接与焦点；成功状态独立使用绿色。 */
+  --color-accent: 29 78 216;
+  --color-accent-hover: 30 64 175;
+  --color-accent-soft: 239 246 255;
+  --color-accent-border: 191 219 254;
+  --color-accent-solid: 37 99 235;
+  --color-accent-solid-hover: 29 78 216;
+  --color-accent-solid-pressed: 30 64 175;
+  --color-accent-contrast: 255 255 255;
+  --color-focus-ring: 37 99 235;
+
+  /* Semantic */
+  --color-success: 4 120 87;
+  --color-success-soft: 224 250 240;
+  --color-warning: 180 83 9;
+  --color-warning-soft: 254 246 224;
+  --color-danger: 185 28 28;
+  --color-danger-soft: 254 235 235;
+  --color-danger-solid: 185 28 28;
+  --color-danger-solid-hover: 220 38 38;
+  --color-danger-solid-pressed: 153 27 27;
+  --color-danger-contrast: 255 255 255;
+  --color-info: 3 105 161;
+  --color-info-soft: 232 245 254;
+
+  /* Chart（完整色值，供 Chart.js 读取） */
+  --chart-grid: rgba(203, 213, 225, 0.55);
+  --chart-label: #5d697a;
+  --chart-tooltip: #ffffff;
+  --chart-tooltip-text: #172033;
+  --chart-star: #047857;
+  --chart-fork: #0369a1;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surface：保留原来的冷深蓝黑，不改成纯黑 */
+  --color-app: 2 6 23;
+  --color-surface: 15 23 42;
+  --color-surface-raised: 30 41 59;
+  --color-surface-hover: 30 41 59;
+  --color-surface-active: 51 65 85;
+
+  /* Border */
+  --color-border: 30 41 59;
+  --color-border-subtle: 23 32 51;
+  --color-border-strong: 51 65 85;
+
+  /* Text */
+  --color-text: 241 245 249;
+  --color-text-secondary: 148 163 184;
+  --color-text-muted: 123 135 152;
+
+  /* Accent */
+  --color-accent: 147 197 253;
+  --color-accent-hover: 191 219 254;
+  --color-accent-soft: 23 37 65;
+  --color-accent-border: 48 70 110;
+  --color-accent-solid: 29 78 216;
+  --color-accent-solid-hover: 37 99 235;
+  --color-accent-solid-pressed: 30 64 175;
+  --color-accent-contrast: 255 255 255;
+  --color-focus-ring: 96 165 250;
+
+  /* Semantic */
+  --color-success: 52 211 153;
+  --color-success-soft: 6 46 36;
+  --color-warning: 252 211 77;
+  --color-warning-soft: 58 40 12;
+  --color-danger: 252 165 165;
+  --color-danger-soft: 60 20 22;
+  --color-danger-solid: 220 38 38;
+  --color-danger-solid-hover: 239 68 68;
+  /* 深色下"更深"会变脏：按压取比 hover 更沉的红，权重更明确但仍读得出危险 */
+  --color-danger-solid-pressed: 185 28 28;
+  --color-danger-contrast: 255 255 255;
+  --color-info: 125 211 252;
+  --color-info-soft: 12 40 58;
+
+  /* Chart（完整色值，供 Chart.js 读取） */
+  --chart-grid: rgba(51, 65, 85, 0.38);
+  --chart-label: #94a3b8;
+  --chart-tooltip: rgba(15, 23, 42, 0.95);
+  --chart-tooltip-text: #e2e8f0;
+  --chart-star: #34d399;
+  --chart-fork: #38bdf8;
+}

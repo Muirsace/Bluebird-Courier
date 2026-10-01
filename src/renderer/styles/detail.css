@@ -1,0 +1,284 @@
+/**
+ * Tab Indicator：单一可动下划线。
+ *
+ * 几何按激活 Tab 实测后由组件写成 inline transform / width，这里只负责过渡与画。
+ * 绝对定位所以不参与布局；pointer-events: none 所以永远不吃点击、也不影响 focus ring。
+ */
+.tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background-color: rgb(var(--color-accent));
+  pointer-events: none;
+  transition:
+    transform 180ms var(--motion-ease-out),
+    width 180ms var(--motion-ease-out);
+}
+
+/**
+ * Detail Tabs 吸附。
+ *
+ * 只改纵向定位：容器宽高、左右边界、内容对齐全部沿用原来那一份（吸附容器就是揭示层级本身，
+ * 它一直是个全宽块），也没有第二套 Tabs——tablist / indicator / aria 关系还是同一个 DOM。
+ *
+ * 吸附线取顶部栏实测高度（App 写在 --app-header-height）。变量缺失时这条 top 声明整体失效
+ * （computed-value 阶段无效 → top: auto），也就是不吸附，绝不会把 Tabs 藏在顶部栏底下。
+ */
+.detail-tabs-sticky {
+  position: sticky;
+  top: var(--app-header-height, 0px);
+  /* 高于详情普通内容，低于顶部栏与浮层（.repository-action-positioner 是 z-20） */
+  z-index: 10;
+  /* 吸附后内容会从下面滚过，底色必须不透明；也不用 backdrop-blur / 半透明玻璃 */
+  background-color: rgb(var(--color-app));
+}
+
+/* 分隔线只换颜色：吸附本身必须是稳定的，不做位移 / 缩放 / 阴影 */
+.detail-tabs-sticky [role='tablist'] {
+  transition: border-color 130ms var(--motion-ease-out);
+}
+
+.detail-tabs-sticky [role='tablist'][data-stuck='true'] {
+  border-color: rgb(var(--color-border));
+}
+
+/**
+ * 当前 Tab 内容的起点，也是切 Tab 时的滚动落点。
+ *
+ * 落点不是页面顶部：吸附后的 Tabs 会停在顶部栏下沿，所以内容起点必须让开「顶部栏 + Tabs」
+ * 这整段，第一行才不会被压在 Tabs 底下（也不必把页面滚回 Repository Header 那一屏）。
+ * 两个高度都是实测值——顶部栏由 App 量（--app-header-height），Tabs 由 DetailTabs 量
+ * （--detail-tabs-height），都不是猜的；末尾 8px 是内容第一行与 Tabs 的安全间距。
+ * scrollIntoView 会尊重这段留白，所以一次就落到最终位置，不会先到顶部再修正。
+ */
+.detail-tab-content-anchor {
+  scroll-margin-top: calc(
+    var(--app-header-height, 0px) + var(--detail-tabs-height, 0px) + 8px
+  );
+  /*
+   * 短 Tab（空 Issue、构建这类）的内容比一屏还矮，文档滚不动：那样切过来只能停在页面顶部，
+   * Repository Header 会重新回到屏幕上，落点这条规则也就名存实亡。
+   * 这里留出"吸附线以下正好填满一屏"的高度——它同时也是滚动范围的上限，
+   * 所以既保证了落点总是可达，又不会多出一段可以滚进空白里的行程。
+   * 减掉的 28px 是 main 的底部内边距（20px）与上面那 8px 安全间距：两边一致时才刚好对齐。
+   */
+  min-height: calc(
+    100vh - var(--app-header-height, 0px) - var(--detail-tabs-height, 0px) - 28px
+  );
+}
+
+/**
+ * Compact Repository Context：Repository Header 滚走后，顶部栏在品牌右侧接管"当前仓库"。
+ *
+ * 只动画 opacity 与 X：显隐绝不碰宽度 / 外边距 / 内边距，所以品牌、右侧导航与顶部栏高度
+ * 都不动一下（容器始终占位，宽度由 flex 分配，与可见性无关）。
+ * 用 X 而不是 Y：页面本身正在纵向滚动，再来一点纵向位移容易和滚动方向打架。
+ * 出现与退场用不同时长 / 缓动——各自写在目标状态上，过渡取的是"要去的那一边"那条。
+ */
+.compact-repo-context {
+  opacity: 0;
+  transform: translateX(-4px);
+  /* 不可见时不参与指针交互；语义上也从无障碍树里摘掉（表头自己还在交代仓库名） */
+  pointer-events: none;
+  transition:
+    opacity 120ms var(--motion-ease-in),
+    transform 120ms var(--motion-ease-in);
+}
+
+/* 出现：接管当前仓库身份，160ms ease-out，从左侧 6px 柔和进入 */
+.compact-repo-context[data-visible='true'] {
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms var(--motion-ease-out),
+    transform 160ms var(--motion-ease-out);
+}
+
+/* 分隔符：低对比的语义边框色，和上下文一起进退，不抢品牌名 */
+.compact-repo-context-divider {
+  flex: none;
+  width: 1px;
+  height: 1rem;
+  background-color: rgb(var(--color-border-strong));
+}
+
+/**
+ * 表头与它哨兵的定位容器：只提供包含块，不产生任何盒模型效果。
+ */
+.repo-context-scope {
+  position: relative;
+}
+
+/**
+ * Compact Context 的哨兵：横贯表头的一张极窄色带，压在表头下沿往上"顶部栏高度 - 10px"处。
+ *
+ * 它整体滚出视口顶端 == 表头不仅离开吸附线、还多走了 10px；重新完整进入 == 表头还剩 4px 就要露头。
+ * 中间 6px（色带高度）就是迟滞区间：观察器用 threshold [0, 1] 拿到这两个边界，
+ * 既不需要第二个阈值，也不需要每帧监听滚动。
+ * 高度用 calc 引用顶部栏实测高度，所以窄窗口顶部栏换行变高时，这条线跟着一起走。
+ */
+.repo-context-sentinel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  bottom: calc(var(--app-header-height, 0px) - 10px);
+  pointer-events: none;
+}
+
+/**
+ * 吸附哨兵：放在 Tabs 天然位置（.detail-reveal 顶部）上方恰好一个顶部栏高度处。
+ * 它越过视口顶端的那一刻 == Tabs 抵达吸附线的那一刻，所以观察器用默认 rootMargin 就够，
+ * 不必在 JS 里再算一遍顶部栏高度。绝对定位 + 1px，不参与布局、不吃指针。
+ */
+.detail-tabs-sentinel {
+  position: absolute;
+  top: calc(-1 * var(--app-header-height, 0px));
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+/**
+ * Detail Reveal Motion：首次抓取完成，界面从 Loading「解锁」成完整详情。
+ *
+ * 语义是"数据就绪"，不是"新页面弹出"：只用 opacity 与几像素的 Y，不用 spring、不放大、
+ * 更不做整页高度补间（那会让页面像手风琴一样被拉长）。真内容在数据到达那一帧就挂载完毕，
+ * Loading 只是同时原地淡出，所以不会出现"空白帧"。
+ */
+.detail-reveal {
+  /* Loading 卡退出时脱离文档流，需要它当包含块 */
+  position: relative;
+}
+
+/* 数据到达：Loading 卡不再推开下面的内容，就地淡出。 */
+.detail-loading-slot[data-state='exiting'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  /* 淡出期间不吃点击：界面在数据到达那一刻就已经可以用了 */
+  pointer-events: none;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-panel {
+  animation: detail-loading-panel-out 100ms var(--motion-ease-in) forwards;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-spinner {
+  animation: detail-loading-spinner-out 100ms var(--motion-ease-in) forwards;
+}
+
+.detail-loading-slot[data-state='exiting'] .loading-text {
+  animation: detail-loading-text-out 100ms var(--motion-ease-in) forwards;
+}
+
+/*
+ * 错峰揭示：每个层级自带 --reveal-delay / --reveal-ms / --reveal-shift，
+ * 且只在 revealing 窗口里挂动画。窗口一过（ready），节点即使因切 Tab 重挂也不会再播。
+ * backwards 让它在延迟期间就停在起点，不会先闪一帧最终态。
+ *
+ * 注意：这里只挂错峰动画，不要去"抑制" tab-panel-enter——抑制规则一旦失效，
+ * 已经挂载的面板会当场重播一次进场（实测就是内容展开后闪一下）。
+ * 首屏不播 tab-panel-enter 这件事由 DetailPage 在切 Tab 那一刻决定。
+ */
+.detail-reveal[data-reveal='revealing'] .detail-reveal-item {
+  animation: detail-item-reveal var(--reveal-ms, 200ms) var(--motion-ease-out) var(--reveal-delay, 0ms)
+    backwards;
+}
+
+/* 表头指标值：`—` 绝对定位淡出（不参与布局），真实值原位淡入。不做数字滚动。 */
+.detail-fact-from {
+  pointer-events: none;
+  animation: detail-fact-out 140ms var(--motion-ease-in) forwards;
+}
+
+.detail-fact-to {
+  animation: detail-fact-in 140ms var(--motion-ease-out) backwards;
+}
+
+/* 抓取按钮文案：抓取中… → 重新抓取。按钮宽度由 min-width 定住，这里只换文案。 */
+.detail-refetch-label {
+  animation: detail-refetch-in 120ms var(--motion-ease-out) backwards;
+}
+
+@keyframes detail-item-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--reveal-shift, 5px));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detail-loading-panel-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes detail-loading-spinner-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes detail-loading-text-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes detail-fact-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes detail-fact-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes detail-refetch-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

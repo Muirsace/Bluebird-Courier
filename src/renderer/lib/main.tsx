@@ -2,7 +2,18 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from '../pages/App';
 import { ThemeProvider } from './theme';
+// Preserve the legacy styles.css cascade: Tailwind first, then custom sheets in original order.
 import '../styles.css';
+import '../styles/tokens.css';
+import '../styles/brand.css';
+import '../styles/settings.css';
+import '../styles/foundation.css';
+import '../styles/overlays.css';
+import '../styles/navigation.css';
+import '../styles/detail.css';
+import '../styles/watchlist.css';
+import '../styles/responsive.css';
+import '../styles/accessibility.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
