@@ -384,7 +384,6 @@
 }
 
 .repository-sidebar-name {
-  padding-right: 36px;
   font-size: 14px;
   font-weight: 600;
   line-height: 20px;
@@ -403,6 +402,7 @@
 
 .repository-sidebar-release {
   flex: 1;
+  color: rgb(var(--color-text-secondary));
 }
 
 .repository-sidebar-activity {
@@ -410,10 +410,28 @@
   white-space: nowrap;
 }
 
-.repository-sidebar-actions {
+.repository-sidebar-row:has(.repository-action-positioner[data-context-point='true']) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 70%, rgb(var(--color-app)));
+}
+
+/* Selection owns the surface even while this row is the context target. */
+.repository-sidebar-row[data-selected='true']:has(.repository-action-positioner) {
+  --repository-row-background: rgb(var(--color-accent-soft));
+}
+
+/* Absolute separators never contribute to the frozen 72px row geometry. */
+.repository-sidebar-list > .repo-row-slot:not(:last-child) .repository-sidebar-row::after {
+  content: '';
   position: absolute;
-  top: 8px;
-  right: 8px;
+  inset: auto 12px -1px 20px;
+  height: 1px;
+  background: rgb(var(--color-border-subtle));
+  pointer-events: none;
+}
+
+.repository-sidebar-list > .repo-row-slot:not(:last-child) .repository-sidebar-row[data-selected='true']::after,
+.repository-sidebar-list > .repo-row-slot:has(+ .repo-row-slot .repository-sidebar-row[data-selected='true']) .repository-sidebar-row::after {
+  background: transparent;
 }
 
 /* Keep both primary and menu focus visible without clipping the row. */

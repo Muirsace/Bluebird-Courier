@@ -550,6 +550,17 @@ export function repoActionsButton(fullName: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`button[aria-label="${fullName} 的仓库操作"]`);
 }
 
+/** Exercise the real entry point in each shell, without fabricating a desktop button. */
+export async function openRepositoryActions(fullName: string): Promise<void> {
+  const button = repoActionsButton(fullName);
+  if (button) { await click(button); return; }
+  const row = repoOpenButton(fullName);
+  if (!row) throw new Error('未找到仓库行');
+  await act(async () => {
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 260, clientY: 120 }));
+  });
+}
+
 /**
  * 只取"当前生效"的那个节点：菜单 → 确认换内容时，旧菜单会带着 aria-hidden + inert
  * 留在 out 层继续淡出，它不是用户此刻看到 / 能操作的菜单。

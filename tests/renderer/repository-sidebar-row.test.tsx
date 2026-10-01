@@ -5,7 +5,7 @@ import type { Glance } from '../../src/shared/types';
 import type { RenderResult, StubHandle } from './helpers';
 import {
   buttonByText, click, createStub, dialog, makeGlance, menu, menuItem, navButton,
-  renderApp, repoActionsButton, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
+  renderApp, repoActionsButton, openRepositoryActions, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
   resetSystemTheme, setReducedMotion, setViewportWidth, settle, settleMotion, submitForm, typeInto,
 } from './helpers';
 import { readRendererStyles } from './support/styles';
@@ -45,7 +45,7 @@ async function add(name: string): Promise<void> {
   await settle();
 }
 async function remove(name: string, remaining: Glance[]): Promise<void> {
-  await click(repoActionsButton(name));
+  await openRepositoryActions(name);
   await click(menuItem('从监控清单移除'));
   await settle();
   stub.setRepositories(remaining);
@@ -63,7 +63,7 @@ describe('Compact Repository Sidebar', () => {
     expect(sidebar().textContent).not.toContain('抓取于');
     expect(repoOpenButton(A)?.textContent).toContain('v1.0.1');
     expect(repoOpenButton(A)?.querySelector('.repository-sidebar-activity')?.getAttribute('aria-label')).toContain('最近活动');
-    expect(repoActionsButton(A)?.getAttribute('aria-expanded')).toBe('false');
+    expect(repoActionsButton(A)).toBeNull();
     expect(selected(A)).toBe('false');
     expect(stub.calls.fetchDetail).toBe(0);
   });
@@ -115,18 +115,18 @@ describe('Compact Repository Sidebar', () => {
     expect(stub.calls.fetchDetail).toBe(count);
   });
 
-  it('has sibling primary / menu buttons, keyboard focus and selected semantics', async () => {
+  it('has a primary button and shared context surface, keyboard focus and selected semantics', async () => {
     await mount();
     const button = repoOpenButton(B)!;
     button.focus();
     expect(document.activeElement).toBe(button);
     expect(button.type).toBe('button');
     expect(button.tabIndex).toBe(0);
-    expect(button.contains(repoActionsButton(B))).toBe(false);
+    expect(repoActionsButton(B)).toBeNull();
     await click(button);
     expect(selected(B)).toBe('true');
     expect(document.activeElement).toBe(button);
-    await click(repoActionsButton(B));
+    await openRepositoryActions(B);
     expect(menu()).not.toBeNull();
     expect(stub.calls.fetchDetail).toBe(1);
   });
@@ -139,7 +139,7 @@ describe('Compact Repository Sidebar', () => {
     expect(button.querySelector('.repository-sidebar-name')?.textContent).toBe(name);
     expect(button.querySelector('.repository-sidebar-release')?.getAttribute('title')).toBe(tag);
     expect(button.querySelector('.repository-sidebar-activity')).not.toBeNull();
-    expect(repoActionsButton(name)).not.toBeNull();
+    expect(repoActionsButton(name)).toBeNull();
     const css = readRendererStyles();
     const truncation = css.match(/\.repository-sidebar-name,\s*\.repository-sidebar-release\s*\{[^}]+\}/)?.[0];
     expect(truncation).toContain('min-width: 0');
@@ -259,40 +259,38 @@ describe('Compact Repository Sidebar', () => {
     expect(target.dataset.highlightOnly).toBeUndefined();
   });
 
-  it('top-layer menu follows anchor position changes without resize or scroll events', async () => {
+  it('top-layer cursor menu stays at its point when an anchor spring moves', async () => {
     await mount();
-    const trigger = repoActionsButton(A)!;
+    const trigger = repoOpenButton(A)!;
     let y = 100;
     vi.spyOn(trigger, 'getBoundingClientRect').mockImplementation(() => new DOMRect(260, y, 32, 32));
-    await click(trigger);
+    await openRepositoryActions(A);
     await settle();
     const surface = document.querySelector<HTMLElement>('.repository-action-positioner')!;
     expect(surface.dataset.shellOverlay).toBe('true');
     const before = surface.style.getPropertyValue('--overlay-top');
     y += 74;
     await settleMotion(64);
-    expect(surface.style.getPropertyValue('--overlay-top')).not.toBe(before);
-    expect(surface.style.getPropertyValue('--overlay-top')).toBe(`${y + 32 + 8}px`);
+    expect(surface.style.getPropertyValue('--overlay-top')).toBe(before);
+    expect(surface.style.getPropertyValue('--overlay-top')).toBe('120px');
     expect(menu()).not.toBeNull();
-    expect(repoActionsButton(A)).toBe(trigger);
+    expect(repoOpenButton(A)).toBe(trigger);
   });
 
-  it('instant parent layout changes update the menu before the next animation frame', async () => {
+  it('instant list mutations close the cursor menu without leaving an obsolete surface', async () => {
     setReducedMotion(true);
     await mount();
-    const trigger = repoActionsButton(A)!;
+    const trigger = repoOpenButton(A)!;
     let top = 120;
     vi.spyOn(trigger, 'getBoundingClientRect').mockImplementation(() => new DOMRect(260, top, 32, 32));
-    await click(trigger);
+    await openRepositoryActions(A);
     await settle();
-    const surface = document.querySelector<HTMLElement>('.repository-action-positioner')!;
-    const before = surface.style.getPropertyValue('--overlay-top');
-    top += 100;
-    await act(async () => { listViewport().append(document.createElement('div')); });
-    await settle();
-    expect(surface.style.getPropertyValue('--overlay-top')).not.toBe(before);
-    expect(surface.style.getPropertyValue('--overlay-top')).toBe(`${top + 40}px`);
     expect(menu()).not.toBeNull();
+    top += 100;
+    await act(async () => { document.querySelector('.repo-list')!.append(document.createElement('li')); });
+    await settle();
+    expect(document.querySelector('.repository-action-positioner')).toBeNull();
+    expect(menu()).toBeNull();
   });
 
   it('25 repos allow continuous selection without remount or resetting Sidebar scroll', async () => {

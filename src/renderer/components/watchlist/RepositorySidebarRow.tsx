@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useRef } from 'react';
 import { formatRelativeTime } from '../../lib/time';
 import { RepositoryActions } from './RepositoryActions';
 import { RepositoryMotionItem } from './RepositoryMotionItem';
@@ -13,16 +13,19 @@ export const RepositorySidebarRow = forwardRef<HTMLLIElement, RepositorySidebarR
   selected, ...props
 }, forwardedRef) {
   const { repo, onOpen, onRemove } = props;
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const release = repo.latestReleaseTag ?? '无发版';
   return (
     <RepositoryMotionItem ref={forwardedRef} {...props}>
       {(exiting) => (
         <div className="repository-sidebar-row" data-selected={selected ? 'true' : undefined}>
           <button
+            ref={triggerRef}
             type="button"
             className="repository-sidebar-activator"
             aria-label={`查看 ${repo.fullName} 详情`}
             aria-pressed={selected}
+            aria-haspopup="menu"
             title={repo.fullName}
             data-button-motion="surface"
             data-row-activator
@@ -39,9 +42,7 @@ export const RepositorySidebarRow = forwardRef<HTMLLIElement, RepositorySidebarR
               </span>
             </span>
           </button>
-          <div className="repository-sidebar-actions">
-            <RepositoryActions repo={repo} onRemove={onRemove} disabled={exiting} />
-          </div>
+          <RepositoryActions repo={repo} onRemove={onRemove} disabled={exiting} contextTriggerRef={triggerRef} />
         </div>
       )}
     </RepositoryMotionItem>

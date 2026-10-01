@@ -87,11 +87,32 @@
 
 .detail-page[data-workspace='true'] .repository-header-actions {
   flex: none;
+  padding-top: 2px;
 }
 
 .detail-page[data-workspace='true'] .repository-header-metrics {
   margin-top: 12px;
-  gap: 8px 24px;
+  gap: 8px 20px;
+}
+
+.detail-page[data-workspace='true'] .repository-header-fetched {
+  margin-top: 6px;
+}
+
+/* One restrained spacing rhythm for existing Workspace sections and cards. */
+.detail-page[data-workspace='true'] .detail-content-responsive section:not([data-metric]) {
+  padding: 16px;
+  border-color: rgb(var(--color-border-subtle) / 0.85);
+  border-radius: 8px;
+}
+
+.detail-page[data-workspace='true'] .detail-content-responsive section:not([data-metric]) > div:first-child:has(> h2) {
+  margin-bottom: 12px;
+  row-gap: 8px;
+}
+
+.detail-page[data-workspace='true'] .detail-content-responsive .state-section {
+  padding-block: 12px;
 }
 
 .detail-page[data-workspace='true'] .repository-header-metrics > div {

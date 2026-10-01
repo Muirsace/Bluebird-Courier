@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RenderResult, StubHandle } from './helpers';
 import {
   buttonByText, click, createStub, makeGlance, navButton, openAddInput, renderApp,
-  repoActionsButton, repoOpenButton, resetSystemTheme, setViewportWidth,
+  openRepositoryActions, repoOpenButton, resetSystemTheme, setViewportWidth,
   settle, submitForm, tab, typeInto,
 } from './helpers';
 
@@ -186,7 +186,7 @@ describe('Desktop AppShell', () => {
     Object.defineProperty(HTMLElement.prototype, 'hidePopover', { configurable: true, value: hide });
     try {
       await mount();
-      await click(repoActionsButton('owner/A'));
+      await openRepositoryActions('owner/A');
       await settle();
       const surface = sidebar().querySelector<HTMLElement>('.repository-action-positioner')!;
       expect(surface.dataset.shellOverlay).toBe('true');

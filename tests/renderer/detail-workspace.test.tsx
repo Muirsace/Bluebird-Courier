@@ -5,7 +5,7 @@ import type { DetailResult, Glance } from '../../src/shared/types';
 import type { RenderResult, StubHandle } from './helpers';
 import {
   buttonByText, click, createStub, makeDetail, makeGlance, menuItem, navButton,
-  renderApp, repoActionsButton, repoOpenButton, repoSlot, resetReducedMotion,
+  renderApp, openRepositoryActions, repoOpenButton, repoSlot, resetReducedMotion,
   resetSystemTheme, setReducedMotion, setSystemTheme, setViewportWidth, settle, tab,
 } from './helpers';
 import { readRendererStyles } from './support/styles';
@@ -263,7 +263,7 @@ describe('Workspace selection and lifecycle', () => {
     expect(workspace().querySelector('.settings-page')).not.toBeNull();
     expectNoRepositoryUI();
     await open();
-    await click(repoActionsButton('owner/A'));
+    await openRepositoryActions('owner/A');
     await click(menuItem('从监控清单移除'));
     await settle();
     stub.setRepositories([repos[1]!]);

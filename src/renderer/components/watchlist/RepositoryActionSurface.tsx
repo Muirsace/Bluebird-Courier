@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AnimationEvent as ReactAnimationEvent, CSSProperties, ReactNode, RefObject } from 'react';
 import { motionCompletionMs, OVERLAY_MOTION, prefersReducedMotion } from '../../lib/motion';
-import { chooseOverlayPlacement, overlayMaxWidth, VIEWPORT_SAFE_GAP } from '../../lib/overlay-placement';
+import { chooseContextPlacement, chooseOverlayPlacement, overlayMaxWidth, VIEWPORT_SAFE_GAP } from '../../lib/overlay-placement';
+import type { ContextPoint } from '../../lib/overlay-placement';
 import type { OverlayPlacementResult } from '../../lib/overlay-placement';
 import { appScrollRoot } from '../../lib/app-layout';
 
@@ -18,6 +19,7 @@ interface RepositoryActionSurfaceProps {
   closing: boolean;
   onExitEnd: () => void;
   triggerRef: RefObject<HTMLButtonElement>;
+  contextPoint?: ContextPoint;
   children: ReactNode;
 }
 
@@ -46,6 +48,7 @@ export function RepositoryActionSurface({
   closing,
   onExitEnd,
   triggerRef,
+  contextPoint,
   children,
 }: RepositoryActionSurfaceProps) {
   const positionerRef = useRef<HTMLDivElement>(null);
@@ -73,22 +76,24 @@ export function RepositoryActionSurface({
     setShellOverlay(appScrollRoot(trigger) !== null);
     // 宽度只由 stage 与视口决定，先落到 DOM：确认框比菜单宽，换行位置不同、高度也不同，
     // 所以高度必须在最终宽度下量。
-    const width = Math.min(STAGE_WIDTH[stage], overlayMaxWidth(triggerRect, window.innerWidth));
+    const width = Math.min(STAGE_WIDTH[stage], contextPoint
+      ? Math.max(0, window.innerWidth - VIEWPORT_SAFE_GAP * 2) : overlayMaxWidth(triggerRect, window.innerWidth));
     positioner.style.setProperty('--overlay-width', `${width}px`);
 
     // 边框已经画在 surface 上，测量值要含进去才是外壳的目标高度
     const borderY = surface.offsetHeight - surface.clientHeight;
     const height = Math.round(content.getBoundingClientRect().height) + borderY;
 
-    const placement = chooseOverlayPlacement({
+    const contextLayout = contextPoint ? chooseContextPlacement(contextPoint, width, height, window.innerWidth, window.innerHeight) : undefined;
+    const placement = contextLayout ?? chooseOverlayPlacement({
       triggerRect,
       overlayHeight: height,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
     });
     const clamped = height > placement.maxHeight;
-    const right = window.innerWidth - triggerRect.right;
-    const edge = placement.placement === 'bottom' ? triggerRect.bottom + 8 : window.innerHeight - triggerRect.top + 8;
+    const right = contextLayout?.right ?? window.innerWidth - triggerRect.right;
+    const edge = contextLayout?.edge ?? (placement.placement === 'bottom' ? triggerRect.bottom + 8 : window.innerHeight - triggerRect.top + 8);
 
     // 值没变就不写 state：滚动与 resize 会高频触发这里
     setLayout((prev) =>
@@ -105,7 +110,7 @@ export function RepositoryActionSurface({
         : { ...placement, width, height, clamped, right, edge },
     );
     previousSizeRef.current = { width, height };
-  }, [stage, measureKey, triggerRef]);
+  }, [stage, measureKey, triggerRef, contextPoint]);
 
   /** 给 resize / 滚动 / 内容变化用的重量：尺寸补间期间跳过，等它结束再补一次。 */
   const remeasure = useCallback((): void => {
@@ -168,7 +173,7 @@ export function RepositoryActionSurface({
   const followAnchor = useCallback((): void => {
     const trigger = triggerRef.current;
     const positioner = positionerRef.current;
-    if (!shellOverlay || !layout || !trigger || !positioner) return;
+    if (contextPoint || !shellOverlay || !layout || !trigger || !positioner) return;
     const triggerRect = trigger.getBoundingClientRect();
     const placement = chooseOverlayPlacement({
       triggerRect, overlayHeight: layout.height,
@@ -186,13 +191,13 @@ export function RepositoryActionSurface({
       surfaceRef.current.dataset.placement = placement.placement;
       surfaceRef.current.dataset.clamped = layout.height > placement.maxHeight ? 'true' : 'false';
     }
-  }, [shellOverlay, triggerRef, layout?.height]);
+  }, [shellOverlay, triggerRef, layout?.height, contextPoint]);
 
   // A Watchlist commit can reposition the anchor between two animation frames.
   useLayoutEffect(() => { followAnchor(); });
 
   useEffect(() => {
-    if (!shellOverlay) return;
+    if (!shellOverlay || contextPoint) return;
     let frame = 0;
     const followFrame = (): void => {
       followAnchor();
@@ -220,7 +225,7 @@ export function RepositoryActionSurface({
       observer?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, [shellOverlay, followAnchor, triggerRef]);
+  }, [shellOverlay, followAnchor, triggerRef, contextPoint]);
 
   // 内容尺寸变化（错误提示出现、按钮进入 busy）也要跟着重量
   useEffect(() => {
@@ -277,6 +282,7 @@ export function RepositoryActionSurface({
       ref={positionerRef}
       className="repository-action-positioner"
       data-shell-overlay={shellOverlay ? 'true' : undefined}
+      data-context-point={contextPoint ? 'true' : undefined}
       data-placement={placement}
       data-swapping={swap ? 'true' : undefined}
       style={style}

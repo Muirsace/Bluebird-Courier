@@ -5,7 +5,7 @@ import type { Detail, DetailResult } from '../../src/shared/types';
 import { makeDetail, makeGlance, makeSnapshot, createStub, renderApp, settle, click, repoOpenButton,
   buttonByText, buttonByLabel, tab, typeInto, submitForm, openAddInput, refreshAllButton,
   setViewportWidth, setReducedMotion, resetReducedMotion, setSystemTheme, resetSystemTheme,
-  sectionByTitle, repoActionsButton, menuItem, repoSlot, settleMotion } from './helpers';
+  sectionByTitle, openRepositoryActions, menuItem, repoSlot, settleMotion } from './helpers';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
 import { readRendererStyles } from './support/styles';
 
@@ -225,7 +225,7 @@ describe('Inline feedback and gate', () => {
   });
 
   it('remove error stays in the existing confirmation, with retry and no new focus jump', async () => {
-    await mount(900, { removeFails: true }); await click(repoActionsButton(repo.fullName));
+    await mount(900, { removeFails: true }); await openRepositoryActions(repo.fullName);
     await click(menuItem('从监控清单移除')); await settle();
     const confirm = buttonByText('移除')!; confirm.focus(); await click(confirm); await settle();
     const dialog = document.querySelector('[role="dialog"]')!;

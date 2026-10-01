@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import type { Glance } from '../../../shared/types';
 import { getApi } from '../../lib/api';
 import { describeOpenFailure } from '../../lib/external-link';
 import { Spinner } from '../Spinner';
 import { RemoveRepositoryPopover } from './RemoveRepositoryPopover';
 import { RepositoryActionSurface } from './RepositoryActionSurface';
+import { appScrollRoot, DESKTOP_SHELL_QUERY } from '../../lib/app-layout';
+import type { ContextPoint } from '../../lib/overlay-placement';
 
 /** closed → 无浮层；menu → ··· 菜单；confirm → 移除确认。 */
 type Stage = 'closed' | 'menu' | 'confirm';
@@ -15,6 +18,8 @@ interface RepositoryActionsProps {
   onRemove: (repositoryId: number) => Promise<void>;
   /** 卡片正在退场：入口立即失效，不再接受任何操作。 */
   disabled?: boolean;
+  /** Desktop uses the row itself; Narrow keeps the existing visible button. */
+  contextTriggerRef?: RefObject<HTMLButtonElement>;
 }
 
 /**
@@ -23,14 +28,18 @@ interface RepositoryActionsProps {
  * 菜单 → 确认是"同一外壳换内容"（不卸载、不跳变），本组件只负责状态机
  * （stage / closing / busy / error）与键盘、焦点、错误处理、安全规则。
  */
-export function RepositoryActions({ repo, onRemove, disabled = false }: RepositoryActionsProps) {
+export function RepositoryActions({ repo, onRemove, disabled = false, contextTriggerRef }: RepositoryActionsProps) {
   const [stage, setStage] = useState<Stage>('closed');
   /** 正在播关闭动画：外壳留在原位淡出，播完（或兜底计时器到点）才真正卸载。 */
   const [closing, setClosing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const buttonTriggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = contextTriggerRef ?? buttonTriggerRef;
+  const [contextPoint, setContextPoint] = useState<ContextPoint>();
+  const restoreFocusRef = useRef(true);
+  const sessionRef = useRef(0);
   const menuItemRef = useRef<HTMLButtonElement>(null);
   const removeMenuItemRef = useRef<HTMLButtonElement>(null);
   const menuId = `repository-menu-${repo.id}`;
@@ -40,6 +49,8 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
 
   /** 立即收起：删除成功时用，保持"先关浮层、再播卡片退场"的时序。 */
   const closeNow = useCallback((): void => {
+    sessionRef.current += 1;
+    setBusy(false);
     setClosing(false);
     setStage('closed');
     setError(null);
@@ -54,8 +65,100 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
     setError(null);
     const active = document.activeElement;
     const dropped = !active || active === document.body;
-    if (dropped || containerRef.current?.contains(active)) triggerRef.current?.focus();
-  }, []);
+    if (restoreFocusRef.current && (dropped || containerRef.current?.contains(active))) {
+      const trigger = triggerRef.current;
+      if (trigger?.isConnected && !trigger.disabled && !trigger.closest('[inert]')) trigger.focus({ preventScroll: !!contextTriggerRef });
+    }
+  }, [triggerRef, contextTriggerRef]);
+
+  // Both desktop gestures enter the same state machine, without invoking row selection.
+  useEffect(() => {
+    const trigger = contextTriggerRef?.current;
+    const row = trigger?.closest('.repository-sidebar-row');
+    if (!trigger || !row) return;
+    const openContext = (keyboard: boolean, point?: ContextPoint): void => {
+      if (disabled || busy || trigger.disabled || trigger.closest('[inert]')) return;
+      sessionRef.current += 1;
+      document.dispatchEvent(new CustomEvent('repository-context-open', { detail: repo.id }));
+      const rect = trigger.getBoundingClientRect();
+      restoreFocusRef.current = keyboard;
+      setContextPoint(point ?? { x: rect.right - 12, y: rect.top + rect.height / 2 });
+      setClosing(false);
+      setError(null);
+      setStage('menu');
+    };
+    const onContextMenu = (event: Event): void => {
+      const mouse = event as MouseEvent;
+      event.preventDefault();
+      if (containerRef.current?.contains(event.target as Node)) return;
+      // Chromium's ContextMenu key also emits a contextmenu event with nonzero coordinates.
+      const keyboard = mouse.button !== 2;
+      openContext(keyboard, keyboard ? undefined : { x: mouse.clientX, y: mouse.clientY });
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault();
+      openContext(true);
+    };
+    row.addEventListener('contextmenu', onContextMenu);
+    trigger.addEventListener('keydown', onKeyDown);
+    return () => {
+      row.removeEventListener('contextmenu', onContextMenu);
+      trigger.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextTriggerRef, disabled, busy, repo.id]);
+
+  useLayoutEffect(() => { if (disabled) closeNow(); }, [disabled, closeNow]);
+
+  // Cursor coordinates lose meaning when their list/viewport/context changes.
+  useEffect(() => {
+    if (!open || !contextTriggerRef) return;
+    const trigger = contextTriggerRef.current;
+    const root = appScrollRoot(trigger);
+    const list = trigger?.closest('ul');
+    const slot = trigger?.closest('li');
+    const shell = trigger?.closest('.app-shell');
+    const wasSettings = !!shell?.querySelector('.settings-page');
+    const closeContext = (): void => {
+      if (restoreFocusRef.current && window.matchMedia(DESKTOP_SHELL_QUERY).matches &&
+        trigger?.isConnected && !trigger.disabled && !trigger.closest('[inert]') &&
+        containerRef.current?.contains(document.activeElement)) trigger.focus({ preventScroll: true });
+      closeNow();
+    };
+    const observer = new MutationObserver(() => {
+      if (!trigger?.isConnected || slot?.hasAttribute('inert') ||
+        (!wasSettings && shell?.querySelector('.settings-page'))) closeNow();
+    });
+    if (slot) observer.observe(slot, { attributes: true, attributeFilter: ['inert'] });
+    if (shell) observer.observe(shell, { childList: true, subtree: true });
+    const listObserver = new MutationObserver(closeContext);
+    if (list) listObserver.observe(list, { childList: true });
+    const bounds = root?.getBoundingClientRect();
+    const resizeObserver = root && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
+      const next = root.getBoundingClientRect();
+      if (bounds && (next.top !== bounds.top || next.height !== bounds.height || next.width !== bounds.width)) closeContext();
+    }) : null;
+    if (root) resizeObserver?.observe(root);
+    const closeOther = (event: Event): void => {
+      if ((event as CustomEvent<number>).detail !== repo.id) closeNow();
+    };
+    const onVisibility = (): void => { if (document.hidden) closeNow(); };
+    root?.addEventListener('scroll', closeContext, { passive: true });
+    window.addEventListener('resize', closeContext);
+    window.addEventListener('blur', closeNow);
+    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('repository-context-open', closeOther);
+    return () => {
+      observer.disconnect();
+      listObserver.disconnect();
+      resizeObserver?.disconnect();
+      root?.removeEventListener('scroll', closeContext);
+      window.removeEventListener('resize', closeContext);
+      window.removeEventListener('blur', closeNow);
+      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('repository-context-open', closeOther);
+    };
+  }, [open, contextTriggerRef, closeNow, repo.id]);
 
   // 浮层打开期间的通用退出：Esc / Tab / 点外部 / 焦点移出
   useEffect(() => {
@@ -66,6 +169,8 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
         // 消费掉这次按键：更外层的导航（例如详情页的 Esc 返回，挂在 window 上、冒泡更晚）
         // 靠 defaultPrevented 判断"浮层先拿了这次 Esc"，就不该再切页
         event.preventDefault();
+        // Desktop Omnibox also owns Esc; an open context surface consumes it first.
+        if (contextTriggerRef) event.stopImmediatePropagation();
         dismiss();
         return;
       }
@@ -87,7 +192,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
 
       if (nextIndex !== null) {
         event.preventDefault();
-        items[nextIndex]?.focus();
+        items[nextIndex]?.focus({ preventScroll: !!contextTriggerRef });
       }
     }
     function handlePointerDown(event: MouseEvent): void {
@@ -98,36 +203,38 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
       if (busy || closing) return;
       if (!containerRef.current?.contains(event.target as Node)) dismiss();
     }
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, !!contextTriggerRef);
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('focusin', handleFocusIn);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, !!contextTriggerRef);
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('focusin', handleFocusIn);
     };
-  }, [open, busy, stage, closing, dismiss]);
+  }, [open, busy, stage, closing, dismiss, contextTriggerRef]);
 
   // 菜单打开后把焦点交给菜单项
   useEffect(() => {
-    if (stage === 'menu') menuItemRef.current?.focus();
-  }, [stage]);
+    if (stage === 'menu') menuItemRef.current?.focus({ preventScroll: !!contextTriggerRef });
+  }, [stage, contextPoint, contextTriggerRef]);
 
   async function handleConfirm(): Promise<void> {
+    const session = sessionRef.current;
     setBusy(true);
     setError(null);
     try {
       await onRemove(repo.id);
-      closeNow();
+      if (session === sessionRef.current) closeNow();
     } catch {
-      setError('删除失败，请稍后重试');
+      if (session === sessionRef.current) setError('删除失败，请稍后重试');
     } finally {
-      setBusy(false);
+      if (session === sessionRef.current) setBusy(false);
     }
   }
 
   /** 跳 GitHub：成功了才收起菜单；失败时菜单留着，就地报错，不让人误以为已经跳走。 */
   async function handleOpenExternal(): Promise<void> {
+    const session = sessionRef.current;
     // 调用期间锁住菜单：否则结果回来时菜单已被点掉，失败提示就没地方显示
     setBusy(true);
     setError(null);
@@ -137,13 +244,14 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
         owner: repo.owner,
         name: repo.name,
       });
+      if (session !== sessionRef.current) return;
       if (!result.ok) {
         setError(describeOpenFailure(result.reason));
         return;
       }
       dismiss();
     } finally {
-      setBusy(false);
+      if (session === sessionRef.current) setBusy(false);
     }
   }
 
@@ -159,7 +267,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
 
   return (
     <div ref={containerRef} className="relative shrink-0">
-      <button
+      {!contextTriggerRef ? <button
         ref={triggerRef}
         type="button"
         aria-haspopup={stage === 'confirm' ? 'dialog' : 'menu'}
@@ -175,7 +283,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
         }`}
       >
         ···
-      </button>
+      </button> : null}
 
       {open ? (
         <RepositoryActionSurface
@@ -184,6 +292,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
           closing={closing}
           onExitEnd={closeNow}
           triggerRef={triggerRef}
+          contextPoint={contextPoint}
         >
           {stage === 'confirm' ? (
             <RemoveRepositoryPopover
@@ -191,6 +300,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false }: Reposito
               fullName={repo.fullName}
               busy={busy}
               error={error}
+              preventScroll={!!contextTriggerRef}
               onCancel={dismiss}
               onConfirm={() => void handleConfirm()}
             />

@@ -57,7 +57,7 @@
 .watchlist-sidebar-chrome {
   flex: none;
   min-width: 0;
-  padding: 8px 16px 12px;
+  padding: 4px 16px 12px;
   border-bottom: 1px solid rgb(var(--color-border-subtle));
 }
 
@@ -120,7 +120,23 @@
 }
 
 .watchlist-add-form[data-omnibox='true'] input {
+  height: 36px;
   padding-inline-start: 34px;
+  font-size: 13px;
+  background-color: rgb(var(--color-surface));
+}
+
+.watchlist-add-form[data-omnibox='true'] input:not([aria-invalid='true']):not(:focus) {
+  border-color: rgb(var(--color-border));
+}
+
+.watchlist-add-form[data-omnibox='true'] input:focus-visible {
+  outline: 2px solid rgb(var(--color-focus-ring) / 0.3);
+  outline-offset: 1px;
+}
+
+.watchlist-add-form[data-omnibox='true'] .watchlist-inline-message > div > div {
+  padding-top: 8px;
 }
 
 .watchlist-add-form[data-omnibox='true'] .add-repository-status {
@@ -141,6 +157,29 @@
   overscroll-behavior-y: contain;
   overflow-anchor: none;
   padding: 12px 16px 20px;
+}
+
+/* Keep the existing scroll root/gutter; only the scrollbar palette is quieter. */
+.repository-list-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.repository-list-viewport::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border-strong) / 0.65);
+  border-color: rgb(var(--color-app));
+}
+
+.repository-list-viewport:hover::-webkit-scrollbar-thumb,
+.repository-list-viewport::-webkit-scrollbar-thumb:active {
+  background: rgb(var(--color-text-muted) / 0.65);
+}
+
+[data-theme='dark'] .repository-list-viewport::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border-strong));
+}
+
+[data-theme='dark'] .repository-list-viewport:hover::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-text-muted) / 0.55);
 }
 
 .repository-list-viewport .repo-row-slot {
@@ -190,6 +229,11 @@
 
 .workspace-repo-context .compact-repo-context {
   max-width: 100%;
+}
+
+.workspace-repo-context .compact-repo-context > span:last-child {
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .workspace-empty {

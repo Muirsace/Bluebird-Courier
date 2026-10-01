@@ -9,6 +9,8 @@ interface RemoveRepositoryPopoverProps {
   busy: boolean;
   /** 移除失败的原因；失败时 Popover 不关闭，用户可重试或取消。 */
   error: string | null;
+  /** Cursor surfaces must not scroll their source list when transferring focus. */
+  preventScroll?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -24,14 +26,15 @@ export function RemoveRepositoryPopover({
   fullName,
   busy,
   error,
+  preventScroll = false,
   onCancel,
   onConfirm,
 }: RemoveRepositoryPopoverProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    cancelRef.current?.focus();
-  }, []);
+    cancelRef.current?.focus({ preventScroll });
+  }, [preventScroll]);
 
   return (
     <div id={id} role="dialog" aria-label="从监控清单移除仓库" className="p-3">

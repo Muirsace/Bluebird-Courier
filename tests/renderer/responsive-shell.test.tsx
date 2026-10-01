@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RenderResult, StubHandle } from './helpers';
 import {
   buttonByText, click, createStub, makeGlance, menuItem, navButton, openAddInput, refreshAllButton, renderApp,
-  repoActionsButton, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
+  repoActionsButton, openRepositoryActions, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
   resetSystemTheme, setReducedMotion, setSystemTheme, setViewportWidth, settle,
   settleMotion, submitForm, tab, typeInto,
 } from './helpers';
@@ -310,8 +310,8 @@ describe('in-progress Watchlist interactions', () => {
 
   it.each([1152, 899])('an open menu closes on layout switch from %ipx, with no focus restoration to a detached trigger', async (width) => {
     await mount(width);
-    const trigger = repoActionsButton(A)!;
-    await click(trigger);
+    const trigger = (width >= 900 ? repoOpenButton(A) : repoActionsButton(A))!;
+    await openRepositoryActions(A);
     await settle();
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
     const focus = vi.spyOn(trigger, 'focus');
@@ -319,14 +319,15 @@ describe('in-progress Watchlist interactions', () => {
     expect(document.querySelector('[role="menu"],[role="dialog"],.repository-action-positioner')).toBeNull();
     expect(trigger.isConnected).toBe(false);
     expect(focus).not.toHaveBeenCalled();
-    expect(repoActionsButton(A)?.getAttribute('aria-expanded')).toBe('false');
+    if (width >= 900) expect(repoActionsButton(A)?.getAttribute('aria-expanded')).toBe('false');
+    else expect(repoActionsButton(A)).toBeNull();
   });
 
   it('removing the selected repo while resizing clears identity in the current shell', async () => {
     await mount();
     await open();
     const finish = stub.holdNextRemove();
-    await click(repoActionsButton(A));
+    await openRepositoryActions(A);
     await click(menuItem('从监控清单移除'));
     await click(buttonByText('移除'));
     await resize(899);
@@ -351,7 +352,7 @@ describe('in-progress Watchlist interactions', () => {
     await settle();
     await resize(899);
     expect(repoMotion('owner/new')).toBe('idle');
-    await click(repoActionsButton('owner/new'));
+    await openRepositoryActions('owner/new');
     await click(menuItem('从监控清单移除'));
     stub.setRepositories(repos);
     await click(buttonByText('移除'));

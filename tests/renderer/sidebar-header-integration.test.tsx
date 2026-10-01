@@ -5,7 +5,7 @@ import type { Glance } from '../../src/shared/types';
 import type { RenderResult, StubHandle } from './helpers';
 import {
   buttonByText, click, createStub, makeGlance, menuItem, navButton, refreshAllButton, renderApp,
-  repoActionsButton, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
+  openRepositoryActions, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
   resetSystemTheme, setReducedMotion, setSystemTheme, setViewportWidth,
   settle, settleMotion, submitForm, typeInto,
 } from './helpers';
@@ -153,7 +153,7 @@ describe('Sidebar actions / list scroll contract', () => {
     const nodes = { chrome: chrome(), viewport: viewport() };
     await add('owner/new');
     expect(count()).toBe('3');
-    await click(repoActionsButton('owner/new'));
+    await openRepositoryActions('owner/new');
     await click(menuItem('从监控清单移除'));
     await settle();
     stub.setRepositories(repos);
@@ -263,7 +263,7 @@ describe('Sidebar actions / list scroll contract', () => {
     const root = viewport();
     await add('owner/new');
     expect(repoMotion('owner/new')).toBe('idle');
-    await click(repoActionsButton('owner/new'));
+    await openRepositoryActions('owner/new');
     await click(menuItem('从监控清单移除'));
     await settle();
     stub.setRepositories(repos);
