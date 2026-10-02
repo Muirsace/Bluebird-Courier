@@ -249,7 +249,7 @@ describe('Desktop visual contracts', () => {
     const css = readRendererStyles();
     expect(css).toContain('.repository-list-viewport::-webkit-scrollbar-thumb');
     expect(css).toContain("[data-theme='dark'] .repository-list-viewport::-webkit-scrollbar-thumb");
-    expect(css).toContain(".watchlist-add-form[data-omnibox='true'] input:focus-visible");
+    expect(css).toContain('.watchlist-add-form input:focus-visible');
     expect(css).toContain('.workspace-repo-context .compact-repo-context > span:last-child');
     expect(css).toContain(".detail-page[data-workspace='true'] .detail-content-responsive section:not([data-metric])");
   });
