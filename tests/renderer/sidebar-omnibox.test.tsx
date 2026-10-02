@@ -95,7 +95,7 @@ describe('Desktop Repository Omnibox shell', () => {
   it('already-added feedback belongs to the input; only Open detail changes selection', async () => {
     await mount(); await typeInto(input(), 'owner/B');
     expect(action().type).toBe('button');
-    expect(action().textContent).toContain('已添加');
+    expect(action().dataset.actionKind).toBe('added');
     expect(input().form?.querySelector('#add-repository-duplicate')?.textContent).toContain('已在监控清单中');
     expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
     await submitForm(input().form!);
@@ -108,7 +108,7 @@ describe('Desktop Repository Omnibox shell', () => {
   it('already-added action retains the original manual clear path', async () => {
     await mount(); await typeInto(input(), 'owner/A');
     await click(action());
-    expect(action().getAttribute('aria-label')).toBe('清除输入框');
+    expect(action().getAttribute('aria-label')).toBe('清除输入');
     await click(action());
     expect(input().value).toBe('');
     expect(input().disabled).toBe(false);
@@ -135,7 +135,7 @@ describe('Desktop Repository Omnibox shell', () => {
     const error = input().form?.querySelector('[role="alert"]');
     expect(error?.textContent).toContain('添加失败信息');
     expect(input().getAttribute('aria-describedby')).toBe(error?.id);
-    expect(action().getAttribute('aria-label')).toBe('清除输入框');
+    expect(action().getAttribute('aria-label')).toBe('清除输入');
     expect(viewport().querySelector('[role="alert"]')).toBeNull();
   });
 

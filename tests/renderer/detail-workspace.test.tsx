@@ -57,7 +57,7 @@ describe('Detail Workspace / Legacy navigation', () => {
     expect(buttonByText('← 返回监控清单')).toBeNull();
     expect(document.activeElement).toBe(row);
     expect(heading()?.tagName).toBe('H2');
-    expect(heading()?.textContent).toBe('owner/A');
+    expect(heading()?.textContent).toBe('A');
     const focusable = [...workspace().querySelectorAll<HTMLButtonElement>('button')]
       .filter((button) => !button.disabled && button.tabIndex >= 0);
     expect(focusable[0]?.getAttribute('aria-label')).toBe('在 GitHub 打开 owner/A');
@@ -92,11 +92,11 @@ describe('Detail Workspace / Legacy navigation', () => {
     await act(async () => setViewportWidth(899));
     await settle();
     expect(buttonByText('← 返回监控清单')).not.toBeNull();
-    expect(heading()?.textContent).toBe('owner/A');
+    expect(heading()?.textContent).toBe('A');
     await act(async () => setViewportWidth(900));
     await settle();
     expect(buttonByText('← 返回监控清单')).toBeNull();
-    expect(heading()?.textContent).toBe('owner/A');
+    expect(heading()?.textContent).toBe('A');
   });
 
   it('Desktop Escape keeps the repository workspace selected', async () => {
@@ -132,7 +132,7 @@ describe('Repository Workspace Header', () => {
     setViewportWidth(900);
     await mount([{ ...makeGlance(1, name), latestReleaseTag: tagName }]);
     await open(name);
-    expect(heading()?.textContent).toBe(name);
+    expect(heading()?.textContent).toBe(name.split('/').pop());
     expect(heading()?.title).toBe(name);
     expect(header()?.querySelector('.repository-header-release')?.getAttribute('title')).toBe(tagName);
     expect(header()?.querySelector('.repository-header-release')?.textContent).toContain(tagName);
@@ -209,7 +209,7 @@ describe('Workspace selection and lifecycle', () => {
     workspace().scrollTop = 700;
     const release = stub.holdNextDetail();
     await open('owner/B');
-    expect(heading()?.textContent).toBe('owner/B');
+    expect(heading()?.textContent).toBe('B');
     expect(header()?.textContent).not.toContain('v1.0.1');
     expect(workspace().querySelector('[role="tabpanel"]')).toBeNull();
     expect(workspace().scrollTop).toBe(0);
@@ -232,7 +232,7 @@ describe('Workspace selection and lifecycle', () => {
     await open('owner/B');
     await act(async () => resolveA({ detail: makeDetail(repos[0]!), error: null }));
     await settle();
-    expect(heading()?.textContent).toBe('owner/B');
+    expect(heading()?.textContent).toBe('B');
     expect(header()?.textContent).toContain('v1.0.2');
     expect(header()?.textContent).not.toContain('v1.0.1');
   });
@@ -245,7 +245,7 @@ describe('Workspace selection and lifecycle', () => {
     slot.scrollTop = 480;
     for (const name of ['A', 'B', 'C', 'D', 'A']) {
       await open(`owner/${name}`);
-      expect(heading()?.textContent).toBe(`owner/${name}`);
+      expect(heading()?.textContent).toBe(name.split('/').pop());
       expect(document.querySelector('.view-transition')).toBeNull();
     }
     expect(stub.calls.fetchDetail).toBe(4);
@@ -338,7 +338,7 @@ describe('Desktop sticky and Compact Context', () => {
     expect(repoObserver.disconnected).toBe(true);
     expect(tabsObserver.disconnected).toBe(true);
     expect(context()?.dataset.visible).toBe('false');
-    expect(context()?.textContent).toContain('owner/B');
+    expect(context()?.querySelector('[title]')?.getAttribute('title')).toBe('owner/B');
     expect(document.querySelector('[role="tablist"]')?.getAttribute('data-stuck')).toBeNull();
   });
 });

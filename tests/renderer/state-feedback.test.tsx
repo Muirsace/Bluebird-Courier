@@ -48,7 +48,7 @@ describe('Workspace state ownership', () => {
     const row = repoOpenButton(repo.fullName)!; row.focus();
     await open();
     const page = detailPage();
-    expect(page.querySelector('.repository-header')?.textContent).toContain(repo.fullName);
+    expect(page.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(repo.fullName);
     expect(page.querySelectorAll('[role="status"]')).toHaveLength(1);
     const loading = page.querySelector('.loading-panel')!;
     expect(loading.getAttribute('aria-busy')).toBe('true');
@@ -67,7 +67,7 @@ describe('Workspace state ownership', () => {
     const row = repoOpenButton(repo.fullName)!; row.focus();
     await open();
     const page = detailPage();
-    expect(page.querySelector('.repository-header')?.textContent).toContain(repo.fullName);
+    expect(page.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(repo.fullName);
     expect(page.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(page.querySelector('.state-workspace')?.textContent).toContain('加载仓库详情失败');
     expect(page.textContent).not.toContain('暂无全量信息');

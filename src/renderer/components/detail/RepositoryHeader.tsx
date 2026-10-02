@@ -49,9 +49,10 @@ export function RepositoryHeader({
       <header className="repository-header rounded-lg border border-subtle bg-surface p-4">
         <div className="repository-header-top flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
           <div className="repository-header-identity min-w-0">
-            <Heading className="repository-header-name break-all font-mono text-lg font-semibold text-primary" title={displayName}>
-              {displayName}
+            <Heading className="repository-header-name break-all font-mono text-lg font-semibold text-primary" title={displayName} aria-label={displayName}>
+              {name}
             </Heading>
+            <div className="repository-header-owner mt-1 truncate text-sm text-secondary" title={owner}>{owner}</div>
             <div className="repository-header-fetched mt-1 text-xs text-muted">
               抓取于 {repository?.fetchedAt ? formatRelativeTime(repository.fetchedAt) : '尚未抓取'}
               {fetching ? <span className="text-secondary"> · 正在更新…</span> : null}

@@ -250,6 +250,16 @@
   line-height: 18px;
 }
 
+/* 1152px leaves 816px for Workspace beside the frozen 336px Sidebar.
+ * Only the duplicate visual disappears; the 24px sticky host stays in place. */
+@media (min-width: 1152px) {
+  .workspace-repo-context .compact-repo-context {
+    display: none;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
 .workspace-empty {
   display: flex;
   flex: 1;

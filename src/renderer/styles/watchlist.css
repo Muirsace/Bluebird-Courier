@@ -155,7 +155,7 @@
 }
 
 .watchlist-add-content[data-action-visible='true'] .watchlist-add-control-row {
-  grid-template-columns: minmax(0, 1fr) 6rem;
+  grid-template-columns: minmax(0, 1fr) 34px;
   column-gap: 0.5rem;
   transition:
     grid-template-columns 190ms var(--motion-ease-out),
@@ -216,7 +216,10 @@
 
 .watchlist-add-content .watchlist-add-action {
   min-width: 0;
-  width: 100%;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  margin-top: 1px;
   overflow: hidden;
   opacity: 0;
   transform: scale(.86);
@@ -267,8 +270,24 @@
 }
 
 .watchlist-add-spinner {
-  border-color: rgb(var(--color-accent-contrast));
+  border-color: currentColor;
   border-top-color: transparent;
+}
+
+.repository-omnibox-action-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: center / contain no-repeat;
+}
+
+.repository-omnibox-add-icon {
+  mask-image: url('./assets/icons/plus.svg');
+}
+
+.repository-omnibox-clear-icon {
+  mask-image: url('./assets/icons/x.svg');
 }
 
 /* Final flow height is immediate. The existing retained message owns the exit window. */
@@ -374,8 +393,9 @@
   opacity: 1;
 }
 
-.repository-sidebar-row:has([data-row-activator]:active) {
+.repository-sidebar-row[data-pressed='true'] {
   --repository-row-background: rgb(var(--color-surface-active));
+  transition-duration: var(--motion-press-in);
 }
 
 .repository-sidebar-activator {
@@ -390,6 +410,7 @@
 }
 
 .repository-sidebar-name,
+.repository-sidebar-owner,
 .repository-sidebar-release {
   display: block;
   min-width: 0;
@@ -415,9 +436,18 @@
   color: rgb(var(--color-text-muted));
 }
 
-.repository-sidebar-release {
+.repository-sidebar-secondary {
+  display: flex;
   flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
   color: rgb(var(--color-text-secondary));
+}
+
+.repository-sidebar-owner,
+.repository-sidebar-release {
+  flex: 0 1 auto;
 }
 
 .repository-sidebar-activity {
@@ -434,6 +464,16 @@
 .repository-sidebar-row[data-selected='true']:has(.repository-action-positioner) {
   --repository-row-background: rgb(var(--color-accent-soft));
   transition-duration: var(--ui-selected-ms);
+}
+
+/* Selection/context own the surface; a primary press can deepen selection only. */
+.repository-sidebar-row[data-selected='true'][data-pressed='true']:not(:has(.repository-action-positioner)) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-accent-soft)) 78%, rgb(var(--color-accent)));
+  transition-duration: var(--motion-press-in);
+}
+
+.repository-sidebar-row[data-press-released='true']:not(:has(.repository-action-positioner)) {
+  transition-duration: var(--motion-press-out);
 }
 
 /* Absolute separators never contribute to the frozen 72px row geometry. */

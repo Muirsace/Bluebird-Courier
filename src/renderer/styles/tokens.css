@@ -19,6 +19,8 @@
   --ui-feedback-enter-ms: 120ms;
   --ui-feedback-exit-ms: 90ms;
   --ui-feedback-shift: -2px;
+  --motion-press-in: 80ms;
+  --motion-press-out: 110ms;
 }
 
 /**

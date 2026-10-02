@@ -45,7 +45,7 @@ async function open(name = A): Promise<void> {
   await settle();
 }
 function expectDetail(desktop: boolean): void {
-  expect(document.querySelector('.repository-header-name')?.textContent).toBe(A);
+  expect(document.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(A);
   expect(document.querySelector('.app-shell') !== null).toBe(desktop);
   expect(buttonByText('← 返回监控清单') !== null).toBe(!desktop);
   expect(document.querySelectorAll('.compact-repo-context')).toHaveLength(1);
@@ -92,7 +92,7 @@ describe('one product state across two layout shells', () => {
     await click(repoOpenButton(A));
     for (const width of [899, 1152, 768]) {
       await resize(width);
-      expect(document.querySelector('.repository-header-name')?.textContent).toBe(A);
+      expect(document.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(A);
       expect(document.querySelector('.detail-loading-slot[data-state="visible"]')).not.toBeNull();
       expect(stub.calls.fetchDetail).toBe(1);
     }
@@ -224,7 +224,7 @@ describe('in-progress Watchlist interactions', () => {
       expect(input()).toBe(field);
       expect(field.value).toBe('facebook/react');
       expect(document.querySelector<HTMLElement>('.watchlist-add-form')?.dataset.expanded).toBe('true');
-      expect(buttonByText('加入')).not.toBeNull();
+      expect(document.querySelector('.watchlist-add-action[data-action-kind="join"]')).not.toBeNull();
     }
     expect(focus).not.toHaveBeenCalled();
     expect(stub.calls.addRepository).toBe(0);
@@ -237,7 +237,7 @@ describe('in-progress Watchlist interactions', () => {
     const finish = stub.holdNextAdd();
     await submitForm(input().form!);
     await resize(899);
-    expect(buttonByText('加入中…')?.disabled).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('.watchlist-add-action[aria-busy="true"]')?.disabled).toBe(true);
     await resize(1152);
     await act(async () => finish());
     await settle();

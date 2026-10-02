@@ -1,3 +1,10 @@
+.trend-chart-viewport {
+  /* Canvas backing dimensions are integral. Fractional grid widths otherwise
+   * trigger a redundant first resize that finishes the native enter animation. */
+  width: round(down, 100%, 1px);
+  max-width: 100%;
+}
+
 /* Long technical text may wrap in either shell without changing Narrow's column rules. */
 .detail-content-responsive {
   min-width: 0;

@@ -26,8 +26,9 @@ export const RepoRow = forwardRef<HTMLLIElement, RepositoryItemProps>(function R
               className="min-w-0 flex-1 rounded-md text-left transition-colors duration-150 ease-out focus-visible:bg-surface-hover"
             >
               <span className="block min-w-0 truncate font-mono text-lg font-semibold leading-8 text-primary">
-                {repo.fullName}
+                {repo.name}
               </span>
+              <span className="block min-w-0 truncate text-sm text-secondary" title={repo.owner}>{repo.owner}</span>
               <span className="mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-2">
                 <GlanceFact label="Stars" value={formatCount(repo.stars)} />
                 <GlanceFact

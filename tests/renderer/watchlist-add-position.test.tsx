@@ -164,10 +164,10 @@ describe('Watchlist 新增位置', () => {
     });
     expect(buttonByText('查看位置')).not.toBeNull();
     expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('true');
-    expect(document.querySelector('.watchlist-add-action')?.textContent).toContain('已添加');
+    expect(document.querySelector<HTMLElement>('.watchlist-add-action')?.dataset.actionKind).toBe('added');
 
     await click(document.querySelector<HTMLButtonElement>('.watchlist-add-action'));
-    expect(document.querySelector('.watchlist-add-action')?.textContent).toContain('清除');
+    expect(document.querySelector<HTMLElement>('.watchlist-add-action')?.dataset.actionKind).toBe('clear');
     expect(buttonByText('查看位置')).not.toBeNull();
 
     const newCard = repoRows()[0];
@@ -204,7 +204,7 @@ describe('Watchlist 新增位置', () => {
     // 提示在滚动期间保持可见：还没到位就收起会让工具栏变矮，卡片会被再挪一次。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
     expect(buttonByText('查看位置')?.disabled).toBe(true);
-    expect(document.querySelector('.watchlist-add-action')?.textContent).toContain('清除');
+    expect(document.querySelector<HTMLElement>('.watchlist-add-action')?.dataset.actionKind).toBe('clear');
 
     await finishSmoothReveal();
     expect(newCard?.dataset.highlightOnly).toBe('true');

@@ -18,6 +18,7 @@ interface CompactRepositoryContextProps {
  * 最大宽度按断点收窄（窄屏优先让给导航，名字进一步省略），不是靠动画宽度做的收放。
  */
 export function CompactRepositoryContext({ fullName, visible }: CompactRepositoryContextProps) {
+  const [owner, name] = fullName.split('/');
   return (
     <div
       className="compact-repo-context flex min-w-0 items-center gap-2 max-w-[9rem] sm:max-w-[15rem] lg:max-w-[22rem]"
@@ -25,8 +26,8 @@ export function CompactRepositoryContext({ fullName, visible }: CompactRepositor
       aria-hidden={visible ? undefined : 'true'}
     >
       <span aria-hidden="true" className="compact-repo-context-divider" />
-      <span className="min-w-0 truncate font-mono text-sm font-medium text-secondary" title={fullName}>
-        {fullName}
+      <span className="min-w-0 truncate font-mono text-sm font-medium text-secondary" title={fullName} aria-label={fullName}>
+        {name} <span className="text-muted">· {owner}</span>
       </span>
     </div>
   );

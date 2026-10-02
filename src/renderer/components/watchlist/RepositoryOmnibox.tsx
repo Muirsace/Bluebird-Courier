@@ -172,22 +172,13 @@ export function RepositoryOmnibox({
     !actionVisible ||
     adding ||
     (requestedAction === 'join' && !parsed.ok);
-  const actionLabel = adding
-    ? '加入中…'
-    : requestedAction === 'clear'
-      ? '清除'
-      : requestedAction === 'added'
-        ? '已添加'
-        : '加入';
   const actionAriaLabel = !actionVisible
     ? undefined
     : adding
       ? '正在加入仓库'
-      : requestedAction === 'clear'
-        ? '清除输入框'
-        : requestedAction === 'added'
-          ? '仓库已添加，切换到清除'
-          : '加入仓库';
+      : requestedAction === 'clear' || requestedAction === 'added'
+        ? '清除输入'
+        : '添加仓库';
 
   const collapse = useCallback((returnFocus = false) => {
     if (successTimerRef.current !== null) window.clearTimeout(successTimerRef.current);
@@ -409,22 +400,18 @@ export function RepositoryOmnibox({
             tabIndex={actionVisible ? 0 : -1}
             aria-busy={adding}
             aria-label={actionAriaLabel}
-            className={`watchlist-add-action relative inline-flex h-9 self-start items-center justify-center rounded-md px-2 text-sm font-medium disabled:cursor-not-allowed ${
-              requestedAction === 'added'
-                ? 'border border-default bg-surface-raised text-secondary'
-                : requestedAction === 'clear'
-                  ? 'border border-default bg-surface-raised text-secondary hover:bg-surface-hover active:bg-surface-active'
-                  : adding
-                    ? 'border border-transparent bg-accent-solid text-accent-contrast'
-                    : actionDisabled
-                      ? 'border border-default bg-surface-raised text-muted'
-                      : 'border border-transparent bg-accent-solid text-accent-contrast hover:bg-accent-solid-hover active:bg-accent-solid-pressed'
+            title={actionAriaLabel}
+            data-action-kind={requestedAction}
+            className={`watchlist-add-action relative inline-flex self-start items-center justify-center rounded-md border border-default bg-surface-raised disabled:cursor-not-allowed hover:bg-surface-hover active:bg-surface-active ${
+              requestedAction === 'clear' || requestedAction === 'added'
+                ? 'text-secondary'
+                : actionDisabled ? 'text-muted' : 'text-accent'
             }`}
           >
             <span className="watchlist-add-action-label" aria-hidden="true">
-              {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : null}
-              <span>{actionLabel}</span>
-              {requestedAction === 'added' ? <span className="text-success">{' '}✓</span> : null}
+              {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : (
+                <span className={`repository-omnibox-action-icon ${requestedAction === 'clear' || requestedAction === 'added' ? 'repository-omnibox-clear-icon' : 'repository-omnibox-add-icon'}`} />
+              )}
             </span>
           </button>
         </div>

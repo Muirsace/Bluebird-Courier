@@ -64,14 +64,14 @@ describe('Desktop AppShell', () => {
     expect(input.isConnected).toBe(true);
     expect(input.value).toBe('draft/repo');
     expect(listViewport().scrollTop).toBe(420);
-    expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
+    expect(workspace().querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe('owner/A');
     expect(sidebar().querySelector('.repo-context-scope')).toBeNull();
     workspace().scrollTop = 650;
     await open('owner/B');
     expect(workspace().scrollTop).toBe(0);
     expect(listViewport().scrollTop).toBe(420);
     expect(sidebar().querySelector('.watchlist-page')).toBe(list);
-    expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/B');
+    expect(workspace().querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe('owner/B');
   });
 
   it('换仓库重新显示概览，Refresh 保持滚动且只刷新当前仓库', async () => {
@@ -230,9 +230,9 @@ describe('900px breakpoint / legacy navigation', () => {
     await open();
     await act(async () => setViewportWidth(768));
     expect(document.querySelector('.app-shell')).toBeNull();
-    expect(document.querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
+    expect(document.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe('owner/A');
     await act(async () => setViewportWidth(900));
-    expect(workspace().querySelector('.repo-context-scope')?.textContent).toContain('owner/A');
+    expect(workspace().querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe('owner/A');
     expect(sidebar().querySelector('.watchlist-page')).not.toBeNull();
   });
 });

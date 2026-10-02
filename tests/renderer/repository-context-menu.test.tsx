@@ -241,7 +241,7 @@ describe('Desktop visual contracts', () => {
     expect(css).toMatch(/\.repository-sidebar-list[^}]*\.repository-sidebar-row::after\s*\{[^}]*position: absolute;[^}]*inset: auto 12px -1px 20px;[^}]*height: 1px/);
     expect(css).toMatch(/\.repository-sidebar-row\[data-selected='true'\]::after[^}]*background: transparent/);
     expect(css).not.toContain('padding-right: 36px');
-    expect(css).toMatch(/\.repository-sidebar-release\s*\{[^}]*color: rgb\(var\(--color-text-secondary\)\)/);
+    expect(css).toMatch(/\.repository-sidebar-secondary\s*\{[^}]*color: rgb\(var\(--color-text-secondary\)\)/);
     expect(css).toContain('.repository-sidebar-activator:focus-visible');
     expect(css).toContain(".repository-sidebar-row[data-selected='true']:has(.repository-action-positioner)");
   });

@@ -54,7 +54,7 @@ describe('Desktop repo switch entrance ownership', () => {
     await open('B');
     expect(detail()?.dataset.workspaceSwitch).toBe('true');
     expect(detail()?.dataset.workspaceEnter).toBeUndefined();
-    expect(detail()?.querySelector('.repository-header-name')?.textContent).toBe('owner/B');
+    expect(detail()?.querySelector('.repository-header-name')?.textContent).toBe('B');
     expect(detail()?.querySelector('[role="tabpanel"]')).toBeNull();
     expect(document.querySelectorAll('.detail-page')).toHaveLength(1);
     await act(async () => release()); await settle();
@@ -80,7 +80,7 @@ describe('Desktop repo switch entrance ownership', () => {
     const nodes = repos.map(repo => repoSlot(repo.fullName));
     for (const name of ['A', 'B', 'C', 'D', 'A']) {
       await open(name);
-      expect(detail()?.querySelector('.repository-header-name')?.textContent).toBe(`owner/${name}`);
+      expect(detail()?.querySelector('.repository-header-name')?.textContent).toBe(name);
       expect(document.querySelectorAll('.detail-page')).toHaveLength(1);
       await settleMotion(50);
     }
@@ -95,7 +95,7 @@ describe('Desktop repo switch entrance ownership', () => {
     const latest = detail();
     await act(async () => release()); await settle();
     expect(detail()).toBe(latest);
-    expect(latest?.textContent).toContain('owner/C');
+    expect(latest?.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe('owner/C');
     expect(latest?.textContent).not.toContain('owner/B');
     expect(document.querySelectorAll('[data-workspace-enter="true"]')).toHaveLength(1);
   });

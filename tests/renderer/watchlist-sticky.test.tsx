@@ -276,7 +276,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(header).toContain('watchlist-toolbar flex w-full flex-wrap items-start gap-2');
     expect(form).toContain('watchlist-add-trigger inline-flex h-9');
     expect(form).toContain('className={`h-9 w-full');
-    expect(form).toContain('watchlist-add-action relative inline-flex h-9');
+    expect(form).toContain('watchlist-add-action relative inline-flex');
     expect(narrowAddForm).toContain('width: calc(100% - 7rem)');
     expect(narrowAddForm).toContain('min-width: min(16rem, 100%)');
     expect(app).toContain('app-global-header sticky top-0 z-10');

@@ -86,13 +86,13 @@ describe('Compact Repository Sidebar', () => {
     await settle();
     expect(selected(A)).toBe('true');
     expect(selected(B)).toBe('false');
-    expect(workspace().textContent).toContain(A);
+    expect(workspace().querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(A);
     workspace().scrollTop = 300;
     await click(repoOpenButton(B));
     await settle();
     expect(selected(A)).toBe('false');
     expect(selected(B)).toBe('true');
-    expect(workspace().textContent).toContain(B);
+    expect(workspace().querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(B);
     expect(workspace().scrollTop).toBe(0);
     expect(sidebar()).toBe(slot);
     expect(listViewport().scrollTop).toBe(460);
@@ -136,12 +136,12 @@ describe('Compact Repository Sidebar', () => {
     await mount([{ ...makeGlance(1, name), latestReleaseTag: tag, stars: 1000000000 }]);
     const button = repoOpenButton(name)!;
     expect(button.title).toBe(name);
-    expect(button.querySelector('.repository-sidebar-name')?.textContent).toBe(name);
+    expect(button.querySelector('.repository-sidebar-name')?.textContent).toBe(name.split('/')[1]);
     expect(button.querySelector('.repository-sidebar-release')?.getAttribute('title')).toBe(tag);
     expect(button.querySelector('.repository-sidebar-activity')).not.toBeNull();
     expect(repoActionsButton(name)).toBeNull();
     const css = readRendererStyles();
-    const truncation = css.match(/\.repository-sidebar-name,\s*\.repository-sidebar-release\s*\{[^}]+\}/)?.[0];
+    const truncation = css.match(/\.repository-sidebar-name,\s*\.repository-sidebar-owner,\s*\.repository-sidebar-release\s*\{[^}]+\}/)?.[0];
     expect(truncation).toContain('min-width: 0');
     expect(truncation).toContain('text-overflow: ellipsis');
     expect(truncation).toContain('white-space: nowrap');
@@ -204,7 +204,7 @@ describe('Compact Repository Sidebar', () => {
     await remove(A, [makeGlance(1, A), makeGlance(2, B)]);
     expect(dialog()?.textContent).toContain('删除失败');
     expect(selected(A)).toBe('true');
-    expect(workspace().textContent).toContain(A);
+    expect(workspace().querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe(A);
     expect(repoSlot(A)?.hasAttribute('inert')).toBe(false);
   });
 
