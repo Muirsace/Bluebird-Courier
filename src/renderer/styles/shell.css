@@ -109,6 +109,7 @@
 
 .watchlist-add-form[data-omnibox='true'] .watchlist-add-field {
   position: relative;
+  overflow: visible;
 }
 
 .repository-omnibox-icon {
@@ -130,12 +131,7 @@
   border-color: rgb(var(--color-border));
 }
 
-.watchlist-add-form[data-omnibox='true'] input:focus-visible {
-  outline: 2px solid rgb(var(--color-focus-ring) / 0.3);
-  outline-offset: 1px;
-}
-
-.watchlist-add-form[data-omnibox='true'] .watchlist-inline-message > div > div {
+.watchlist-add-form[data-omnibox='true'] .watchlist-feedback-visual > div {
   padding-top: 8px;
 }
 
@@ -204,6 +200,7 @@
 .app-shell-workspace {
   grid-column: 3;
   --workspace-context-height: 1.5rem;
+  --workspace-sticky-offset: var(--workspace-context-height);
   /* 原 Compact Context 改由 Workspace 接管；sticky tabs 紧接这条身份行。 */
   --app-header-height: var(--workspace-context-height);
 }
@@ -250,14 +247,22 @@
   line-height: 18px;
 }
 
-/* 1152px leaves 816px for Workspace beside the frozen 336px Sidebar.
- * Only the duplicate visual disappears; the 24px sticky host stays in place. */
+/* Preserve the host and observer coordinates; only the visual docking offset changes. */
 @media (min-width: 1152px) {
-  .workspace-repo-context .compact-repo-context {
-    display: none;
+  /* Cover the old Narrow host before React migrates the page into Workspace. */
+  .compact-repo-context {
+    display: none !important;
     transition: none !important;
     transform: none !important;
+    animation: none !important;
   }
+  .app-shell-workspace {
+    --workspace-sticky-offset: 0px;
+  }
+}
+
+.app-shell-workspace .detail-tabs-sticky {
+  top: var(--workspace-sticky-offset);
 }
 
 .workspace-empty {
@@ -271,7 +276,8 @@
 }
 
 .app-shell-workspace .detail-tab-content-anchor {
-  min-height: calc(100vh - var(--app-chrome-height, 0px) - var(--workspace-context-height) - var(--detail-tabs-height, 0px) - 28px);
+  scroll-margin-top: calc(var(--workspace-sticky-offset) + var(--detail-tabs-height, 0px) + 8px);
+  min-height: calc(100vh - var(--app-chrome-height, 0px) - var(--workspace-sticky-offset) - var(--detail-tabs-height, 0px) - 28px);
 }
 
 /* 菜单使用原有 DOM / 交互，仅在 Shell 内进入 Chromium top layer，避开滚动裁剪。 */

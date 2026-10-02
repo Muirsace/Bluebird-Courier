@@ -70,7 +70,7 @@
 
 .detail-page[data-workspace='true'] .repository-header {
   /* 留白沿用 Workspace 内容槽位，表头只承担底部分隔。 */
-  padding: 0 0 12px;
+  padding: 0 0 8px;
   border: 0;
   border-bottom: 1px solid rgb(var(--color-border-subtle));
   border-radius: 0;
@@ -92,18 +92,25 @@
   white-space: nowrap;
 }
 
+.detail-page[data-workspace='true'] .repository-header-owner {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+
 .detail-page[data-workspace='true'] .repository-header-actions {
   flex: none;
   padding-top: 2px;
 }
 
 .detail-page[data-workspace='true'] .repository-header-metrics {
-  margin-top: 12px;
-  gap: 8px 20px;
+  margin-top: 16px;
+  gap: 8px 24px;
 }
 
 .detail-page[data-workspace='true'] .repository-header-fetched {
-  margin-top: 6px;
+  margin-top: 4px;
+  line-height: 16px;
 }
 
 /* One restrained spacing rhythm for existing Workspace sections and cards. */
@@ -127,6 +134,10 @@
 }
 
 .detail-page[data-workspace='true'] .repository-header-metrics > div > span:last-child {
+  @apply text-sm;
+}
+
+.detail-page[data-workspace='true'] .repository-header-release > div > span:last-child {
   @apply text-sm;
 }
 

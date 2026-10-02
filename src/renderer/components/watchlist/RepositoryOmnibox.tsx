@@ -33,7 +33,8 @@ const VISIBLE_SUCCESS_MS = 1400;
 /** 「查看位置」到位后提示停留多久：够看完高亮，然后提示与输入框一起收回。 */
 const REVEAL_SUCCESS_MS = 700;
 const DUPLICATE_ACTION_MS = 1200;
-const MESSAGE_EXIT_MS = 130;
+// Keep content mounted through --ui-feedback-layout-ms so collapse can finish.
+const MESSAGE_EXIT_MS = 200;
 const FALLBACK_ERROR: NormalizedError = {
   kind: 'unknown',
   message: '加入清单失败，请稍后重试',
@@ -154,6 +155,13 @@ export function RepositoryOmnibox({
             : undefined;
   const messageOpen = formOpen && currentMessage !== null;
   const displayedMessage = currentMessage ?? retainedMessage;
+  // A fresh presentation owns each entrance. Reusing the outgoing visual makes
+  // CSS reverse/shorten its exit and loses the Y entrance on rapid clear/type.
+  // This does not queue messages or change their business/announcement lifecycle.
+  const [messageEntry, setMessageEntry] = useState({ open: false, version: 0 });
+  if (messageEntry.open !== messageOpen) {
+    setMessageEntry({ open: messageOpen, version: messageEntry.version + (messageOpen ? 1 : 0) });
+  }
   const requestedAction: ActionKind = !formOpen
     ? 'none'
     : adding
@@ -166,6 +174,11 @@ export function RepositoryOmnibox({
           ? 'clear'
           : 'join';
   const actionVisible = formOpen && hasInput;
+  // The button stays mounted through its CSS exit. Snapshot only visible actions:
+  // clearing derives `join` for the empty input, but must not replace the outgoing X.
+  const [retainedAction, setRetainedAction] = useState<ActionKind>('none');
+  if (actionVisible && retainedAction !== requestedAction) setRetainedAction(requestedAction);
+  const displayedAction = actionVisible ? requestedAction : retainedAction;
   // 定位进行中只锁「查看位置」自己：卡在 revealing（例如目标卡片一直没提交）时，
   // 用户仍然能靠这个按钮清掉成功提示，不留下关不掉的反馈。
   const actionDisabled =
@@ -366,10 +379,11 @@ export function RepositoryOmnibox({
               placeholder={sidebar ? '输入 owner/repo 添加仓库…' : 'owner/repo 或 GitHub 网址'}
               aria-label="监控仓库（owner/repo 或 GitHub 网址）"
               aria-invalid={invalid || hasRemoteError || undefined}
+              data-validation-state={hasRemoteError ? 'error' : invalid ? 'invalid' : 'normal'}
               aria-describedby={messageOpen ? messageId : undefined}
               disabled={!formOpen || adding}
               tabIndex={formOpen ? 0 : -1}
-              className={`h-9 w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:outline-none focus:ring-2 focus:ring-focus/15 ${
+              className={`h-9 w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-sm text-primary placeholder:text-muted transition-colors duration-150 ease-out focus:outline-none ${
                 hasRemoteError ? 'border-danger focus:border-danger' : invalid
                   ? 'border-warning focus:border-warning'
                   : 'border-strong focus:border-focus'
@@ -403,14 +417,14 @@ export function RepositoryOmnibox({
             title={actionAriaLabel}
             data-action-kind={requestedAction}
             className={`watchlist-add-action relative inline-flex self-start items-center justify-center rounded-md border border-default bg-surface-raised disabled:cursor-not-allowed hover:bg-surface-hover active:bg-surface-active ${
-              requestedAction === 'clear' || requestedAction === 'added'
+              displayedAction === 'clear' || displayedAction === 'added'
                 ? 'text-secondary'
                 : actionDisabled ? 'text-muted' : 'text-accent'
             }`}
           >
             <span className="watchlist-add-action-label" aria-hidden="true">
               {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : (
-                <span className={`repository-omnibox-action-icon ${requestedAction === 'clear' || requestedAction === 'added' ? 'repository-omnibox-clear-icon' : 'repository-omnibox-add-icon'}`} />
+                <span className={`repository-omnibox-action-icon ${displayedAction === 'clear' || displayedAction === 'added' ? 'repository-omnibox-clear-icon' : 'repository-omnibox-add-icon'}`} />
               )}
             </span>
           </button>
@@ -420,8 +434,9 @@ export function RepositoryOmnibox({
           data-open={messageOpen}
           aria-hidden={!messageOpen}
         >
-          <div className="min-h-0 overflow-hidden">
-            <div className="pt-1.5">
+          <div className="watchlist-feedback-track min-h-0">
+            {displayedMessage ? <div key={`${messageEntry.version}-${displayedMessage.kind}`} className="watchlist-feedback-visual">
+              <div className="pt-1.5">
               {displayedMessage?.kind === 'invalid' ? (
                 <InlineFeedback
                   id="add-repository-invalid"
@@ -519,7 +534,8 @@ export function RepositoryOmnibox({
                   ) : null}
                 </InlineFeedback>
               ) : null}
-            </div>
+              </div>
+            </div> : null}
           </div>
         </div>
       </form>

@@ -18,9 +18,12 @@
   --ui-workspace-opacity: 0.88;
   --ui-feedback-enter-ms: 120ms;
   --ui-feedback-exit-ms: 90ms;
+  --ui-feedback-layout-ms: 200ms;
   --ui-feedback-shift: -2px;
   --motion-press-in: 80ms;
   --motion-press-out: 110ms;
+  /* Existing Legacy card release, shared by both repository presentations. */
+  --repo-press-out: 130ms;
 }
 
 /**

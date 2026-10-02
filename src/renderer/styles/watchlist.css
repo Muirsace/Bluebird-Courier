@@ -5,19 +5,24 @@
  * 都落在 .repo-row 上；主点击区只负责"我被按下了"这一个信号（data-row-activator），
  * 自己不再位移也不再变色，避免同一处出现两种反馈。
  */
-.repo-row {
+.repo-row,
+.repository-sidebar-press-surface {
   transition-property: translate, scale, background-color, border-color;
-  transition-duration: 130ms;
+  transition-duration: var(--repo-press-out);
   transition-timing-function: var(--motion-ease-out);
+}
+
+.repo-row:has([data-row-activator]:active),
+.repository-sidebar-row[data-pressed='true']:not(:has(.repository-action-positioner)) > .repository-sidebar-press-surface {
+  translate: 0 1px;
+  scale: 0.985;
+  transition-duration: var(--motion-press-in);
+  transition-timing-function: var(--motion-ease-in);
 }
 
 .repo-row:has([data-row-activator]:active) {
   background-color: rgb(var(--color-surface-active));
   border-color: rgb(var(--color-border-strong));
-  translate: 0 1px;
-  scale: 0.985;
-  transition-duration: 80ms;
-  transition-timing-function: var(--motion-ease-in);
 }
 
 /* Keep the row quiet while its own menu / confirmation surface is open. */
@@ -214,6 +219,24 @@
   transition-delay: 0s;
 }
 
+.watchlist-add-form input[data-validation-state='normal'] {
+  --watchlist-input-focus-color: var(--color-focus-ring);
+}
+
+.watchlist-add-form input[data-validation-state='invalid'] {
+  --watchlist-input-focus-color: var(--color-warning);
+}
+
+.watchlist-add-form input[data-validation-state='error'] {
+  --watchlist-input-focus-color: var(--color-danger);
+}
+
+.watchlist-add-form input:focus-visible {
+  /* Use one state-colored ring for the shared entry and the persistent omnibox. */
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--watchlist-input-focus-color, var(--color-focus-ring)) / 0.3);
+}
+
 .watchlist-add-content .watchlist-add-action {
   min-width: 0;
   width: 34px;
@@ -290,35 +313,49 @@
   mask-image: url('./assets/icons/x.svg');
 }
 
-/* Final flow height is immediate. The existing retained message owns the exit window. */
+/* The stable track interpolates its row size while its keyed visual owns opacity. */
 .watchlist-inline-message {
   display: grid;
-  grid-template-rows: 0fr;
+  grid-template-rows: minmax(0, 0fr);
+  min-height: 0;
   pointer-events: none;
-}
-
-.watchlist-inline-message:has(.state-inline-feedback) {
-  grid-template-rows: 1fr;
-}
-
-.watchlist-inline-message > div {
-  opacity: 0;
-  transform: translateY(var(--ui-feedback-shift));
-  transition:
-    opacity var(--ui-feedback-exit-ms) var(--motion-ease-in),
-    transform 0s var(--ui-feedback-exit-ms);
+  transition: grid-template-rows var(--ui-feedback-layout-ms) var(--motion-ease-in);
 }
 
 .watchlist-inline-message[data-open='true'] {
+  grid-template-rows: minmax(0, 1fr);
   pointer-events: auto;
+  transition-timing-function: var(--motion-ease-out);
 }
 
-.watchlist-inline-message[data-open='true'] > div {
+.watchlist-feedback-track {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.watchlist-feedback-visual {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(0);
+  transition: opacity var(--ui-feedback-exit-ms) var(--motion-ease-in);
+}
+
+.watchlist-inline-message[data-open='true'] .watchlist-feedback-visual {
   opacity: 1;
   transform: translateY(0);
   transition:
     opacity var(--ui-feedback-enter-ms) var(--motion-ease-out),
     transform var(--ui-feedback-enter-ms) var(--motion-ease-out);
+}
+
+/* Newly mounted/re-entering messages need an actual before-change style.
+ * Only real content mounts a visual; the stable empty host paints nothing. */
+@starting-style {
+  .watchlist-inline-message[data-open='true'] .watchlist-feedback-visual {
+    opacity: 0;
+    transform: translateY(var(--ui-feedback-shift));
+  }
 }
 
 @media (max-width: 35rem) {
@@ -363,8 +400,15 @@
   height: 72px;
   min-width: 0;
   border-radius: 8px;
+}
+
+/* Only the visual plane presses; row bounds, dividers and indicator stay fixed. */
+.repository-sidebar-press-surface {
+  position: relative;
+  height: 100%;
+  border-radius: inherit;
   background-color: var(--repository-row-background);
-  transition: background-color var(--ui-selected-ms) var(--motion-ease-out);
+  transition-duration: var(--repo-press-out), var(--repo-press-out), var(--ui-selected-ms), var(--ui-selected-ms);
 }
 
 .repository-sidebar-row:hover {
@@ -385,6 +429,7 @@
   border-radius: 2px;
   background-color: rgb(var(--color-accent));
   pointer-events: none;
+  z-index: 1;
   opacity: 0;
   transition: opacity var(--ui-selected-ms) var(--motion-ease-out);
 }
@@ -395,7 +440,10 @@
 
 .repository-sidebar-row[data-pressed='true'] {
   --repository-row-background: rgb(var(--color-surface-active));
-  transition-duration: var(--motion-press-in);
+}
+
+.repository-sidebar-row[data-selected='true'][data-pressed='true'] {
+  --repository-row-background: rgb(var(--color-accent-soft));
 }
 
 .repository-sidebar-activator {
@@ -457,23 +505,23 @@
 
 .repository-sidebar-row:has(.repository-action-positioner[data-context-point='true']) {
   --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 70%, rgb(var(--color-app)));
-  transition-duration: var(--ui-context-surface-ms);
+}
+
+.repository-sidebar-row:has(.repository-action-positioner[data-context-point='true']) > .repository-sidebar-press-surface {
+  transition-duration: var(--repo-press-out), var(--repo-press-out), var(--ui-context-surface-ms), var(--ui-context-surface-ms);
 }
 
 /* Selection owns the surface even while this row is the context target. */
 .repository-sidebar-row[data-selected='true']:has(.repository-action-positioner) {
   --repository-row-background: rgb(var(--color-accent-soft));
-  transition-duration: var(--ui-selected-ms);
 }
 
-/* Selection/context own the surface; a primary press can deepen selection only. */
-.repository-sidebar-row[data-selected='true'][data-pressed='true']:not(:has(.repository-action-positioner)) {
-  --repository-row-background: color-mix(in srgb, rgb(var(--color-accent-soft)) 78%, rgb(var(--color-accent)));
-  transition-duration: var(--motion-press-in);
+.repository-sidebar-row[data-selected='true']:has(.repository-action-positioner) > .repository-sidebar-press-surface {
+  transition-duration: var(--repo-press-out), var(--repo-press-out), var(--ui-selected-ms), var(--ui-selected-ms);
 }
 
-.repository-sidebar-row[data-press-released='true']:not(:has(.repository-action-positioner)) {
-  transition-duration: var(--motion-press-out);
+.repository-sidebar-row[data-press-released='true']:not(:has(.repository-action-positioner)) > .repository-sidebar-press-surface {
+  transition-duration: var(--repo-press-out);
 }
 
 /* Absolute separators never contribute to the frozen 72px row geometry. */
@@ -497,11 +545,11 @@
 }
 
 /* Highlight returns to the current hover / selection surface, without changing geometry. */
-.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row {
+.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface {
   animation: repository-sidebar-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
 }
 
-.repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row {
+.repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface {
   animation: repository-sidebar-highlight 560ms cubic-bezier(0.4, 0, 1, 1);
 }
 

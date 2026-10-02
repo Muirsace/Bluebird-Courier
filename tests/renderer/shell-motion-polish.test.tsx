@@ -149,7 +149,7 @@ describe('Desktop repo switch entrance ownership', () => {
 });
 
 describe('Feedback lifecycle remains business-owned', () => {
-  it.each([1152, 480])('%ipx existing 1400ms success ends live semantics before the existing 130ms DOM exit', async (width) => {
+  it.each([1152, 480])('%ipx existing 1400ms success ends live semantics before the 200ms layout exit', async (width) => {
     vi.useFakeTimers(); setViewportWidth(width); await mount();
     const field = await openAddInput(); await typeInto(field, 'owner/new');
     await submitForm(field.form!); await settle();
@@ -163,7 +163,7 @@ describe('Feedback lifecycle remains business-owned', () => {
     expect(message().getAttribute('aria-hidden')).toBe('true');
     expect(message().querySelector('[role="status"]')).toBeNull();
     expect(message().querySelector('#add-repository-success')).toBe(status);
-    await settleMotion(129);
+    await settleMotion(199);
     expect(message().querySelector('#add-repository-success')).toBe(status);
     await settleMotion(1);
     expect(message().querySelector('#add-repository-success')).toBeNull();
@@ -178,7 +178,7 @@ describe('Feedback lifecycle remains business-owned', () => {
       await settleMotion(50);
     }
     expect(message().dataset.open).toBe('false');
-    await settleMotion(130);
+    await settleMotion(200);
     expect(message().querySelector('.state-inline-feedback')).toBeNull();
     expect(stub.calls.addRepository).toBe(0);
   });
@@ -208,7 +208,8 @@ describe('Visual motion contracts', () => {
   it('Selected and indicator animate only surface/opacity, with stable 72px geometry', () => {
     const row = rule('.repository-sidebar-row {');
     expect(row).toContain('height: 72px');
-    expect(row).toContain('transition: background-color var(--ui-selected-ms)');
+    const surface = css.match(/\.repository-sidebar-press-surface\s*\{\s*position:[^}]+/)?.[0] ?? '';
+    expect(surface).toContain('var(--ui-selected-ms)');
     expect(row).not.toMatch(/translate|scale|layout/);
     const indicator = rule('.repository-sidebar-row::before {');
     expect(indicator).toContain('width: 3px');
@@ -236,18 +237,20 @@ describe('Visual motion contracts', () => {
     expect(css).toContain(".detail-page[data-workspace-switch='true'] .detail-reveal-item");
   });
 
-  it('Feedback changes flow height immediately and transitions only internal opacity/transform', () => {
-    expect(rule('.watchlist-inline-message {')).not.toContain('transition');
-    expect(rule('.watchlist-inline-message:has(.state-inline-feedback) {')).toContain('grid-template-rows: 1fr');
-    const closed = rule('.watchlist-inline-message > div {');
+  it('Feedback interpolates flow height with a stable track and independent visual fade', () => {
+    expect(rule('.watchlist-inline-message {')).toContain('grid-template-rows var(--ui-feedback-layout-ms)');
+    expect(rule(".watchlist-inline-message[data-open='true'] {")).toContain('grid-template-rows: minmax(0, 1fr)');
+    expect(rule('.watchlist-feedback-track {')).toContain('min-height: 0');
+    expect(rule('.watchlist-feedback-track {')).toContain('overflow: hidden');
+    const closed = rule('.watchlist-feedback-visual {');
     expect(closed).toContain('opacity var(--ui-feedback-exit-ms)');
     expect(closed).not.toMatch(/transition:\s*(grid|height)/);
-    expect(rule(".watchlist-inline-message[data-open='true'] > div {")).toContain('transform var(--ui-feedback-enter-ms)');
+    expect(rule(".watchlist-inline-message[data-open='true'] .watchlist-feedback-visual {")).toContain('transform var(--ui-feedback-enter-ms)');
   });
 
   it('Reduced Motion disables the new transforms/entrance and keeps existing short context opacity', () => {
     const reduced = source('src/renderer/styles/accessibility.css');
-    expect(reduced).toMatch(/\.watchlist-inline-message > div,[\s\S]*?transform: none !important/);
+    expect(reduced).toMatch(/\.watchlist-feedback-visual,[\s\S]*?transform: none !important/);
     expect(reduced).toMatch(/\.detail-page\[data-workspace-enter='true'\]\s*\{\s*animation: none !important/);
     expect(reduced).toMatch(/\.compact-repo-context,[\s\S]*?transform: none !important;\s*transition: opacity 40ms linear !important/);
   });

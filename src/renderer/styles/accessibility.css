@@ -26,8 +26,8 @@
     transition: none !important;
   }
 
-  .watchlist-inline-message > div,
-  .watchlist-inline-message[data-open='true'] > div,
+  .watchlist-feedback-visual,
+  .watchlist-inline-message[data-open='true'] .watchlist-feedback-visual,
   .repository-sidebar-row,
   .repository-sidebar-row::before {
     transition: none !important;
@@ -56,8 +56,8 @@
   /* 卡片位移与退出淡出由 Motion 降级；CSS 仍关闭两种颜色高亮。 */
   .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
   .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row,
-  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row,
-  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row {
+  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface,
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface {
     animation: none !important;
   }
 
@@ -78,7 +78,8 @@
   }
 
   /* 卡片：按下仍然变灰，但整卡不再下压 */
-  .repo-row:has([data-row-activator]:active) {
+  .repo-row:has([data-row-activator]:active),
+  .repository-sidebar-row[data-pressed='true']:not(:has(.repository-action-positioner)) > .repository-sidebar-press-surface {
     translate: none;
     scale: none;
   }

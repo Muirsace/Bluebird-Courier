@@ -117,20 +117,20 @@ describe('Shell-7A primary press lifecycle', () => {
     try {
       await mount(); await pointer('pointerdown'); await pointer('pointerup');
       expect(row().dataset.pressReleased).toBe('true');
-      await act(async () => vi.advanceTimersByTimeAsync(110));
+      await act(async () => vi.advanceTimersByTimeAsync(130));
       expect(row().dataset.pressReleased).toBeUndefined();
     } finally { vi.useRealTimers(); }
   });
 });
 
 describe('Shell-7A visual contracts', () => {
-  const css = readRendererStyles();
+  const css = readRendererStyles().replace(/\/\*[\s\S]*?\*\//g, '');
   it('square is 34px, 16px official icon, no text CTA', () => {
     expect(css).toMatch(/\.watchlist-add-content \.watchlist-add-action\s*\{[^}]*width: 34px;[^}]*height: 34px;[^}]*padding: 0/);
     expect(css).toContain("url('./assets/icons/plus.svg')"); expect(css).toContain("url('./assets/icons/x.svg')");
   });
-  it('only wide Workspace visual is hidden and cannot animate', () => {
-    expect(css).toMatch(/@media \(min-width: 1152px\)\s*\{\s*\.workspace-repo-context \.compact-repo-context\s*\{[^}]*display: none;[^}]*transition: none !important/);
+  it('current wide viewport hides both responsive compact hosts and cannot animate', () => {
+    expect(css).toMatch(/@media \(min-width: 1152px\)\s*\{\s*\.compact-repo-context\s*\{[^}]*display: none !important;[^}]*transition: none !important/);
     expect(css).toMatch(/\.workspace-repo-context\s*\{[^}]*height: var\(--workspace-context-height\)/);
     expect(css).toContain('--workspace-context-height: 1.5rem');
   });

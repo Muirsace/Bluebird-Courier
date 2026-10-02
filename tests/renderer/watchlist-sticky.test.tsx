@@ -269,7 +269,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(toolbar).not.toContain('max-width');
     expect(toolbar).not.toContain('backdrop-filter');
     expect(message).toContain('display: grid');
-    expect(message).toContain('grid-template-rows: 0fr');
+    expect(message).toContain('grid-template-rows: minmax(0, 0fr)');
     expect(message).not.toContain('position: absolute');
     expect(reducedTransitions).toContain('transition: none !important');
     expect(reducedTransform).toContain('transform: none !important');
