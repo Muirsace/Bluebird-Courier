@@ -18,6 +18,7 @@ export function AppShell({ rail, sidebar, sidebarChrome, workspace, workspaceRef
         <div className="app-shell-sidebar-body">{sidebar}</div>
       </aside>
       <section ref={workspaceRef} className="app-shell-workspace" aria-label="工作区" data-app-scroll-root="workspace">
+        <div className="app-shell-window-drag-strip window-drag-region" aria-hidden="true" />
         <div className="app-shell-slot-content">{workspace}</div>
       </section>
     </div>

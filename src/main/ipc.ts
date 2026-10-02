@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc';
-import type { BluebirdCourierFacade, GitHubExternalTarget, OpenExternalResult, SettingsView } from '../shared/types';
+import type { BluebirdCourierFacade, GitHubExternalTarget, OpenExternalResult, ThemePreference } from '../shared/types';
 
 export interface IpcHandlers {
   openGitHubExternal(target: unknown): Promise<OpenExternalResult>;
-  applyTheme(preferences: SettingsView['preferences']): void;
+  applyTheme(preference: ThemePreference): void;
 }
 
 /** Register the fixed IPC surface and forward calls to the already-built facade. */
@@ -13,10 +13,10 @@ export function registerIpc(facade: BluebirdCourierFacade, handlers: IpcHandlers
   ipcMain.handle(IPC_CHANNELS.validateAccessToken, (_event, accessToken: string) => facade.validateAccessToken(accessToken));
   ipcMain.handle(IPC_CHANNELS.saveAccessToken, (_event, accessToken: string) => facade.saveAccessToken(accessToken));
   ipcMain.handle(IPC_CHANNELS.getSettings, () => facade.getSettings());
-  ipcMain.handle(IPC_CHANNELS.updateSettings, async (_event, patch: Record<string, string>) => {
-    const view = await facade.updateSettings(patch);
-    handlers.applyTheme(view.preferences);
-    return view;
+  ipcMain.handle(IPC_CHANNELS.updateSettings, (_event, patch: Record<string, string>) => facade.updateSettings(patch));
+  ipcMain.handle(IPC_CHANNELS.setThemePreference, (_event, preference: unknown) => {
+    if (preference !== 'system' && preference !== 'light' && preference !== 'dark') return;
+    handlers.applyTheme(preference);
   });
   ipcMain.handle(IPC_CHANNELS.inspectRepositoryInput, (_event, input: string) => facade.inspectRepositoryInput(input));
   ipcMain.handle(IPC_CHANNELS.listRepositories, () => facade.listRepositories());

@@ -77,4 +77,11 @@ export interface BluebirdCourierFacade {
   fetchDetail(repositoryId: number): Promise<DetailResult>;
 }
 
-export type BluebirdCourierBridge = BluebirdCourierFacade & import('../domain/types').ExternalLinkBridge;
+/** Narrow platform appearance command exposed beside (outside) the use-case facade. */
+export interface ThemeAppearanceBridge {
+  setThemePreference(preference: import('../domain/types').ThemePreference): Promise<void>;
+}
+
+export type BluebirdCourierBridge = BluebirdCourierFacade
+  & ThemeAppearanceBridge
+  & import('../domain/types').ExternalLinkBridge;

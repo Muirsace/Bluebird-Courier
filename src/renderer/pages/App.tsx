@@ -6,6 +6,7 @@ import lightBrandMark from '../assets/bluebird-mark-light.svg';
 import darkBrandMark from '../assets/bluebird-mark-dark.svg';
 import { getApi } from '../lib/api';
 import { useDesktopShell } from '../lib/app-layout';
+import { useWindowControlsOverlay } from '../lib/window-chrome';
 import { AppShell } from '../components/shell/AppShell';
 import { DesktopSidebarHeader } from '../components/shell/DesktopSidebarHeader';
 import { PageSlot, usePageHost } from '../components/shell/PageHost';
@@ -44,6 +45,7 @@ function navButtonClass(disabled: boolean): string {
 }
 
 export function App() {
+  useWindowControlsOverlay();
   const queryClient = useQueryClient();
   const workspaceRef = useRef<HTMLElement>(null);
   const workspaceHost = usePageHost();
@@ -258,7 +260,7 @@ export function App() {
   return (
     <>
     <div className="app-frame mx-auto flex min-h-full w-full max-w-6xl flex-col" data-desktop={desktop}>
-      {!desktop ? <header ref={headerRef} className="app-global-header sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3">
+      {!desktop ? <header ref={headerRef} className="app-global-header sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3 window-drag-region">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 items-center gap-2">
             <span className="app-brand-mark" aria-hidden="true">

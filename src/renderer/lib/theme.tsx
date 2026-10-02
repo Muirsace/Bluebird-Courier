@@ -24,6 +24,11 @@ function systemThemeNow(): EffectiveTheme {
   return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
 }
 
+/** Native window chrome follows selections immediately; preference persistence is independent. */
+function syncNativeTheme(preference: ThemePreference): void {
+  void getApi().setThemePreference(preference).catch(() => undefined);
+}
+
 /** 系统主题：preference=system 时它决定最终主题，强制模式下只是背景信息。 */
 function useSystemTheme(): EffectiveTheme {
   const [theme, setTheme] = useState<EffectiveTheme>(systemThemeNow);
@@ -81,6 +86,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (next === preference) return;
 
       const requestId = ++requestIdRef.current;
+      syncNativeTheme(next);
       setOptimistic(next);
       setError(null);
       // Queue writes in selection order. Theme application stays immediate, while a delayed older
@@ -95,19 +101,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
       void save.then(
         (view: SettingsView) => {
-          if (requestIdRef.current !== requestId) return;
+          // Keep the rollback base aligned with the most recent successful write, even when
+          // a newer selection makes this response stale for the visible optimistic state.
           queryClient.setQueryData(['settings'], view);
+          if (requestIdRef.current !== requestId) return;
           setOptimistic(null);
         },
         () => {
           if (requestIdRef.current !== requestId) return;
           // 保持现有语义：保存失败回滚到最近一次已保存的偏好并显示错误。
+          const persisted = queryClient.getQueryData<SettingsView>(['settings']);
+          syncNativeTheme(
+            normalizeThemePreference(persisted?.preferences[THEME_PREFERENCE_KEY] ?? savedPreference),
+          );
           setOptimistic(null);
           setError(SAVE_ERROR);
         },
       );
     },
-    [preference, queryClient],
+    [preference, queryClient, savedPreference],
   );
 
   const value = useMemo<ThemeContextValue>(

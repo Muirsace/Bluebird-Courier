@@ -9,7 +9,7 @@ interface DesktopSidebarHeaderProps {
 /** 应用身份和设置入口；导航状态与业务仍由 App 持有。 */
 export function DesktopSidebarHeader({ settingsActive, onGoSettings }: DesktopSidebarHeaderProps) {
   return (
-    <header className="desktop-sidebar-brand">
+    <header className="desktop-sidebar-brand window-drag-region">
       <div className="flex min-w-0 items-center gap-2">
         <span className="app-brand-mark" aria-hidden="true">
           <img src={lightBrandMark} alt="" className="app-brand-mark-light" />

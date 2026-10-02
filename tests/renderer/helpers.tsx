@@ -249,6 +249,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
       preferences = { ...preferences, ...patch };
       return { preferences: { ...preferences }, accessTokenConfigured: true };
     },
+    async setThemePreference() {},
     async listRepositories() {
       calls.listRepositories += 1;
       if (listGate) await listGate;

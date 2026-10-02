@@ -4,6 +4,78 @@
   display: contents;
 }
 
+/* Chromium supplies the actual titlebar's free rectangle in CSS pixels/DIP.
+   Defaults collapse to zero in browsers and on platforms without our Windows overlay.
+   Geometry updates automatically on resize, maximize/restore and DPI changes. */
+:root {
+  --window-controls-safe-width: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+  --window-controls-height: env(titlebar-area-height, 0px);
+}
+
+:root[data-window-controls-overlay] {
+  --window-controls-height: env(titlebar-area-height, 52px);
+}
+
+:root[data-window-controls-overlay] .window-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+:root[data-window-controls-overlay] .window-drag-region :is(
+  button, input, textarea, select, a, [role='button'], [role='tab'], [contenteditable='true']
+) {
+  -webkit-app-region: no-drag;
+}
+
+:root[data-window-controls-overlay] .app-global-header {
+  padding-right: calc(1rem + var(--window-controls-safe-width));
+}
+
+/* The native caption remains the only window control surface. This empty, sticky strip
+   reserves its height in Workspace and paints the band edge to edge; the opaque caption
+   paints the native buttons over it. Stopping at the safe width left a page-colored sliver
+   beside the buttons whenever Workspace showed its 9px classic scrollbar (that gutter is
+   outside the content box the strip's 100% resolves against). */
+:root[data-window-controls-overlay] .app-frame[data-desktop='true'] .app-shell-window-drag-strip {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: block;
+  width: 100%;
+  height: var(--window-controls-height);
+  background-color: rgb(var(--color-app));
+}
+
+/* 8px instead of the 20px page rhythm: that is what puts the repository title's ink
+   baseline on the sidebar heading's (52px strip + 8px = 60px text top on both sides). */
+:root[data-window-controls-overlay] .app-frame[data-desktop='true'] .app-shell-slot-content {
+  padding-top: 8px;
+  min-height: calc(100% - var(--window-controls-height));
+}
+
+:root[data-window-controls-overlay] .app-shell-workspace {
+  --workspace-sticky-offset: calc(var(--window-controls-height) + var(--workspace-context-height));
+  --app-header-height: calc(var(--window-controls-height) + var(--workspace-context-height));
+}
+
+/* Content starts below the strip, so its actions can use the full Workspace width. */
+:root[data-window-controls-overlay] .app-shell-workspace .repository-header-top {
+  flex-wrap: wrap;
+}
+
+:root[data-window-controls-overlay] .app-shell-workspace .repository-header-identity {
+  flex-basis: 12rem;
+}
+
+:root[data-window-controls-overlay] .app-shell-workspace .repository-header-actions {
+  max-width: 100%;
+  flex-shrink: 1;
+}
+
+.app-shell-window-drag-strip {
+  display: none;
+}
+
 .app-shell {
   --app-rail-width: 0px;
   --app-sidebar-width: 336px;
@@ -258,6 +330,11 @@
   }
   .app-shell-workspace {
     --workspace-sticky-offset: 0px;
+  }
+
+  :root[data-window-controls-overlay] .app-shell-workspace {
+    --workspace-sticky-offset: var(--window-controls-height);
+    --app-header-height: var(--window-controls-height);
   }
 }
 

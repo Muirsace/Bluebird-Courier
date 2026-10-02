@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { resolveChartPalette } from '../../src/renderer/lib/chart-theme';
 import { useEffectiveTheme } from '../../src/renderer/lib/theme';
@@ -131,6 +131,7 @@ describe('主题 · preference 与 effective', () => {
   it('主题立即切换但不显示保存中，快速切换时按顺序持久化且忽略过期响应', async () => {
     await mount({ preferences: { theme: 'light' } });
     await openSettings();
+    const applyThemePreference = vi.spyOn(handle.api, 'setThemePreference');
 
     const resolvers: Array<(view: SettingsView) => void> = [];
     handle.api.updateSettings = (patch) => {
@@ -148,6 +149,7 @@ describe('主题 · preference 与 effective', () => {
     expect(appliedTheme()).toBe('light');
     expect(segmentedButton('浅色')?.getAttribute('aria-pressed')).toBe('true');
     expect(handle.calls.updateSettings).toBe(1);
+    expect(applyThemePreference.mock.calls.map(([preference]) => preference)).toEqual(['dark', 'light']);
 
     const resolveDark = resolvers[0];
     if (!resolveDark) throw new Error('深色偏好保存尚未开始');
@@ -157,6 +159,7 @@ describe('主题 · preference 与 effective', () => {
     await settle();
 
     expect(appliedTheme()).toBe('light');
+    expect(applyThemePreference).toHaveBeenCalledTimes(2);
     expect(handle.calls.updateSettings).toBe(2);
     expect(handle.settingsPatches).toEqual([{ theme: 'dark' }, { theme: 'light' }]);
 
@@ -168,6 +171,55 @@ describe('主题 · preference 与 effective', () => {
     await settle();
     expect(appliedTheme()).toBe('light');
     expect(bodyText()).not.toContain('保存中');
+  });
+
+  it('偏好保存尚未完成时也立即同步主进程外观', async () => {
+    await mount({ preferences: { theme: 'light' } });
+    await openSettings();
+
+    const applyThemePreference = vi.spyOn(handle.api, 'setThemePreference');
+    let resolveSave: ((view: SettingsView) => void) | undefined;
+    handle.api.updateSettings = (patch) => {
+      handle.calls.updateSettings += 1;
+      handle.settingsPatches.push({ ...patch });
+      return new Promise<SettingsView>((resolve) => { resolveSave = resolve; });
+    };
+
+    await click(segmentedButton('深色'));
+
+    expect(appliedTheme()).toBe('dark');
+    expect(applyThemePreference).toHaveBeenCalledWith('dark');
+    expect(handle.calls.updateSettings).toBe(1);
+    expect(resolveSave).toBeTypeOf('function');
+    // Leave the save pending: the appearance update must not wait for persistence.
+  });
+
+  it('快速切换后最新保存失败时回滚到较早成功保存的偏好', async () => {
+    await mount({ preferences: { theme: 'light' } });
+    await openSettings();
+    const applyThemePreference = vi.spyOn(handle.api, 'setThemePreference');
+    const writes: Array<{
+      resolve: (view: SettingsView) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    handle.api.updateSettings = (patch) => {
+      handle.calls.updateSettings += 1;
+      handle.settingsPatches.push({ ...patch });
+      return new Promise<SettingsView>((resolve, reject) => writes.push({ resolve, reject }));
+    };
+
+    await click(segmentedButton('深色'));
+    await click(segmentedButton('浅色'));
+    expect(applyThemePreference.mock.calls.map(([preference]) => preference)).toEqual(['dark', 'light']);
+
+    writes[0]?.resolve({ preferences: { theme: 'dark' }, accessTokenConfigured: true });
+    await settle();
+    writes[1]?.reject(new Error('light save failed'));
+    await settle();
+
+    expect(appliedTheme()).toBe('dark');
+    expect(segmentedButton('深色')?.getAttribute('aria-pressed')).toBe('true');
+    expect(applyThemePreference.mock.calls.map(([preference]) => preference)).toEqual(['dark', 'light', 'dark']);
   });
 
   it('强制深色后系统切浅色也不跟随', async () => {
@@ -225,11 +277,13 @@ describe('主题 · preference 与 effective', () => {
     await mount({ preferences: { theme: 'light' }, settingsSaveFails: true });
     await openSettings();
     expect(appliedTheme()).toBe('light');
+    const applyThemePreference = vi.spyOn(handle.api, 'setThemePreference');
 
     await click(segmentedButton('深色'));
     await settle();
 
     expect(appliedTheme()).toBe('light');
+    expect(applyThemePreference.mock.calls.map(([preference]) => preference)).toEqual(['dark', 'light']);
     expect(segmentedButton('浅色')?.getAttribute('aria-pressed')).toBe('true');
     expect(bodyText()).toContain('主题保存失败');
   });

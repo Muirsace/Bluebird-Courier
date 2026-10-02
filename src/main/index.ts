@@ -8,6 +8,7 @@ import { systemClock } from './core/infra/clock';
 import { createHttpGitHub } from './core/adapters/github/http-github';
 import { openGitHubExternal } from './core/adapters/shell-links';
 import { applyThemeSource } from './core/adapters/theme';
+import { refreshWindowsWindowChrome, syncWindowsWindowChrome, windowsWindowChromeOptions } from './core/adapters/window-chrome';
 import { createFetching } from './features/fetching/implementation';
 import { createSettings } from './features/settings/implementation';
 import { createWatchlist } from './features/watchlist/implementation';
@@ -48,12 +49,14 @@ function createWindow(): BrowserWindow {
     autoHideMenuBar: true,
     title: '青鸟信使',
     icon: appIconPath(),
+    ...windowsWindowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  syncWindowsWindowChrome(window);
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
@@ -111,7 +114,10 @@ if (userDataPathError !== null) {
       });
       registerIpc(facade, {
         openGitHubExternal: (target) => openGitHubExternal(target, (url) => shell.openExternal(url)),
-        applyTheme: applyThemeSource,
+        applyTheme: (preference) => {
+          applyThemeSource({ theme: preference });
+          for (const window of BrowserWindow.getAllWindows()) refreshWindowsWindowChrome(window);
+        },
       });
       // 建窗口之前先落地主题偏好：首屏就按用户选的主题绘制，不闪一下再切
       applyThemeSource((await facade.getSettings()).preferences);

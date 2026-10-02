@@ -29,6 +29,7 @@ const GATEWAY_METHODS = [
   'saveAccessToken',
   'getSettings',
   'updateSettings',
+  'setThemePreference',
   'listRepositories',
   'addRepository',
   'inspectRepositoryInput',
