@@ -282,6 +282,39 @@
   background-color: rgb(var(--color-border-strong));
 }
 
+/* Desktop identity only: the existing absolute host, wide hide, observers,
+ * sticky offsets and visibility transitions remain owned by their current rules. */
+.desktop-compact-repo-context .desktop-compact-identity {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.desktop-compact-repo-context .desktop-compact-name {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 600;
+  color: rgb(var(--color-text));
+}
+
+.desktop-compact-repo-context .desktop-compact-owner {
+  min-width: 0;
+  flex: 0 2 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: rgb(var(--color-text-secondary));
+}
+
 /**
  * 表头与它哨兵的定位容器：只提供包含块，不产生任何盒模型效果。
  */

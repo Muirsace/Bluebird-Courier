@@ -306,7 +306,7 @@ export function DetailPage({
             >
               {workspace ? (
                 <div className="workspace-repo-context" data-visible={repositoryContextVisible}>
-                  <CompactRepositoryContext fullName={fullName} visible={repositoryContextVisible} />
+                  <CompactRepositoryContext presentation="desktop" fullName={fullName} visible={repositoryContextVisible} />
                 </div>
               ) : null}
               <DetailTabs active={activeTab} onChange={selectTab} stuck={tabsStuck} />
