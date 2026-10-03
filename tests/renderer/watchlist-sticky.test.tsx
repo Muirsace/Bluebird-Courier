@@ -235,7 +235,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     )?.[0] ?? '';
     const reducedTransform =
       css.match(/\.watchlist-add-field,\s*\.watchlist-add-action,\s*\.watchlist-inline-message\s*\{[^}]*\}/)?.[0] ?? '';
-    const app = readFileSync(resolve(process.cwd(), 'src/renderer/pages/App.tsx'), 'utf8');
+    const narrowShell = readFileSync(resolve(process.cwd(), 'src/renderer/components/shell/NarrowAppShell.tsx'), 'utf8');
     const header = readFileSync(
       resolve(process.cwd(), 'src/renderer/components/watchlist/WatchlistHeader.tsx'),
       'utf8',
@@ -279,7 +279,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(form).toContain('watchlist-add-action relative inline-flex');
     expect(narrowAddForm).toContain('width: calc(100% - 7rem)');
     expect(narrowAddForm).toContain('min-width: min(16rem, 100%)');
-    expect(app).toContain('app-global-header sticky top-0 z-10');
+    expect(narrowShell).toContain('app-global-header sticky top-0 z-10');
     expect(overlay).toContain('z-index: 20');
   });
 });

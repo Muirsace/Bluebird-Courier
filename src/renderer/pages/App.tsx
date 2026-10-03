@@ -5,10 +5,10 @@ import type { Glance, AccessTokenState } from '../../shared/types';
 import lightBrandMark from '../assets/bluebird-mark-light.svg';
 import darkBrandMark from '../assets/bluebird-mark-dark.svg';
 import { getApi } from '../lib/api';
-import { useDesktopShell } from '../lib/app-layout';
+import { useLayoutMode } from '../lib/app-layout';
 import { useWindowControlsOverlay } from '../lib/window-chrome';
-import { AppShell } from '../components/shell/AppShell';
-import { DesktopSidebarHeader } from '../components/shell/DesktopSidebarHeader';
+import { DesktopAppShell } from '../components/shell/DesktopAppShell';
+import { NarrowAppShell } from '../components/shell/NarrowAppShell';
 import { PageSlot, usePageHost } from '../components/shell/PageHost';
 import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { ErrorBar } from '../components/ErrorBar';
@@ -36,12 +36,6 @@ function motionFor(from: View, to: View): PageMotion {
   if (to === 'detail') return 'forward';
   if (from === 'detail' && to === 'watchlist') return 'back';
   return 'top';
-}
-
-function navButtonClass(disabled: boolean): string {
-  const base = 'inline-flex h-9 items-center rounded-md px-3 text-sm transition-colors duration-150 ease-out';
-  if (disabled) return `${base} cursor-not-allowed text-muted`;
-  return `${base} text-secondary hover:bg-surface-hover hover:text-primary active:bg-surface-active`;
 }
 
 export function App() {
@@ -73,8 +67,8 @@ export function App() {
    * 为 true 时顶部栏在品牌右侧接管当前仓库名——只在详情里成立，离开详情即回到 false。
    */
   const [repoContextVisible, setRepoContextVisible] = useState(false);
-  const desktop = useDesktopShell((nextDesktop) => {
-    if (nextDesktop) {
+  const layoutMode = useLayoutMode((nextMode) => {
+    if (nextMode === 'desktop') {
       if (activeView === 'watchlist') watchlistScrollRef.current = window.scrollY;
     } else {
       sidebarScrollRef.current = watchlistHost.querySelector<HTMLElement>('[data-app-scroll-root="sidebar"]')?.scrollTop ?? sidebarScrollRef.current;
@@ -84,7 +78,7 @@ export function App() {
     setWorkspaceRepoSwitch(false);
     setRepoContextVisible(false);
   });
-  const previousDesktopRef = useRef(desktop);
+  const previousLayoutModeRef = useRef(layoutMode);
 
   // 启动即查询访问令牌状态：未配置时先进设置页
   const accessTokenStateQuery = useQuery({
@@ -105,13 +99,13 @@ export function App() {
    */
   function navigate(to: View): void {
     if (to !== 'detail') setWorkspaceRepoSwitch(false);
-    if (!desktop && activeView === 'watchlist' && to !== 'watchlist') {
+    if (layoutMode === 'narrow' && activeView === 'watchlist' && to !== 'watchlist') {
       watchlistScrollRef.current = window.scrollY;
     }
     // 每次导航都从"隐藏"起步：刚进详情时 Repository Header 还在顶部，仓库身份由它自己交代；
     // 离开详情时也不让它留在顶部栏里。
     setRepoContextVisible(false);
-    setMotion(desktop ? null : motionFor(view, to));
+    setMotion(layoutMode === 'desktop' ? null : motionFor(view, to));
     setView(to);
   }
 
@@ -125,8 +119,8 @@ export function App() {
 
   function openDetail(repo: Glance): void {
     // 再选当前仓库是 no-op，也不清掉已经接管身份的 Compact Context。
-    if (desktop && view === 'detail' && selected?.id === repo.id) return;
-    setWorkspaceRepoSwitch(desktop && activeView === 'detail' && selected !== null);
+    if (layoutMode === 'desktop' && view === 'detail' && selected?.id === repo.id) return;
+    setWorkspaceRepoSwitch(layoutMode === 'desktop' && activeView === 'detail' && selected !== null);
     setSelected({ id: repo.id, fullName: repo.fullName });
     navigate('detail');
   }
@@ -157,29 +151,29 @@ export function App() {
     if (!hasTokenState) return;
     const previous = previousViewRef.current;
     previousViewRef.current = activeView;
-    const layoutChanged = previousDesktopRef.current !== desktop;
-    previousDesktopRef.current = desktop;
+    const layoutChanged = previousLayoutModeRef.current !== layoutMode;
+    previousLayoutModeRef.current = layoutMode;
     if (layoutChanged) {
-      window.scrollTo({ top: !desktop && activeView === 'watchlist' ? watchlistScrollRef.current : 0, behavior: 'auto' });
-      if (desktop) {
+      window.scrollTo({ top: layoutMode === 'narrow' && activeView === 'watchlist' ? watchlistScrollRef.current : 0, behavior: 'auto' });
+      if (layoutMode === 'desktop') {
         const root = watchlistHost.querySelector<HTMLElement>('[data-app-scroll-root="sidebar"]');
         if (root) root.scrollTop = sidebarScrollRef.current;
       }
       return;
     }
-    if (desktop) return;
+    if (layoutMode === 'desktop') return;
     // 首屏（previous 还是 null）不做任何滚动改写；同一个视图重复进入也不该动滚动位置
     if (previous === null || previous === activeView) return;
     window.scrollTo({
       top: activeView === 'watchlist' ? watchlistScrollRef.current : 0,
       behavior: 'auto',
     });
-  }, [activeView, hasTokenState, desktop, watchlistHost]);
+  }, [activeView, hasTokenState, layoutMode, watchlistHost]);
 
   // 仅导航或换仓库时重置工作区；侧栏节点与其 scrollTop 保持不动。
   useLayoutEffect(() => {
-    if (desktop && workspaceRef.current) workspaceRef.current.scrollTop = 0;
-  }, [desktop, activeView, selected?.id]);
+    if (layoutMode === 'desktop' && workspaceRef.current) workspaceRef.current.scrollTop = 0;
+  }, [layoutMode, activeView, selected?.id]);
 
   /**
    * 顶部栏实测高度写成 CSS 变量：详情里的 Tabs 吸附时停在它下沿，哨兵也靠它定落点。
@@ -214,7 +208,7 @@ export function App() {
       root.style.removeProperty('--app-header-height');
       root.style.removeProperty('--app-chrome-height');
     };
-  }, [desktop]);
+  }, [layoutMode]);
 
   let content;
   if (accessTokenStateQuery.isPending) {
@@ -234,7 +228,7 @@ export function App() {
     content = (
       <DetailPage
         key={selected.id}
-        workspace={desktop}
+        workspace={layoutMode === 'desktop'}
         workspaceRepoSwitch={workspaceRepoSwitch}
         repositoryContextVisible={repoContextVisible}
         repositoryId={selected.id}
@@ -244,7 +238,7 @@ export function App() {
         onGoSettings={() => navigate('settings')}
       />
     );
-  } else if (desktop) {
+  } else if (layoutMode === 'desktop') {
     content = (
       <WorkspaceMessage className="workspace-empty" title="青鸟信使"
         description={<>从左侧选择一个仓库<br />查看概览、发版、提交、构建和趋势</>}
@@ -259,63 +253,33 @@ export function App() {
 
   return (
     <>
-    <div className="app-frame mx-auto flex min-h-full w-full max-w-6xl flex-col" data-desktop={desktop}>
-      {!desktop ? <header ref={headerRef} className="app-global-header sticky top-0 z-10 border-b border-subtle bg-app px-4 py-3 window-drag-region">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="app-brand-mark" aria-hidden="true">
-              <img src={lightBrandMark} alt="" className="app-brand-mark-light" />
-              <img src={darkBrandMark} alt="" className="app-brand-mark-dark" />
-            </span>
-            <h1 className="shrink-0 text-base font-semibold tracking-wide text-primary">青鸟信使</h1>
-            {/*
-              当前仓库上下文：只在详情里出现，且只在页面顶部那块表头滚走之后才显示。
-              它始终占位（宽度与可见性无关），所以出现 / 消失不会推动品牌与右侧导航。
-            */}
-            {activeView === 'detail' && selected ? (
-              <CompactRepositoryContext
-                fullName={selected.fullName}
-                visible={repoContextVisible}
-              />
-            ) : null}
-          </div>
-          <nav aria-label="页面导航" className="flex flex-wrap items-center gap-1">
-            <button
-              type="button"
-              onClick={() => navigate(destination.view)}
-              disabled={destination.disabled}
-              className={navButtonClass(destination.disabled)}
-            >
-              {destination.label}
-            </button>
-          </nav>
-        </div>
-      </header> : null}
-
-      <main className="flex-1 px-4 py-5">
-        {desktop ? (
-          <AppShell
-            rail={null}
-            sidebarChrome={<DesktopSidebarHeader settingsActive={activeView === 'settings'} onGoSettings={() => navigate('settings')} />}
-            workspaceRef={workspaceRef}
-            sidebar={configured ? <PageSlot host={watchlistHost} /> : null}
-            workspace={<>{tokenRefreshError}<PageSlot host={workspaceHost} /></>}
-          />
-        ) : (
-          <>
-            {tokenRefreshError}
-            {/* key 只跟导航状态走：刷新 / Query 更新 / 主题 / resize 都不会重播 */}
-            <PageTransition key={activeView} motion={motion}>
-              <PageSlot host={configured && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
-            </PageTransition>
-          </>
-        )}
-      </main>
-    </div>
+    {layoutMode === 'desktop' ? (
+      <DesktopAppShell
+        settingsActive={activeView === 'settings'}
+        onGoSettings={() => navigate('settings')}
+        workspaceRef={workspaceRef}
+        sidebar={configured ? <PageSlot host={watchlistHost} /> : null}
+        workspace={<>{tokenRefreshError}<PageSlot host={workspaceHost} /></>}
+      />
+    ) : (
+      <NarrowAppShell
+        headerRef={headerRef}
+        repositoryContext={activeView === 'detail' && selected ? (
+          <CompactRepositoryContext fullName={selected.fullName} visible={repoContextVisible} />
+        ) : null}
+        navigation={{ label: destination.label, disabled: destination.disabled, onClick: () => navigate(destination.view) }}
+      >
+        {tokenRefreshError}
+        {/* key follows navigation only; the portals below never belong to a Shell. */}
+        <PageTransition key={activeView} motion={motion}>
+          <PageSlot host={configured && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
+        </PageTransition>
+      </NarrowAppShell>
+    )}
     {configured ? createPortal(
       <WatchlistPage
-        sidebar={desktop}
-        active={desktop || activeView === 'watchlist'}
+        sidebar={layoutMode === 'desktop'}
+        active={layoutMode === 'desktop' || activeView === 'watchlist'}
         selectedRepositoryId={activeView === 'detail' ? selected?.id : null}
         onOpenDetail={openDetail}
         onGoSettings={() => navigate('settings')}
