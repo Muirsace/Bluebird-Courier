@@ -6,6 +6,7 @@ import lightBrandMark from '../assets/bluebird-mark-light.svg';
 import darkBrandMark from '../assets/bluebird-mark-dark.svg';
 import { getApi } from '../lib/api';
 import { useLayoutMode } from '../lib/app-layout';
+import { findSidebarScrollRoot } from '../lib/app-scroll-root';
 import { useWindowControlsOverlay } from '../lib/window-chrome';
 import { DesktopAppShell } from '../components/shell/DesktopAppShell';
 import { NarrowAppShell } from '../components/shell/NarrowAppShell';
@@ -41,10 +42,10 @@ function motionFor(from: View, to: View): PageMotion {
 export function App() {
   useWindowControlsOverlay();
   const queryClient = useQueryClient();
-  const workspaceRef = useRef<HTMLElement>(null);
+  const workspaceScrollRootRef = useRef<HTMLElement>(null);
   const workspaceHost = usePageHost();
   const watchlistHost = usePageHost();
-  const sidebarScrollRef = useRef(0);
+  const sidebarScrollPositionRef = useRef(0);
   const [view, setView] = useState<View>('watchlist');
   const [selected, setSelected] = useState<SelectedRepo | null>(null);
   // Only a running Desktop repo → repo navigation owns this entrance, never layout/theme changes.
@@ -57,7 +58,7 @@ export function App() {
    * 小窗口共用同一个 window 滚动条，所以离开清单时就得把位置记下来——DOM 一换，
    * 浏览器马上按新页面的高度把 scrollY 夹掉，等到 layout effect 里再读只剩被夹过的值。
    */
-  const watchlistScrollRef = useRef(0);
+  const narrowWatchlistScrollPositionRef = useRef(0);
   /** 上一次真正渲染的视图；null 表示还没渲染过（首屏不是导航，不写滚动位置）。 */
   const previousViewRef = useRef<View | null>(null);
   /** 顶部栏本体：详情里的 Tabs 吸附时要停在它下沿。 */
@@ -69,9 +70,9 @@ export function App() {
   const [repoContextVisible, setRepoContextVisible] = useState(false);
   const layoutMode = useLayoutMode((nextMode) => {
     if (nextMode === 'desktop') {
-      if (activeView === 'watchlist') watchlistScrollRef.current = window.scrollY;
+      if (activeView === 'watchlist') narrowWatchlistScrollPositionRef.current = window.scrollY;
     } else {
-      sidebarScrollRef.current = watchlistHost.querySelector<HTMLElement>('[data-app-scroll-root="sidebar"]')?.scrollTop ?? sidebarScrollRef.current;
+      sidebarScrollPositionRef.current = findSidebarScrollRoot(watchlistHost)?.element.scrollTop ?? sidebarScrollPositionRef.current;
     }
     // resize 不是导航，旧方向和旧 scroll root 的上下文都不传给新布局。
     setMotion(null);
@@ -100,7 +101,7 @@ export function App() {
   function navigate(to: View): void {
     if (to !== 'detail') setWorkspaceRepoSwitch(false);
     if (layoutMode === 'narrow' && activeView === 'watchlist' && to !== 'watchlist') {
-      watchlistScrollRef.current = window.scrollY;
+      narrowWatchlistScrollPositionRef.current = window.scrollY;
     }
     // 每次导航都从"隐藏"起步：刚进详情时 Repository Header 还在顶部，仓库身份由它自己交代；
     // 离开详情时也不让它留在顶部栏里。
@@ -154,10 +155,10 @@ export function App() {
     const layoutChanged = previousLayoutModeRef.current !== layoutMode;
     previousLayoutModeRef.current = layoutMode;
     if (layoutChanged) {
-      window.scrollTo({ top: layoutMode === 'narrow' && activeView === 'watchlist' ? watchlistScrollRef.current : 0, behavior: 'auto' });
+      window.scrollTo({ top: layoutMode === 'narrow' && activeView === 'watchlist' ? narrowWatchlistScrollPositionRef.current : 0, behavior: 'auto' });
       if (layoutMode === 'desktop') {
-        const root = watchlistHost.querySelector<HTMLElement>('[data-app-scroll-root="sidebar"]');
-        if (root) root.scrollTop = sidebarScrollRef.current;
+        const root = findSidebarScrollRoot(watchlistHost);
+        if (root) root.element.scrollTop = sidebarScrollPositionRef.current;
       }
       return;
     }
@@ -165,14 +166,14 @@ export function App() {
     // 首屏（previous 还是 null）不做任何滚动改写；同一个视图重复进入也不该动滚动位置
     if (previous === null || previous === activeView) return;
     window.scrollTo({
-      top: activeView === 'watchlist' ? watchlistScrollRef.current : 0,
+      top: activeView === 'watchlist' ? narrowWatchlistScrollPositionRef.current : 0,
       behavior: 'auto',
     });
   }, [activeView, hasTokenState, layoutMode, watchlistHost]);
 
   // 仅导航或换仓库时重置工作区；侧栏节点与其 scrollTop 保持不动。
   useLayoutEffect(() => {
-    if (layoutMode === 'desktop' && workspaceRef.current) workspaceRef.current.scrollTop = 0;
+    if (layoutMode === 'desktop' && workspaceScrollRootRef.current) workspaceScrollRootRef.current.scrollTop = 0;
   }, [layoutMode, activeView, selected?.id]);
 
   /**
@@ -257,7 +258,7 @@ export function App() {
       <DesktopAppShell
         settingsActive={activeView === 'settings'}
         onGoSettings={() => navigate('settings')}
-        workspaceRef={workspaceRef}
+        workspaceScrollRootRef={workspaceScrollRootRef}
         sidebar={configured ? <PageSlot host={watchlistHost} /> : null}
         workspace={<>{tokenRefreshError}<PageSlot host={workspaceHost} /></>}
       />

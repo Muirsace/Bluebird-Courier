@@ -25,8 +25,3 @@ export function useLayoutMode(beforeChange?: (layoutMode: LayoutMode) => void): 
   }, []);
   return layoutMode;
 }
-
-/** Shell 内使用槽位，单栏仍由 document/window 滚动。 */
-export function appScrollRoot(element: HTMLElement | null): HTMLElement | null {
-  return element?.closest<HTMLElement>('[data-app-scroll-root]') ?? null;
-}

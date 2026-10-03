@@ -3,7 +3,7 @@ import { RepositoryOmnibox } from './RepositoryOmnibox';
 import { DesktopWatchlistHeading } from './DesktopWatchlistView';
 import { NarrowWatchlistHeading } from './NarrowWatchlistView';
 import { Spinner } from '../Spinner';
-import { appScrollRoot } from '../../lib/app-layout';
+import { resolveAppScrollRoot } from '../../lib/app-scroll-root';
 import type { Glance } from '../../../shared/types';
 import type { AddRepositoryOutcome } from './AddRepositoryForm';
 
@@ -44,7 +44,7 @@ export function WatchlistHeader({
     const sentinel = toolbarSentinelRef.current;
     const appHeader = document.querySelector<HTMLElement>('.app-global-header');
     if (!sentinel || !appHeader || typeof IntersectionObserver === 'undefined') return;
-    const scrollRoot = appScrollRoot(sentinel);
+    const scrollRoot = resolveAppScrollRoot(sentinel).element;
 
     let observer: IntersectionObserver | null = null;
     let live = true;

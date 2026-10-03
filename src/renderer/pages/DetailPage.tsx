@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useQuery } from '@tanstack/react-query';
 import type { Detail, DetailResult } from '../../shared/types';
 import { getApi } from '../lib/api';
-import { appScrollRoot } from '../lib/app-layout';
+import { resolveAppScrollRoot } from '../lib/app-scroll-root';
 import { useDetailReveal } from '../lib/detail-reveal';
 import { DETAIL_REVEAL_MOTION, DETAIL_REVEAL_TOTAL_MS } from '../lib/motion';
 import { ErrorBar } from '../components/ErrorBar';
@@ -22,7 +22,7 @@ import { RevealItem } from '../components/detail/RevealItem';
 import { TrendTab } from '../components/detail/TrendTab';
 
 interface DetailPageProps {
-  /** 由 App 现有响应式状态决定；单栏保留完整的页面导航。 */
+  /** Presentation/lifecycle from App; Sticky observer roots follow actual DOM ownership. */
   workspace: boolean;
   workspaceRepoSwitch?: boolean;
   repositoryContextVisible: boolean;
@@ -123,7 +123,7 @@ export function DetailPage({
         if (entry.intersectionRatio === 0) onRepositoryContextChange(true);
         else if (entry.intersectionRatio === 1) onRepositoryContextChange(false);
       },
-      { root: appScrollRoot(sentinel), threshold: [0, 1] },
+      { root: resolveAppScrollRoot(sentinel).element, threshold: [0, 1] },
     );
     observer.observe(sentinel);
     return () => { live = false; observer.disconnect(); };
@@ -148,7 +148,7 @@ export function DetailPage({
       const entry = entries[0];
       if (!entry) return;
       setTabsStuck(!entry.isIntersecting);
-    }, { root: appScrollRoot(sentinel) });
+    }, { root: resolveAppScrollRoot(sentinel).element });
     observer.observe(sentinel);
     return () => { live = false; observer.disconnect(); };
   }, [workspace]);

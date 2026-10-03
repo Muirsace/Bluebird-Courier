@@ -5,13 +5,13 @@ import { RepositorySidebarRow } from './RepositorySidebarRow';
 import type { WatchlistPresentationProps } from './WatchlistPresentation';
 
 /** Sidebar presentation only. The stable page/Chrome portals own all shared state. */
-export function DesktopWatchlistView({ chromeHost, renderList, listViewportRef }: WatchlistPresentationProps & {
-  listViewportRef: RefObject<HTMLDivElement>;
+export function DesktopWatchlistView({ chromeHost, renderList, sidebarScrollRootRef }: WatchlistPresentationProps & {
+  sidebarScrollRootRef: RefObject<HTMLDivElement>;
 }) {
   return (
     <>
       <div className="watchlist-sidebar-chrome"><PageSlot host={chromeHost} /></div>
-      <motion.div ref={listViewportRef} layoutScroll className="repository-list-viewport" data-app-scroll-root="sidebar">
+      <motion.div ref={sidebarScrollRootRef} layoutScroll className="repository-list-viewport" data-app-scroll-root="sidebar">
         <div className="repository-list-content">{renderList(RepositorySidebarRow, 'repo-list repository-sidebar-list')}</div>
       </motion.div>
     </>

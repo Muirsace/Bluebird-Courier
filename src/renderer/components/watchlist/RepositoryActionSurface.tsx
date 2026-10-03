@@ -4,7 +4,7 @@ import { motionCompletionMs, OVERLAY_MOTION, prefersReducedMotion } from '../../
 import { chooseContextPlacement, chooseOverlayPlacement, overlayMaxWidth, VIEWPORT_SAFE_GAP } from '../../lib/overlay-placement';
 import type { ContextPoint } from '../../lib/overlay-placement';
 import type { OverlayPlacementResult } from '../../lib/overlay-placement';
-import { appScrollRoot } from '../../lib/app-layout';
+import { resolveAppScrollRoot } from '../../lib/app-scroll-root';
 
 /** 两种内容的宽度（对应 w-44 / w-72）：换内容时外壳按这两个值连续过渡，不是瞬变。 */
 const STAGE_WIDTH = { menu: 176, confirm: 288 } as const;
@@ -75,7 +75,7 @@ export function RepositoryActionSurface({
     if (!positioner || !surface || !content || !trigger) return;
 
     const triggerRect = trigger.getBoundingClientRect();
-    setShellOverlay(appScrollRoot(trigger) !== null);
+    setShellOverlay(resolveAppScrollRoot(trigger).element !== null);
     // 宽度只由 stage 与视口决定，先落到 DOM：确认框比菜单宽，换行位置不同、高度也不同，
     // 所以高度必须在最终宽度下量。
     const width = Math.min(STAGE_WIDTH[stage], contextPoint
@@ -221,7 +221,7 @@ export function RepositoryActionSurface({
     frame = window.requestAnimationFrame(followFrame);
     // Parent Motion / toolbar commits can move the anchor after child layout effects.
     // Observe only while open, and ignore our own position writes to avoid feedback.
-    const root = appScrollRoot(triggerRef.current);
+    const root = resolveAppScrollRoot(triggerRef.current).element;
     const observer = root ? new MutationObserver((records) => {
       if (records.some((record) => !positionerRef.current?.contains(record.target))) followAnchor();
     }) : null;

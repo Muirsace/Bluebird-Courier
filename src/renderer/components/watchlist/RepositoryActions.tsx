@@ -6,7 +6,8 @@ import { describeOpenFailure } from '../../lib/external-link';
 import { Spinner } from '../Spinner';
 import { RemoveRepositoryPopover } from './RemoveRepositoryPopover';
 import { RepositoryActionSurface } from './RepositoryActionSurface';
-import { appScrollRoot, DESKTOP_SHELL_QUERY } from '../../lib/app-layout';
+import { DESKTOP_SHELL_QUERY } from '../../lib/app-layout';
+import { resolveAppScrollRoot } from '../../lib/app-scroll-root';
 import type { ContextPoint } from '../../lib/overlay-placement';
 
 /** closed → 无浮层；menu → ··· 菜单；confirm → 移除确认。 */
@@ -114,7 +115,7 @@ export function RepositoryActions({ repo, onRemove, disabled = false, contextTri
   useEffect(() => {
     if (!open || !contextTriggerRef) return;
     const trigger = contextTriggerRef.current;
-    const root = appScrollRoot(trigger);
+    const root = resolveAppScrollRoot(trigger).element;
     const list = trigger?.closest('ul');
     const slot = trigger?.closest('li');
     const shell = trigger?.closest('.app-shell');

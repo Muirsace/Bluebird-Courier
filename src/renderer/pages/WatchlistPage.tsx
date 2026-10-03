@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
-import { appScrollRoot } from '../lib/app-layout';
+import { resolveAppScrollRoot, scrollTarget, scrollPositionElement, scrollViewportHeight } from '../lib/app-scroll-root';
 import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
@@ -35,7 +35,7 @@ interface PendingReveal {
 interface WatchlistPageProps {
   onOpenDetail: (repo: Glance) => void;
   onGoSettings: () => void;
-  /** Only the desktop Sidebar uses the compact switcher. */
+  /** Presentation/lifecycle only; DOM scroll ownership is resolved through AppScrollRoot. */
   sidebar?: boolean;
   active?: boolean;
   selectedRepositoryId?: number | null;
@@ -65,7 +65,7 @@ function focusAfterRemoval(repositoryId: number): void {
 
 export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, active = true, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
   const pageRef = useRef<HTMLDivElement>(null);
-  const listViewportRef = useRef<HTMLDivElement>(null);
+  const sidebarScrollRootRef = useRef<HTMLDivElement>(null);
   const chromeHost = usePageHost();
   const layoutRef = useRef({ sidebar, active });
   const onRepositoryRemovedRef = useRef(onRepositoryRemoved);
@@ -120,16 +120,16 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
     pendingViewportAnchorRef.current = null;
     setPendingReveal((current) => (current?.repositoryId === repositoryId ? null : current));
 
-    const shellRoot = appScrollRoot(listViewportRef.current ?? pageRef.current);
-    const scrollRoot = shellRoot ?? document.scrollingElement ?? document.documentElement;
-    const scrollEvents = shellRoot ?? window;
-    const viewportHeight = shellRoot?.clientHeight ?? (document.documentElement.clientHeight || window.innerHeight);
+    const root = resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current);
+    const scrollRoot = scrollPositionElement(root);
+    const scrollEvents = scrollTarget(root);
+    const viewportHeight = scrollViewportHeight(root);
     const targetOf = (): number => {
       const rect = target.getBoundingClientRect();
       const maxScrollTop = Math.max(0, scrollRoot.scrollHeight - viewportHeight);
       return Math.min(
         maxScrollTop,
-        Math.max(0, scrollRoot.scrollTop + rect.top - (shellRoot?.getBoundingClientRect().top ?? 0) + rect.height / 2 - viewportHeight / 2),
+        Math.max(0, scrollRoot.scrollTop + rect.top - (root.element?.getBoundingClientRect().top ?? 0) + rect.height / 2 - viewportHeight / 2),
       );
     };
     const behavior =
@@ -192,7 +192,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
       finished = true;
       cleanup();
       if (settleFeedback && behavior === 'smooth') {
-        (shellRoot ?? window).scrollTo({ top: scrollRoot.scrollTop, behavior: 'instant' });
+        scrollTarget(root).scrollTo({ top: scrollRoot.scrollTop, behavior: 'instant' });
       }
       // 中断定位也交还表单的反馈生命周期，避免永久卡在 revealing。
       if (settleFeedback) onRevealSettled();
@@ -219,11 +219,11 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
     }
 
     pendingViewportAnchorRef.current = null;
-    const shellRoot = appScrollRoot(listViewportRef.current ?? pageRef.current);
-    const scrollRoot = shellRoot ?? document.scrollingElement ?? document.documentElement;
+    const root = resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current);
+    const scrollRoot = scrollPositionElement(root);
     const heightDelta = scrollRoot.scrollHeight - pending.scrollHeight;
     if (heightDelta !== 0) {
-      (shellRoot ?? window).scrollTo({
+      scrollTarget(root).scrollTo({
         top: Math.max(0, pending.scrollTop + heightDelta),
         behavior: 'instant',
       });
@@ -297,7 +297,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
         }
         return { result, newCardPosition };
       }
-      const scrollRoot = appScrollRoot(listViewportRef.current ?? pageRef.current) ?? document.scrollingElement ?? document.documentElement;
+      const scrollRoot = scrollPositionElement(resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current));
       const scrollTop = scrollRoot.scrollTop;
       const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
       newCardPosition = nearTop ? 'visible' : 'offscreen';
@@ -439,7 +439,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
     <>
     <div ref={pageRef} className={`watchlist-page min-w-0 ${sidebar ? 'desktop-watchlist-view' : 'narrow-watchlist-view'}`} data-sidebar={sidebar}>
       {sidebar ? (
-        <DesktopWatchlistView chromeHost={chromeHost} listViewportRef={listViewportRef} renderList={renderList} />
+        <DesktopWatchlistView chromeHost={chromeHost} sidebarScrollRootRef={sidebarScrollRootRef} renderList={renderList} />
       ) : <NarrowWatchlistView chromeHost={chromeHost} renderList={renderList} />}
     </div>
     {createPortal(chrome, chromeHost)}
