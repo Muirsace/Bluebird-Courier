@@ -258,7 +258,7 @@ export function DetailPage({
       */}
       <div className="repo-context-scope">
         <RepositoryHeader
-          workspace={workspace}
+          presentation={workspace ? 'desktop' : 'narrow'}
           fullName={fullName}
           repository={repository}
           fetching={detailQuery.isFetching}

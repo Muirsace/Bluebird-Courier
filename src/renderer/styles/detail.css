@@ -68,7 +68,7 @@
   min-width: 0;
 }
 
-.detail-page[data-workspace='true'] .repository-header {
+.detail-page .desktop-repository-header {
   /* 留白沿用 Workspace 内容槽位，表头只承担底部分隔。 */
   padding: 0 0 8px;
   border: 0;
@@ -77,38 +77,38 @@
   background-color: transparent;
 }
 
-.detail-page[data-workspace='true'] .repository-header-top {
+.detail-page .desktop-repository-header .repository-header-top {
   flex-wrap: nowrap;
 }
 
-.detail-page[data-workspace='true'] .repository-header-identity {
+.detail-page .desktop-repository-header .repository-header-identity {
   flex: 1;
   min-width: 0;
 }
 
-.detail-page[data-workspace='true'] .repository-header-name {
+.detail-page .desktop-repository-header .repository-header-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.detail-page[data-workspace='true'] .repository-header-owner {
+.detail-page .desktop-repository-header .repository-header-owner {
   font-size: 13px;
   line-height: 18px;
   font-weight: 400;
 }
 
-.detail-page[data-workspace='true'] .repository-header-actions {
+.detail-page .desktop-repository-header .repository-header-actions {
   flex: none;
   padding-top: 2px;
 }
 
-.detail-page[data-workspace='true'] .repository-header-metrics {
+.detail-page .desktop-repository-header .repository-header-metrics {
   margin-top: 16px;
   gap: 8px 24px;
 }
 
-.detail-page[data-workspace='true'] .repository-header-fetched {
+.detail-page .desktop-repository-header .repository-header-fetched {
   margin-top: 4px;
   line-height: 16px;
 }
@@ -129,24 +129,24 @@
   padding-block: 12px;
 }
 
-.detail-page[data-workspace='true'] .repository-header-metrics > div {
+.detail-page .desktop-repository-header .repository-header-metrics > div {
   max-width: 100%;
 }
 
-.detail-page[data-workspace='true'] .repository-header-metrics > div > span:last-child {
+.detail-page .desktop-repository-header .repository-header-metrics > div > span:last-child {
   @apply text-sm;
 }
 
-.detail-page[data-workspace='true'] .repository-header-release > div > span:last-child {
+.detail-page .desktop-repository-header .repository-header-release > div > span:last-child {
   @apply text-sm;
 }
 
-.detail-page[data-workspace='true'] .repository-header-release {
+.detail-page .desktop-repository-header .repository-header-release {
   max-width: 100%;
 }
 
-.detail-page[data-workspace='true'] .repository-header-release > div > span:last-child,
-.detail-page[data-workspace='true'] .repository-header-release .detail-fact-to {
+.detail-page .desktop-repository-header .repository-header-release > div > span:last-child,
+.detail-page .desktop-repository-header .repository-header-release .detail-fact-to {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;

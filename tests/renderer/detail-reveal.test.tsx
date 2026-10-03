@@ -314,6 +314,7 @@ describe('详情揭示 · 表头细节', () => {
     view = await renderNode(
       handle,
       <RepositoryHeader
+        presentation="narrow"
         fullName={FIRST}
         repository={makeGlance(1, FIRST)}
         fetching={false}
@@ -339,6 +340,7 @@ describe('详情揭示 · 表头细节', () => {
     view = await renderNode(
       handle,
       <RepositoryHeader
+        presentation="narrow"
         fullName={FIRST}
         repository={makeGlance(1, FIRST)}
         fetching={false}
