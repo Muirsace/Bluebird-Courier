@@ -3,11 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase } from '../../src/main/core/infra/database';
-import type { CipherBox } from '../../src/main/core/infra/cipher';
+import type { CipherBox } from '../../src/main/core/infra/encryption';
 import { createFacade } from '../../src/main/facade/facade';
-import { createFetching } from '../../src/main/features/fetching/implementation';
-import { createSettings } from '../../src/main/features/settings/implementation';
-import { createWatchlist } from '../../src/main/features/watchlist/implementation';
+import { createRepositoryList } from '../../src/main/features/repository-list/implementation/create';
+import { createRepositoryDetail } from '../../src/main/features/repository-detail/implementation/create';
+import { createTokenSettings } from '../../src/main/features/token-settings/implementation/create';
+import { createSnapshotTrend } from '../../src/main/features/snapshot-trend/implementation/create';
 import type { BluebirdCourierFacade } from '../../src/shared/types';
 import { FakeGitHub } from './fake-github';
 import { FakeClock, FakeCipherBox } from './fakes';
@@ -36,11 +37,22 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
   const clock = new FakeClock(options.now ?? new Date(2026, 8, 26, 12, 0, 0));
 
   let db = openDatabase(dbPath);
-  let facade = createFacade({
-    settings: createSettings({ db, cipher }),
-    watchlist: createWatchlist({ db, clock }),
-    fetching: createFetching({ github }),
-  });
+  const createTestFacade = (): BluebirdCourierFacade => {
+    const repositoryList = createRepositoryList({ db, clock });
+    return createFacade({
+      repositoryList,
+      github,
+      repositoryDetail: createRepositoryDetail({
+        db,
+        github,
+        clock,
+        repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
+      }),
+      tokenSettings: createTokenSettings({ db, cipher, github }),
+      snapshotTrend: createSnapshotTrend({ db, clock }),
+    });
+  };
+  let facade = createTestFacade();
 
   const harness: Harness = {
     get db() {
@@ -55,11 +67,7 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
     reopen(): Harness {
       db.close();
       db = openDatabase(dbPath);
-      facade = createFacade({
-        settings: createSettings({ db, cipher }),
-        watchlist: createWatchlist({ db, clock }),
-        fetching: createFetching({ github }),
-      });
+      facade = createTestFacade();
       return harness;
     },
     destroy(): void {

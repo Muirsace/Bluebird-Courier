@@ -322,7 +322,6 @@ docs/adr/                 架构决策记录
 docs/agents/              仓库工程约定（domain / issue-tracker / triage-labels）
 .agents/                  第三方 Agent 技能集（本机保留，不入库）
 .scratch/                 本地 issue tracker 与 v1 spec（本机保留，不入库）
-tools/compat/             沙箱兼容垫片
 ```
 
 ## 🔬 测试
@@ -331,7 +330,7 @@ tools/compat/             沙箱兼容垫片
 npm test   # = build:main + vitest run
 ```
 
-**策略：以门面集成测试为主，另有两个适配器的窄缝直测**（`core/infra/database` 的建表与迁移、`core/adapters/github/http-github` 的请求层）、preload 构建产物，以及渲染层的 DOM 交互测试。门面用例只断言返回值与数据库落档，不测内部调用顺序、私有状态与 UI 结构。
+**策略：以门面集成测试为主，另有两个适配器的窄缝直测**（`core/infra/database` 的建表与迁移、`core/adapters/github-http-client` 与 GitHub 响应适配器的请求层）、preload 构建产物，以及渲染层的 DOM 交互测试。门面用例只断言返回值与数据库落档，不测内部调用顺序、私有状态与 UI 结构。
 
 | 组件 | 真/假 |
 |---|---|
@@ -377,7 +376,6 @@ npm run dist   # = build + electron-builder --win nsis
 - [`docs/adr/`](docs/adr/) —— 架构决策记录。ADR-0001 记录**双栈决策**：v1 Windows 用 Electron，v1.1 Android 用 Kotlin + Jetpack Compose，两端业务逻辑各写一遍、以 v1 spec 对齐（**Kotlin 端目前仅为规划，尚未实现**）。
 - [`docs/agents/`](docs/agents/) —— 仓库工程约定：issue tracker（本地 Markdown）、triage 标签、领域文档规则。
 - `.agents/`（第三方 Agent 技能集）、`skills-lock.json`（其锁文件）与 `.scratch/`（本地 issue tracker 与 v1 spec）—— **仅本机保留，不入库**。
-- `tools/compat/no-pipe-spawn.cjs` —— 沙箱兼容垫片。受限环境中带管道 stdio 的子进程 `spawn` 会同步抛 `EPERM`，而 Vite 在 Windows 解析真实路径时会异步执行 `net use` 探测网络盘，本应静默跳过却会炸掉模块解析。该垫片包装 `child_process` 的捕获式 API，把同步抛错降级为"探测失败"，仅通过 `node --require` 注入 `test` / `test:watch` / `build:renderer` 三个脚本。
 - 根目录 `github_pulse_repository_monitor.html` 与 `octo_nexus_github_personal_center.html` 是**早期 UI 原型**（单文件 HTML + CDN，只有界面没有数据链路），其可用 UI 资产被 v1 复用；这两个文件**不入库**，仅本机保留。
 
 ## 🗺 路线图与非目标

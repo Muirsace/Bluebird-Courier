@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "browser-check",
+  "evidenceKind": "automated-browser",
+  "status": "fail",
+  "visualReview": "not-requested",
+  "provenance": "current",
+  "deliveryReceiptId": "71b730b5-fc96-4609-b88f-61212494a45a",
+  "artifact": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+    "sha256": "4163e7b1b0c5bb558a1d8d350de2959b1da73a15b567778cfcb57bfd2ee40472",
+    "bytes": 779744
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "available",
+    "executable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome stderr:\n[99572:70956:1003/145822.535:ERROR:components\\os_crypt\\async\\browser\\os_crypt_win.cc:63] Failed to encrypt: 系统找不到指定的文件。 (0x2)\r\n[99572:2268:1003/145822.591:ERROR:chrome\\installer\\util\\google_update_settings_win.cc:270] Failed opening key Software\\Google\\Update\\ClientStateMedium\\{8A69D345-D564-463c-AFF1-A69D9E530F96} to set usagestats; result: 5\r\n[99572:83052:1003/145822.681:ERROR:components\\password_manager\\core\\browser\\password_store\\login_database_async_helper.cc:99] Encryption is not available.\r\n[99572:33896:1003/145822.683:ERROR:components\\password_manager\\core\\browser\\password_store\\login_database_async_helper.cc:99] Encryption is not available.\r\n[99572:70956:1003/145822.792:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:119196:1003/145822.793:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:70956:1003/145822.831:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:70956:1003/145822.860:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:2268:1003/145822.861:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:105116:1003/145822.869:ERROR:services\\device\\public\\cpp\\geolocation\\system_geolocation_source_win.cc:124] Failed to create IAppCapability: 拒绝访问。 (0x80070005)\r\n[99572:70956:1003/145822.885:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:119196:1003/145822.895:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:70956:1003/145822.913:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:2268:1003/145822.914:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:70956:1003/145822.931:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:70956:1003/145822.931:FATAL:content\\browser\\gpu\\gpu_data_manager_impl_private.cc:417] GPU process isn't usable. Goodbye.\nChrome transport: Node v24.21.0, libuv 1.52.1, win32; pid=99572, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=1328, messages=3, bufferedBytes=0.\nChrome write pipe: writable=false, ended=true, destroyed=false, completedWrites=3, writtenBytes=255, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "containment": {
+    "status": "fail",
+    "policy": "fit-or-reader-declared-readable-vertical-scroll",
+    "viewports": []
+  },
+  "themeStates": {
+    "status": "fail",
+    "viewports": []
+  },
+  "readability": {
+    "status": "fail",
+    "minimumProjectedNodeTextPx": 6,
+    "viewports": []
+  },
+  "viewerChrome": {
+    "status": "fail",
+    "viewports": []
+  },
+  "captures": {
+    "status": "not-requested",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "receipt": "github-architecture.browser-check.json",
+    "files": []
+  },
+  "error": "Chrome DevTools read pipe failed: stream ended\nChrome process: still running.\nChrome stderr:\n[99572:70956:1003/145822.535:ERROR:components\\os_crypt\\async\\browser\\os_crypt_win.cc:63] Failed to encrypt: 系统找不到指定的文件。 (0x2)\r\n[99572:2268:1003/145822.591:ERROR:chrome\\installer\\util\\google_update_settings_win.cc:270] Failed opening key Software\\Google\\Update\\ClientStateMedium\\{8A69D345-D564-463c-AFF1-A69D9E530F96} to set usagestats; result: 5\r\n[99572:83052:1003/145822.681:ERROR:components\\password_manager\\core\\browser\\password_store\\login_database_async_helper.cc:99] Encryption is not available.\r\n[99572:33896:1003/145822.683:ERROR:components\\password_manager\\core\\browser\\password_store\\login_database_async_helper.cc:99] Encryption is not available.\r\n[99572:70956:1003/145822.792:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:119196:1003/145822.793:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:70956:1003/145822.831:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:70956:1003/145822.860:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:2268:1003/145822.861:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:105116:1003/145822.869:ERROR:services\\device\\public\\cpp\\geolocation\\system_geolocation_source_win.cc:124] Failed to create IAppCapability: 拒绝访问。 (0x80070005)\r\n[99572:70956:1003/145822.885:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:119196:1003/145822.895:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:70956:1003/145822.913:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:2268:1003/145822.914:ERROR:components\\viz\\host\\persistent_cache_sandboxed_file_factory.cc:153] Failed to open persistent cache files in directory \"C:\\Users\\pc\\AppData\\Local\\Temp\\archify-visual-check-profile-zmchCz\\GPUPersistentCache\\DawnGraphiteCache\\H6POMLZSBZPTMTLBCTMXRDH27BAKUDTA\", error: 0: 另一个程序正在使用此文件，进程无法访问。 (0x20)\r\n[99572:70956:1003/145822.931:ERROR:content\\browser\\gpu\\gpu_process_host.cc:1130] GPU process exited unexpectedly: exit_code=-1073741790\r\n[99572:70956:1003/145822.931:FATAL:content\\browser\\gpu\\gpu_data_manager_impl_private.cc:417] GPU process isn't usable. Goodbye.\nChrome transport: Node v24.21.0, libuv 1.52.1, win32; pid=99572, exitCode=null, signalCode=null.\nChrome read pipe: readable=false, ended=true, destroyed=false, receivedBytes=1328, messages=3, bufferedBytes=0.\nChrome write pipe: writable=false, ended=true, destroyed=false, completedWrites=3, writtenBytes=255, bufferedBytes=0."
+}

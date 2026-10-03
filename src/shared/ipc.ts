@@ -1,9 +1,11 @@
-/** IPC 通道白名单：渲染层只能经此访问用例门面。
- * 主进程运行时引用本表；preload 因沙箱限制只做 import type 引用（见 src/preload/index.ts）。 */
+/** IPC 通道唯一白名单；主进程注册和 preload 桥接均从这里取得名称。 */
 export const IPC_CHANNELS = {
   accessTokenState: 'octo:accessTokenState',
   validateAccessToken: 'octo:validateAccessToken',
   saveAccessToken: 'octo:saveAccessToken',
+  beginTokenReplacement: 'octo:beginTokenReplacement',
+  confirmTokenReplacement: 'octo:confirmTokenReplacement',
+  cancelTokenReplacement: 'octo:cancelTokenReplacement',
   getSettings: 'octo:getSettings',
   updateSettings: 'octo:updateSettings',
   inspectRepositoryInput: 'octo:inspectRepositoryInput',
@@ -11,10 +13,12 @@ export const IPC_CHANNELS = {
   addRepository: 'octo:addRepository',
   removeRepository: 'octo:removeRepository',
   refreshGlance: 'octo:refreshGlance',
+  refreshRepository: 'octo:refreshRepository',
   fetchDetail: 'octo:fetchDetail',
+  loadHistory: 'octo:loadHistory',
+  trend: 'octo:trend',
   openGitHubExternal: 'octo:openGitHubExternal',
 } as const;
 
 export type IpcChannelMap = typeof IPC_CHANNELS;
-
 export type IpcChannelName = IpcChannelMap[keyof IpcChannelMap];

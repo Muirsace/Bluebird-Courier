@@ -1,0 +1,385 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "startedAt": "2026-10-03T07:08:08.580Z",
+  "specification": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\candidate.json",
+    "sha256": "8228374fb93aa239ce82654fe10454cacf4d0a87e633f385c3cdb2b727278fc5",
+    "bytes": 13287
+  },
+  "artifact": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+    "sha256": "b80f5c820268cb38892888783518c05a1b91767d9196a33c3aaac8749c8034a1",
+    "bytes": 782104
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "D:\\app\\Node\\node.exe",
+        "D:\\study\\changshi\\jian kong\\.agents\\skills\\archify\\bin\\archify.mjs",
+        "deliver",
+        "architecture",
+        "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\candidate.json",
+        "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "--quality",
+        "showcase",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "8228374fb93aa239ce82654fe10454cacf4d0a87e633f385c3cdb2b727278fc5",
+          "bytes": 13287
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 1334,
+      "command": [
+        "D:\\app\\Node\\node.exe",
+        "D:\\study\\changshi\\jian kong\\.agents\\skills\\archify\\bin\\archify.mjs",
+        "deliver",
+        "architecture",
+        "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\candidate.json",
+        "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "--quality",
+        "showcase",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "9a42eb76-5ed6-40f8-86a7-e4f34834d646",
+        "ok": true,
+        "command": "deliver",
+        "type": "architecture",
+        "input": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\candidate.json",
+        "output": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "specification": {
+          "sha256": "8228374fb93aa239ce82654fe10454cacf4d0a87e633f385c3cdb2b727278fc5",
+          "bytes": 13287
+        },
+        "artifact": {
+          "sha256": "b80f5c820268cb38892888783518c05a1b91767d9196a33c3aaac8749c8034a1",
+          "bytes": 782104
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 246,
+      "command": [
+        "D:\\app\\Node\\node.exe",
+        "D:\\study\\changshi\\jian kong\\.agents\\skills\\archify\\bin\\archify.mjs",
+        "check",
+        "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "artifact": {
+          "sha256": "b80f5c820268cb38892888783518c05a1b91767d9196a33c3aaac8749c8034a1",
+          "bytes": 782104
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 0,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": 32.5,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6.016602809706257,
+            "maxBends": 2,
+            "routesOverSuggestedBends": 0,
+            "maxStretch": 1,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 18,
+            "minInteriorSegmentPx": 53,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [],
+            "crowdedSides": [
+              {
+                "node": "facade",
+                "label": "facade",
+                "side": "right",
+                "relationships": 4,
+                "sidePx": 66,
+                "neededPx": 74
+              }
+            ],
+            "detours": []
+          },
+          "leadingSpace": {
+            "measured": true,
+            "emptyTopPx": 124,
+            "emptyTopRatio": 0.124,
+            "occupiedTop": 124,
+            "viewBoxTop": 0,
+            "canvasHeight": 1000,
+            "typicalNodeHeight": 72,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "recognized-declared-wide",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 1346,
+            "actualBudgetPx": 1346,
+            "actualReaderWidth": 1376,
+            "desiredReaderWidth": 1596,
+            "viewportCap": 1376,
+            "limit": "viewport-cap",
+            "requestedTargetPx": 7.5,
+            "requestedTargetMet": false,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "node",
+              "id": "snapshot_feature"
+            },
+            "minimumSourceTextPx": 7,
+            "minimumProjectedTextPx": 6.016602809706257,
+            "semanticTextCount": 48
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "9a42eb76-5ed6-40f8-86a7-e4f34834d646"
+      }
+    },
+    "browser-check": {
+      "status": "fail",
+      "exitCode": 1,
+      "durationMs": 20,
+      "command": [
+        "D:\\app\\Node\\node.exe",
+        "D:\\study\\changshi\\jian kong\\.agents\\skills\\archify\\bin\\archify.mjs",
+        "browser-check",
+        "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "fail",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "9a42eb76-5ed6-40f8-86a7-e4f34834d646",
+        "artifact": {
+          "path": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+          "sha256": "b80f5c820268cb38892888783518c05a1b91767d9196a33c3aaac8749c8034a1",
+          "bytes": 782104
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "not-checked",
+          "executable": null
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/evidence-path-conflict",
+            "severity": "error",
+            "message": "browser-check will not replace the existing unowned evidence path \"D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json\".",
+            "subject": {
+              "artifact": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+              "evidencePath": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json"
+            },
+            "evidence": {
+              "reason": {
+                "code": "ownership-artifact-mismatch"
+              }
+            },
+            "supportedFixes": [
+              "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "fail",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "fail",
+          "viewports": []
+        },
+        "readability": {
+          "status": "fail",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "fail",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "github-architecture.browser-check.json",
+          "files": []
+        },
+        "error": "browser-check will not replace the existing unowned evidence path \"D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json\"."
+      }
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json\".",
+      "subject": {
+        "artifact": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "evidencePath": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.finalize.json",
+    "summaryReceipt": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-03T07:08:10.769Z",
+  "durationMs": 2188,
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  }
+}

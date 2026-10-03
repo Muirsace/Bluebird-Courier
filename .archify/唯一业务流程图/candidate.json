@@ -1,0 +1,1951 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "青鸟信使 · GitHub 仓库浏览业务流程（v8）",
+    "locale": "zh-CN",
+    "output": ".archify/唯一业务流程图/github-business.html",
+    "quality_profile": "standard",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "用户操作与浏览"
+        },
+        "backend": {
+          "label": "资料更新与规则"
+        },
+        "security": {
+          "label": "校验、确认与异常"
+        },
+        "database": {
+          "label": "本地资料与快照"
+        },
+        "external": {
+          "label": "GitHub 状态与出口"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "setup",
+      "label": "01 首次使用 · Token 配置与空清单"
+    },
+    {
+      "id": "adding",
+      "label": "02 添加关注仓库 · 任意公开仓库，最多 50 个"
+    },
+    {
+      "id": "summary",
+      "label": "03 清单浏览 · 启动轻量刷新，60 秒内回到清单不重复"
+    },
+    {
+      "id": "replace",
+      "label": "08 更换 Token · 二次确认清空，重新开始"
+    },
+    {
+      "id": "snapshot",
+      "label": "05 摘要快照与趋势 · 每次轻量成功写入，当天最后一档"
+    },
+    {
+      "id": "detail",
+      "label": "04 仓库详情 · 缓存判定后完整抓取或复用"
+    },
+    {
+      "id": "failure",
+      "label": "06 失败与状态 · 旧资料、错误、未更新和栏目状态",
+      "variant": "exception"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "first",
+      "lane": "setup",
+      "col": 0,
+      "type": "frontend",
+      "label": "首次使用",
+      "sublabel": "打开桌面 App",
+      "width": 150,
+      "height": 68,
+      "icon": "start"
+    },
+    {
+      "id": "token",
+      "lane": "setup",
+      "col": 1,
+      "type": "frontend",
+      "label": "填写 GitHub Token",
+      "sublabel": "首版仅绑定一个 Token",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "verify",
+      "lane": "setup",
+      "col": 2,
+      "type": "security",
+      "label": "验证 Token",
+      "sublabel": "有效才可获取仓库资料",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "saved",
+      "lane": "setup",
+      "col": 3,
+      "type": "database",
+      "label": "保存到本机",
+      "sublabel": "不上传产品服务器",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "ready",
+      "lane": "setup",
+      "col": 4,
+      "type": "frontend",
+      "label": "进入可用状态",
+      "sublabel": "可添加仓库并浏览",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "empty",
+      "lane": "setup",
+      "col": 5,
+      "type": "frontend",
+      "label": "空清单",
+      "sublabel": "首版为空白，不推荐仓库",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "bad_token",
+      "lane": "setup",
+      "col": 2,
+      "type": "security",
+      "label": "验证失败",
+      "sublabel": "提示原因，修改后重试",
+      "width": 150,
+      "height": 68,
+      "yOffset": 108,
+      "icon": "failure"
+    },
+    {
+      "id": "add",
+      "lane": "adding",
+      "col": 0,
+      "type": "frontend",
+      "label": "用户添加仓库",
+      "sublabel": "粘贴链接或 owner/repo",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "check_repo",
+      "lane": "adding",
+      "col": 1,
+      "type": "security",
+      "label": "检查能否加入",
+      "sublabel": "有效、公开、未重复、未满",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "insert",
+      "lane": "adding",
+      "col": 2,
+      "type": "frontend",
+      "label": "立即加入清单",
+      "sublabel": "先显示身份与获取中",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "new_light",
+      "lane": "adding",
+      "col": 3,
+      "type": "backend",
+      "label": "立即轻量抓取",
+      "sublabel": "仅获取新仓库的摘要",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "new_card",
+      "lane": "adding",
+      "col": 4,
+      "type": "frontend",
+      "label": "显示最新摘要",
+      "sublabel": "成功后更新卡片",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "new_sort",
+      "lane": "adding",
+      "col": 5,
+      "type": "frontend",
+      "label": "按最近活动排序",
+      "sublabel": "最新活动的仓库在前",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "reject",
+      "lane": "adding",
+      "col": 1,
+      "type": "security",
+      "label": "拒绝本次加入",
+      "sublabel": "提示原因，不创建卡片",
+      "width": 150,
+      "height": 68,
+      "yOffset": 108,
+      "icon": "failure"
+    },
+    {
+      "id": "refresh",
+      "lane": "summary",
+      "col": 0,
+      "type": "frontend",
+      "label": "打开 App / 全部刷新",
+      "sublabel": "打开 App 触发；全部刷新始终强制",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "light",
+      "lane": "summary",
+      "col": 1,
+      "type": "backend",
+      "label": "当前仓库轻量抓取",
+      "sublabel": "仅处理游标指向仓库",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "summary_result",
+      "lane": "summary",
+      "col": 2,
+      "type": "frontend",
+      "label": "写入当前仓库摘要",
+      "sublabel": "成功即更新对应卡片",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "sort",
+      "lane": "summary",
+      "col": 3,
+      "type": "backend",
+      "label": "按双活动时间排序",
+      "sublabel": "代码活动与协作活动取较新者",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "scan",
+      "lane": "summary",
+      "col": 4,
+      "type": "frontend",
+      "label": "浏览或搜索清单",
+      "sublabel": "清单最多 50 个；可搜索",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "enter",
+      "lane": "summary",
+      "col": 5,
+      "type": "frontend",
+      "label": "进入指定仓库",
+      "sublabel": "进入详情，按缓存判定",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "detail_trigger",
+      "lane": "detail",
+      "col": 0,
+      "type": "frontend",
+      "label": "进入详情 / 重新抓取",
+      "sublabel": "进入判定；按钮强制更新",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "full",
+      "lane": "detail",
+      "col": 1,
+      "type": "backend",
+      "label": "详情资料抓取",
+      "sublabel": "首版详情资料集",
+      "width": 150,
+      "height": 68,
+      "yOffset": 112
+    },
+    {
+      "id": "full_result",
+      "lane": "detail",
+      "col": 2,
+      "type": "backend",
+      "label": "抓取成功",
+      "sublabel": "聚合各栏目状态；部分失败保留旧资料",
+      "width": 150,
+      "height": 68,
+      "yOffset": 110
+    },
+    {
+      "id": "show",
+      "lane": "detail",
+      "col": 3,
+      "type": "frontend",
+      "label": "展示详情资料",
+      "sublabel": "详情资料集",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "history",
+      "lane": "detail",
+      "col": 4,
+      "type": "frontend",
+      "label": "继续加载更早内容",
+      "sublabel": "Commit、Issue、PR 可按页加载更早内容",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "origin",
+      "lane": "detail",
+      "col": 5,
+      "type": "external",
+      "label": "在 GitHub 打开",
+      "sublabel": "保留原始页面出口",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "daily",
+      "lane": "snapshot",
+      "col": 2,
+      "type": "database",
+      "label": "更新摘要快照",
+      "sublabel": "当天最后一档",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "last",
+      "lane": "snapshot",
+      "col": 3,
+      "type": "database",
+      "label": "当天最后一次成功",
+      "sublabel": "同仓库同日只保留一档",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "keep",
+      "lane": "snapshot",
+      "col": 4,
+      "type": "database",
+      "label": "仅保留最近 30 天",
+      "sublabel": "保存最近 30 个自然日",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "trend",
+      "lane": "snapshot",
+      "col": 5,
+      "type": "frontend",
+      "label": "Star / Fork 趋势",
+      "sublabel": "30日 Star / Fork",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "failure",
+      "lane": "failure",
+      "col": 1,
+      "type": "security",
+      "label": "获取失败·判断资料状态",
+      "sublabel": "有旧资料保留；无旧资料显示空状态",
+      "width": 150,
+      "height": 68,
+      "icon": "failure"
+    },
+    {
+      "id": "cached",
+      "lane": "failure",
+      "col": 2,
+      "type": "database",
+      "label": "保留上次成功资料",
+      "sublabel": "有缓存仍可继续浏览",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "error",
+      "lane": "failure",
+      "col": 3,
+      "type": "security",
+      "label": "标明本次失败",
+      "sublabel": "原因、来源与上次成功时间",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "retry",
+      "lane": "failure",
+      "col": 4,
+      "type": "frontend",
+      "label": "用户再次更新",
+      "sublabel": "恢复网络或验证 Token",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "retry_target",
+      "lane": "failure",
+      "col": 5,
+      "type": "security",
+      "label": "判断重试范围",
+      "sublabel": "读取失败来源：清单、详情或新增",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "delete",
+      "lane": "summary",
+      "col": 4,
+      "type": "frontend",
+      "label": "用户删除仓库",
+      "sublabel": "主动移出关注清单",
+      "width": 150,
+      "height": 68,
+      "yOffset": 480
+    },
+    {
+      "id": "delete_data",
+      "lane": "summary",
+      "col": 5,
+      "type": "database",
+      "label": "删除该仓库全部资料",
+      "sublabel": "清单、当前资料及快照",
+      "width": 150,
+      "height": 68,
+      "yOffset": 480
+    },
+    {
+      "id": "repo_change",
+      "lane": "summary",
+      "col": 4,
+      "type": "external",
+      "label": "仓库状态发生变化",
+      "sublabel": "归档、删除或改名",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330
+    },
+    {
+      "id": "repo_keep",
+      "lane": "summary",
+      "col": 5,
+      "type": "frontend",
+      "label": "保留清单并反馈状态",
+      "sublabel": "由用户决定是否删除",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330
+    },
+    {
+      "id": "duplicate",
+      "lane": "detail",
+      "col": 0,
+      "type": "backend",
+      "label": "详情对象正在抓取",
+      "sublabel": "详情入口重复点击，显示进行中",
+      "width": 150,
+      "height": 68,
+      "yOffset": -220
+    },
+    {
+      "id": "block",
+      "lane": "detail",
+      "col": 1,
+      "type": "frontend",
+      "label": "显示进行中状态",
+      "sublabel": "阻止同一对象重复抓取",
+      "width": 150,
+      "height": 68,
+      "yOffset": -220
+    },
+    {
+      "id": "replace",
+      "lane": "replace",
+      "col": 0,
+      "type": "frontend",
+      "label": "用户更换 Token",
+      "sublabel": "进入 Token 设置",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "confirm",
+      "lane": "replace",
+      "col": 1,
+      "type": "security",
+      "label": "二次确认清空",
+      "sublabel": "告知本地全部资料删除",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "clear",
+      "lane": "replace",
+      "col": 2,
+      "type": "database",
+      "label": "清空全部本地资料",
+      "sublabel": "清单、当前资料及快照",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "new_token",
+      "lane": "replace",
+      "col": 3,
+      "type": "frontend",
+      "label": "配置新 Token",
+      "sublabel": "重新填写并验证",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "new_verify",
+      "lane": "replace",
+      "col": 4,
+      "type": "security",
+      "label": "验证新 Token",
+      "sublabel": "失败时修改后再验证",
+      "width": 150,
+      "height": 68
+    },
+    {
+      "id": "reset",
+      "lane": "setup",
+      "col": 5,
+      "type": "frontend",
+      "label": "重新开始使用",
+      "sublabel": "验证成功，回到空清单",
+      "width": 150,
+      "height": 68,
+      "yOffset": 220
+    },
+    {
+      "id": "cancel",
+      "lane": "replace",
+      "col": 1,
+      "type": "frontend",
+      "label": "取消更换",
+      "sublabel": "继续原 Token 与原资料",
+      "width": 150,
+      "height": 68,
+      "yOffset": 108
+    },
+    {
+      "id": "summary_failure",
+      "lane": "failure",
+      "col": 1,
+      "type": "security",
+      "label": "轻量抓取失败",
+      "sublabel": "保留旧摘要或显示空状态，记录本仓库失败",
+      "width": 150,
+      "height": 68,
+      "yOffset": -220,
+      "icon": "failure"
+    },
+    {
+      "id": "detail_failure",
+      "lane": "failure",
+      "col": 1,
+      "type": "security",
+      "label": "完整抓取失败",
+      "sublabel": "保留上次详情并报错",
+      "width": 150,
+      "height": 68,
+      "yOffset": -110,
+      "icon": "failure"
+    },
+    {
+      "id": "cache_check",
+      "lane": "detail",
+      "col": 1,
+      "type": "database",
+      "label": "读取缓存与判定",
+      "sublabel": "无缓存完整；有缓存看变化",
+      "width": 150,
+      "height": 68,
+      "yOffset": -112
+    },
+    {
+      "id": "change_gate",
+      "lane": "detail",
+      "col": 1,
+      "type": "security",
+      "label": "决定完整或复用",
+      "sublabel": "实质变化 / 仅摘要变化",
+      "width": 150,
+      "height": 68,
+      "yOffset": 0
+    },
+    {
+      "id": "reuse",
+      "lane": "detail",
+      "col": 2,
+      "type": "backend",
+      "label": "复用完整资料",
+      "sublabel": "仅更新摘要数字与摘要时间",
+      "width": 150,
+      "height": 68,
+      "yOffset": 0
+    },
+    {
+      "id": "column_state",
+      "lane": "detail",
+      "col": 4,
+      "type": "security",
+      "label": "解析单个栏目响应",
+      "sublabel": "按 HTTP、内容与首版支持范围分类",
+      "width": 150,
+      "height": 68,
+      "yOffset": 110
+    },
+    {
+      "id": "new_verify_fail",
+      "lane": "replace",
+      "col": 4,
+      "type": "security",
+      "label": "新 Token 无效",
+      "sublabel": "修改后重新验证",
+      "width": 150,
+      "height": 68,
+      "yOffset": 110,
+      "icon": "failure"
+    },
+    {
+      "id": "settings_entry",
+      "lane": "replace",
+      "col": 4,
+      "type": "frontend",
+      "label": "进入 Token 设置",
+      "sublabel": "来自清单维护",
+      "width": 150,
+      "height": 68,
+      "yOffset": 250
+    },
+    {
+      "id": "error_kind",
+      "lane": "failure",
+      "col": 1,
+      "type": "security",
+      "label": "识别失败类型",
+      "sublabel": "普通网络错误 / Token / 限流",
+      "width": 150,
+      "height": 68,
+      "yOffset": -330,
+      "icon": "failure"
+    },
+    {
+      "id": "new_light_failure",
+      "lane": "adding",
+      "col": 3,
+      "type": "security",
+      "label": "首次摘要失败",
+      "sublabel": "保留获取中卡片并显示错误与重试",
+      "width": 150,
+      "height": 68,
+      "yOffset": 108,
+      "icon": "failure"
+    },
+    {
+      "id": "next_repo",
+      "lane": "summary",
+      "col": 2,
+      "type": "backend",
+      "label": "处理下一个仓库",
+      "sublabel": "普通网络错误继续本轮轻量抓取",
+      "width": 150,
+      "height": 68,
+      "yOffset": 220
+    },
+    {
+      "id": "batch_start",
+      "lane": "summary",
+      "col": 0,
+      "type": "backend",
+      "label": "建立本轮游标",
+      "sublabel": "打开 App / 全部刷新后逐仓库处理",
+      "width": 150,
+      "height": 68,
+      "yOffset": 110
+    },
+    {
+      "id": "batch_gate",
+      "lane": "summary",
+      "col": 2,
+      "type": "security",
+      "label": "还有未处理仓库？",
+      "sublabel": "按当前游标判断继续或结束",
+      "width": 150,
+      "height": 68,
+      "yOffset": 110
+    },
+    {
+      "id": "new_card_error",
+      "lane": "adding",
+      "col": 4,
+      "type": "security",
+      "label": "新增仓库失败状态",
+      "sublabel": "保留卡片；显示错误与空摘要",
+      "width": 150,
+      "height": 68,
+      "yOffset": 108,
+      "icon": "failure"
+    },
+    {
+      "id": "new_retry",
+      "lane": "adding",
+      "col": 5,
+      "type": "frontend",
+      "label": "重试该新增仓库",
+      "sublabel": "重新执行首次轻量抓取",
+      "width": 150,
+      "height": 68,
+      "yOffset": 108
+    },
+    {
+      "id": "failure_state",
+      "lane": "failure",
+      "col": 2,
+      "type": "security",
+      "label": "判断是否有旧资料",
+      "sublabel": "有资料保留；无资料显示空状态",
+      "width": 150,
+      "height": 68,
+      "yOffset": 130
+    },
+    {
+      "id": "empty_failure",
+      "lane": "failure",
+      "col": 3,
+      "type": "frontend",
+      "label": "显示错误与空状态",
+      "sublabel": "没有旧资料；等待再次更新",
+      "width": 150,
+      "height": 68,
+      "yOffset": 130
+    },
+    {
+      "id": "list_state",
+      "lane": "summary",
+      "col": 1,
+      "type": "security",
+      "label": "清单有仓库吗？",
+      "sublabel": "决定进入批次或显示空清单",
+      "width": 150,
+      "height": 68,
+      "yOffset": 110
+    },
+    {
+      "id": "batch_blocked",
+      "lane": "summary",
+      "col": 3,
+      "type": "security",
+      "label": "批次停止·剩余待更新",
+      "sublabel": "当前仓库已记录；修复后再次刷新",
+      "width": 150,
+      "height": 68,
+      "yOffset": 350,
+      "icon": "failure"
+    },
+    {
+      "id": "refresh_gate",
+      "lane": "summary",
+      "col": 0,
+      "type": "security",
+      "label": "60 秒内已刷新？",
+      "sublabel": "普通回访跳过；全部刷新强制",
+      "width": 150,
+      "height": 68,
+      "yOffset": -110
+    },
+    {
+      "id": "batch_lock",
+      "lane": "summary",
+      "col": 0,
+      "type": "security",
+      "label": "批次正在抓取？",
+      "sublabel": "防止打开、刷新或重试重复执行",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330
+    },
+    {
+      "id": "new_lock",
+      "lane": "adding",
+      "col": 5,
+      "type": "security",
+      "label": "新增仓库正在抓取？",
+      "sublabel": "防止单仓库重试并发",
+      "width": 150,
+      "height": 68,
+      "yOffset": 220
+    },
+    {
+      "id": "new_error_kind",
+      "lane": "failure",
+      "col": 2,
+      "type": "security",
+      "label": "新增失败分类",
+      "sublabel": "网络 / Token / 限流",
+      "width": 150,
+      "height": 68,
+      "yOffset": -430,
+      "icon": "failure"
+    },
+    {
+      "id": "detail_error_kind",
+      "lane": "failure",
+      "col": 3,
+      "type": "security",
+      "label": "详情失败分类",
+      "sublabel": "网络 / Token / 限流",
+      "width": 150,
+      "height": 68,
+      "yOffset": -430,
+      "icon": "failure"
+    },
+    {
+      "id": "token_stop",
+      "lane": "failure",
+      "col": 4,
+      "type": "security",
+      "label": "Token/限流停止",
+      "sublabel": "暂停请求，修复后重试",
+      "width": 150,
+      "height": 68,
+      "yOffset": -430,
+      "icon": "failure"
+    },
+    {
+      "id": "blocked_current",
+      "lane": "summary",
+      "col": 3,
+      "type": "security",
+      "label": "记录当前仓库失败",
+      "sublabel": "有旧资料保留；无旧资料显示空状态",
+      "width": 150,
+      "height": 68,
+      "yOffset": 250,
+      "icon": "failure"
+    },
+    {
+      "id": "column_loading",
+      "lane": "detail",
+      "col": 3,
+      "type": "frontend",
+      "label": "加载下一栏目",
+      "sublabel": "按栏目队列请求并显示进度",
+      "width": 150,
+      "height": 68,
+      "yOffset": -220
+    },
+    {
+      "id": "column_success",
+      "lane": "failure",
+      "col": 3,
+      "type": "frontend",
+      "label": "栏目成功",
+      "sublabel": "显示返回内容",
+      "width": 150,
+      "height": 68,
+      "yOffset": 240
+    },
+    {
+      "id": "column_empty",
+      "lane": "failure",
+      "col": 3,
+      "type": "frontend",
+      "label": "栏目无内容",
+      "sublabel": "显示暂无 Release / Tag 等",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330
+    },
+    {
+      "id": "column_denied",
+      "lane": "failure",
+      "col": 4,
+      "type": "security",
+      "label": "栏目无权访问",
+      "sublabel": "提示权限不足，其他栏目继续",
+      "width": 150,
+      "height": 68,
+      "yOffset": 240,
+      "icon": "failure"
+    },
+    {
+      "id": "column_failed",
+      "lane": "failure",
+      "col": 4,
+      "type": "security",
+      "label": "栏目抓取失败",
+      "sublabel": "保留旧资料并标明错误",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330,
+      "icon": "failure"
+    },
+    {
+      "id": "column_unsupported",
+      "lane": "failure",
+      "col": 5,
+      "type": "security",
+      "label": "首版暂不支持",
+      "sublabel": "明确提示，不伪造数据",
+      "width": 150,
+      "height": 68,
+      "yOffset": 240
+    },
+    {
+      "id": "history_gate",
+      "lane": "detail",
+      "col": 4,
+      "type": "security",
+      "label": "还有更早内容？",
+      "sublabel": "判断是否继续分页",
+      "width": 150,
+      "height": 68,
+      "yOffset": -110
+    },
+    {
+      "id": "history_page",
+      "lane": "detail",
+      "col": 4,
+      "type": "backend",
+      "label": "加载更早一页",
+      "sublabel": "Commit / Issue / PR 分页请求",
+      "width": 150,
+      "height": 68,
+      "yOffset": -220
+    },
+    {
+      "id": "batch_inflight",
+      "lane": "summary",
+      "col": 1,
+      "type": "frontend",
+      "label": "显示批次进行中",
+      "sublabel": "阻止重复刷新，等待当前批次结束",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330
+    },
+    {
+      "id": "new_inflight",
+      "lane": "adding",
+      "col": 5,
+      "type": "frontend",
+      "label": "显示新增进行中",
+      "sublabel": "阻止同一仓库重复重试",
+      "width": 150,
+      "height": 68,
+      "yOffset": 330
+    },
+    {
+      "icon": "failure",
+      "type": "security",
+      "col": 4,
+      "lane": "adding",
+      "width": 180,
+      "yOffset": 220,
+      "height": 68,
+      "label": "新增仓库 Token/限流失败",
+      "sublabel": "保留失败卡片；修复后可单仓重试",
+      "id": "new_token_state"
+    },
+    {
+      "type": "backend",
+      "col": 3,
+      "lane": "detail",
+      "width": 170,
+      "yOffset": 220,
+      "height": 68,
+      "label": "汇总栏目状态",
+      "sublabel": "未完成取下一项；全部完成后判定可展示内容",
+      "id": "column_aggregate"
+    }
+  ],
+  "edges": [
+    {
+      "id": "add_check",
+      "from": "add",
+      "to": "check_repo"
+    },
+    {
+      "id": "add_light",
+      "from": "insert",
+      "to": "new_light"
+    },
+    {
+      "id": "add_pass",
+      "from": "check_repo",
+      "to": "insert",
+      "label": "通过",
+      "variant": "emphasis"
+    },
+    {
+      "id": "add_reject",
+      "from": "check_repo",
+      "to": "reject",
+      "label": "未通过",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "add_result",
+      "from": "new_light",
+      "to": "new_card",
+      "label": "成功"
+    },
+    {
+      "id": "add_sort",
+      "from": "new_card",
+      "to": "new_sort"
+    },
+    {
+      "id": "batch_begin",
+      "from": "batch_start",
+      "to": "batch_lock",
+      "label": "检查批次占用",
+      "variant": "default"
+    },
+    {
+      "id": "batch_complete",
+      "from": "batch_gate",
+      "to": "sort",
+      "label": "全部处理完本轮",
+      "variant": "emphasis"
+    },
+    {
+      "id": "batch_free",
+      "from": "batch_lock",
+      "to": "list_state",
+      "label": "未在抓取",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "batch_has_more",
+      "from": "batch_gate",
+      "to": "next_repo",
+      "label": "还有未处理仓库",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "block_repeat",
+      "from": "duplicate",
+      "to": "block"
+    },
+    {
+      "id": "blocked_current_batch",
+      "from": "blocked_current",
+      "to": "batch_blocked",
+      "label": "记录后停止批次",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "blocked_failure",
+      "from": "batch_blocked",
+      "to": "failure",
+      "label": "按资料状态显示当前失败",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "blocked_scan",
+      "from": "batch_blocked",
+      "to": "scan",
+      "label": "回到清单标明未更新",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "cache_hit",
+      "from": "cache_check",
+      "to": "change_gate",
+      "label": "已有缓存，继续判断变化",
+      "variant": "default"
+    },
+    {
+      "id": "change_to_full",
+      "from": "change_gate",
+      "to": "full",
+      "label": "无缓存 / 实质变化 / 强制",
+      "variant": "emphasis"
+    },
+    {
+      "id": "column_denied_edge",
+      "from": "column_state",
+      "to": "column_denied",
+      "label": "无权访问",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "column_empty_edge",
+      "from": "column_state",
+      "to": "column_empty",
+      "label": "无内容",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "column_failed_edge",
+      "from": "column_state",
+      "to": "column_failed",
+      "label": "抓取失败",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "column_failed_retry",
+      "from": "column_failed",
+      "to": "detail_trigger",
+      "label": "用户重新抓取",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "column_success_edge",
+      "from": "column_state",
+      "to": "column_success",
+      "label": "成功",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "column_success_history",
+      "from": "column_success",
+      "to": "history",
+      "label": "可继续加载",
+      "variant": "default"
+    },
+    {
+      "id": "column_unsupported_edge",
+      "from": "column_state",
+      "to": "column_unsupported",
+      "label": "首版暂不支持",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "daily_latest",
+      "from": "daily",
+      "to": "last"
+    },
+    {
+      "id": "delete_all",
+      "from": "delete",
+      "to": "delete_data"
+    },
+    {
+      "id": "detail_cache_read",
+      "from": "detail_trigger",
+      "to": "cache_check",
+      "label": "读缓存与判定（0 次网络调用）",
+      "variant": "default"
+    },
+    {
+      "id": "detail_enter",
+      "from": "enter",
+      "to": "detail_trigger",
+      "label": "打开详情",
+      "route": "auto"
+    },
+    {
+      "id": "detail_failure_chain",
+      "from": "detail_failure",
+      "to": "failure",
+      "label": "进入失败处理",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "detail_more",
+      "from": "show",
+      "to": "history",
+      "label": "需要时进入分页",
+      "variant": "default"
+    },
+    {
+      "id": "detail_network_failure",
+      "from": "detail_error_kind",
+      "to": "detail_failure",
+      "label": "普通网络错误",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "detail_present",
+      "from": "full_result",
+      "to": "show",
+      "label": "抓取结果可展示",
+      "variant": "default"
+    },
+    {
+      "id": "detail_token_failure",
+      "from": "detail_error_kind",
+      "to": "token_stop",
+      "label": "Token 无效 / 限流",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "duplicate_trigger",
+      "from": "detail_trigger",
+      "to": "duplicate",
+      "label": "重复点击 / 仍在抓取",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "empty_add",
+      "from": "empty",
+      "to": "add",
+      "label": "开始添加仓库",
+      "variant": "emphasis"
+    },
+    {
+      "id": "empty_failure_note",
+      "from": "empty_failure",
+      "to": "error",
+      "label": "记录本次失败",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "failure_has_cache",
+      "from": "failure_state",
+      "to": "cached",
+      "label": "有旧资料",
+      "variant": "default",
+      "role": "branch"
+    },
+    {
+      "id": "failure_no_cache",
+      "from": "failure_state",
+      "to": "empty_failure",
+      "label": "无旧资料",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "failure_note",
+      "from": "cached",
+      "to": "error"
+    },
+    {
+      "id": "failure_retry",
+      "from": "error",
+      "to": "retry"
+    },
+    {
+      "id": "failure_state_gate",
+      "from": "failure",
+      "to": "failure_state",
+      "label": "判断旧资料",
+      "variant": "default"
+    },
+    {
+      "id": "full_error_classify",
+      "from": "full",
+      "to": "detail_error_kind",
+      "label": "失败",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "full_loading_start",
+      "from": "full",
+      "to": "column_loading",
+      "label": "开始请求详情栏目",
+      "variant": "default"
+    },
+    {
+      "id": "full_snapshot_entry",
+      "from": "full_result",
+      "to": "daily",
+      "label": "完整成功覆盖摘要快照",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "global_stop",
+      "from": "error_kind",
+      "to": "blocked_current",
+      "label": "Token 无效 / 限流：停止后续",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "history_append",
+      "from": "history_page",
+      "to": "history",
+      "label": "追加一页并继续",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "history_done",
+      "from": "history_gate",
+      "to": "origin",
+      "label": "没有更多 / 打开 GitHub",
+      "variant": "default"
+    },
+    {
+      "id": "history_has_more",
+      "from": "history_gate",
+      "to": "history_page",
+      "label": "还有更早内容",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "history_more",
+      "from": "history",
+      "to": "history_gate",
+      "label": "加载更早内容",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "light_error_kind",
+      "from": "light",
+      "to": "error_kind",
+      "label": "失败",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "list_empty",
+      "from": "list_state",
+      "to": "empty",
+      "label": "无仓库：回到空清单",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "list_has_repos",
+      "from": "list_state",
+      "to": "light",
+      "label": "有仓库",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "new_card_failure_state",
+      "from": "new_light_failure",
+      "to": "new_card_error",
+      "label": "保留失败卡片",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "new_card_retry",
+      "from": "new_card_error",
+      "to": "new_retry",
+      "label": "用户再次更新",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "new_free",
+      "from": "new_lock",
+      "to": "new_light",
+      "label": "未在抓取",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "new_light_fail",
+      "from": "new_light",
+      "to": "new_error_kind",
+      "label": "失败",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "new_network_failure",
+      "from": "new_error_kind",
+      "to": "new_light_failure",
+      "label": "普通网络错误",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "new_retry_fetch",
+      "from": "new_retry",
+      "to": "new_lock",
+      "label": "检查单仓库占用",
+      "variant": "default"
+    },
+    {
+      "id": "new_snapshot_entry",
+      "from": "new_card",
+      "to": "daily",
+      "label": "成功即写入摘要快照",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "new_sort_scan",
+      "from": "new_sort",
+      "to": "scan",
+      "label": "回到清单",
+      "variant": "default"
+    },
+    {
+      "id": "new_verify_invalid",
+      "from": "new_verify",
+      "to": "new_verify_fail",
+      "label": "无效",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "new_verify_retry",
+      "from": "new_verify_fail",
+      "to": "new_token",
+      "label": "修改 Token",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "next_repo_continue",
+      "from": "next_repo",
+      "to": "light",
+      "label": "按游标处理下一仓库",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "ordinary_continue",
+      "from": "error_kind",
+      "to": "summary_failure",
+      "label": "普通网络错误：继续其他仓库",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "refresh_run",
+      "from": "refresh_gate",
+      "to": "batch_start",
+      "label": "首次打开 / 超过 60 秒 / 全部刷新",
+      "variant": "emphasis",
+      "role": "branch"
+    },
+    {
+      "id": "refresh_skip",
+      "from": "refresh_gate",
+      "to": "scan",
+      "label": "60 秒内回访：跳过抓取",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "replace_cancel_return",
+      "from": "cancel",
+      "to": "scan",
+      "label": "保留原资料继续浏览",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "replace_configure",
+      "from": "clear",
+      "to": "new_token"
+    },
+    {
+      "id": "replace_confirm",
+      "from": "confirm",
+      "to": "clear",
+      "label": "确认",
+      "variant": "security"
+    },
+    {
+      "id": "replace_intent",
+      "from": "replace",
+      "to": "confirm"
+    },
+    {
+      "id": "replace_ready",
+      "from": "new_verify",
+      "to": "reset",
+      "label": "有效",
+      "variant": "emphasis"
+    },
+    {
+      "id": "replace_verify",
+      "from": "new_token",
+      "to": "new_verify"
+    },
+    {
+      "id": "repo_status_trigger",
+      "from": "summary_result",
+      "to": "repo_change",
+      "label": "检测到仓库状态变化",
+      "variant": "dashed"
+    },
+    {
+      "id": "reset_empty",
+      "from": "reset",
+      "to": "empty",
+      "label": "清空后",
+      "variant": "dashed",
+      "role": "return",
+      "route": "auto"
+    },
+    {
+      "id": "retry_detail_scope",
+      "from": "retry_target",
+      "to": "detail_trigger",
+      "label": "来源=详情：强制重抓",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "retry_fetch",
+      "from": "retry",
+      "to": "retry_target"
+    },
+    {
+      "id": "retry_list_scope",
+      "from": "retry_target",
+      "to": "batch_start",
+      "label": "来源=清单：重新开始本轮",
+      "variant": "dashed",
+      "role": "return"
+    },
+    {
+      "id": "reuse_show",
+      "from": "reuse",
+      "to": "show",
+      "label": "最新摘要 + 旧详情",
+      "variant": "default"
+    },
+    {
+      "id": "reuse_snapshot_entry",
+      "from": "reuse",
+      "to": "daily",
+      "label": "复用成功更新摘要快照",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "scan_delete",
+      "from": "scan",
+      "to": "delete",
+      "label": "清单维护",
+      "variant": "dashed"
+    },
+    {
+      "id": "scan_settings",
+      "from": "scan",
+      "to": "settings_entry",
+      "label": "Token 设置",
+      "variant": "dashed"
+    },
+    {
+      "id": "settings_replace",
+      "from": "settings_entry",
+      "to": "replace",
+      "label": "打开设置",
+      "variant": "default"
+    },
+    {
+      "id": "setup_bad",
+      "from": "verify",
+      "to": "bad_token",
+      "label": "无效",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "setup_empty",
+      "from": "ready",
+      "to": "empty",
+      "label": "无仓库"
+    },
+    {
+      "id": "setup_ok",
+      "from": "verify",
+      "to": "saved",
+      "label": "有效",
+      "variant": "emphasis"
+    },
+    {
+      "id": "setup_ready",
+      "from": "saved",
+      "to": "ready"
+    },
+    {
+      "id": "setup_retry",
+      "from": "bad_token",
+      "to": "token",
+      "label": "重新填写",
+      "variant": "dashed",
+      "role": "return",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "setup_start",
+      "from": "first",
+      "to": "token"
+    },
+    {
+      "id": "setup_verify",
+      "from": "token",
+      "to": "verify"
+    },
+    {
+      "id": "snapshot_retention",
+      "from": "last",
+      "to": "keep"
+    },
+    {
+      "id": "snapshot_trend",
+      "from": "keep",
+      "to": "trend"
+    },
+    {
+      "id": "state_feedback",
+      "from": "show",
+      "to": "column_state",
+      "label": "按栏目反馈状态",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "status_keep",
+      "from": "repo_change",
+      "to": "repo_keep"
+    },
+    {
+      "id": "summary_batch_after_failure",
+      "from": "summary_failure",
+      "to": "batch_gate",
+      "label": "记录失败并继续批次",
+      "variant": "security",
+      "role": "branch"
+    },
+    {
+      "id": "summary_batch_after_success",
+      "from": "summary_result",
+      "to": "batch_gate",
+      "label": "记录成功并继续批次",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "summary_failure_common",
+      "from": "summary_failure",
+      "to": "failure",
+      "label": "保留旧摘要或空状态并报错",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "summary_only",
+      "from": "change_gate",
+      "to": "reuse",
+      "label": "仅 Star / Fork / Issue 变化→复用",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "summary_scan",
+      "from": "sort",
+      "to": "scan"
+    },
+    {
+      "id": "summary_select",
+      "from": "scan",
+      "to": "enter"
+    },
+    {
+      "id": "summary_snapshot_entry",
+      "from": "summary_result",
+      "to": "daily",
+      "label": "成功即写入摘要快照",
+      "variant": "dashed"
+    },
+    {
+      "id": "summary_success",
+      "from": "light",
+      "to": "summary_result",
+      "label": "成功",
+      "variant": "emphasis"
+    },
+    {
+      "id": "summary_trigger",
+      "from": "refresh",
+      "to": "refresh_gate",
+      "label": "检查刷新时间窗",
+      "variant": "default"
+    },
+    {
+      "id": "token_stop_failure",
+      "from": "token_stop",
+      "to": "failure",
+      "label": "进入失败状态",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "batch_duplicate",
+      "from": "batch_lock",
+      "to": "batch_inflight",
+      "label": "已有批次进行中",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "new_duplicate",
+      "from": "new_lock",
+      "to": "new_inflight",
+      "label": "已有新增抓取进行中",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "to": "cancel",
+      "label": "取消",
+      "from": "confirm",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "replace_cancel_choice"
+    },
+    {
+      "to": "batch_gate",
+      "label": "反馈后继续当前批次游标",
+      "from": "repo_keep",
+      "role": "return",
+      "variant": "dashed",
+      "id": "repo_continue_batch"
+    },
+    {
+      "to": "new_token_state",
+      "label": "Token 无效 / 限流：保留新增卡片",
+      "from": "new_error_kind",
+      "role": "error",
+      "variant": "security",
+      "id": "new_token_card_state"
+    },
+    {
+      "to": "token_stop",
+      "label": "同时暂停后续 GitHub 请求",
+      "from": "new_token_state",
+      "role": "error",
+      "variant": "security",
+      "id": "new_token_global_stop"
+    },
+    {
+      "to": "new_card_error",
+      "label": "记录新增失败状态",
+      "from": "new_token_state",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "new_token_retry_card"
+    },
+    {
+      "to": "new_retry",
+      "label": "来源=新增：重新轻量抓取",
+      "from": "retry_target",
+      "role": "return",
+      "variant": "dashed",
+      "id": "retry_new_scope"
+    },
+    {
+      "to": "column_state",
+      "id": "column_response_classify",
+      "variant": "default",
+      "label": "收到一个栏目响应",
+      "from": "column_loading"
+    },
+    {
+      "to": "column_aggregate",
+      "label": "记录栏目状态",
+      "from": "column_success",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "column_aggregate_column_success"
+    },
+    {
+      "to": "column_aggregate",
+      "label": "记录栏目状态",
+      "from": "column_empty",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "column_aggregate_column_empty"
+    },
+    {
+      "to": "column_aggregate",
+      "label": "记录栏目状态",
+      "from": "column_denied",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "column_aggregate_column_denied"
+    },
+    {
+      "to": "column_aggregate",
+      "label": "记录栏目状态",
+      "from": "column_failed",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "column_aggregate_column_failed"
+    },
+    {
+      "to": "column_aggregate",
+      "label": "记录栏目状态",
+      "from": "column_unsupported",
+      "role": "branch",
+      "variant": "dashed",
+      "id": "column_aggregate_column_unsupported"
+    },
+    {
+      "to": "column_loading",
+      "label": "还有未完成栏目：取下一项",
+      "from": "column_aggregate",
+      "role": "return",
+      "variant": "dashed",
+      "id": "column_next"
+    },
+    {
+      "to": "full_result",
+      "label": "全部完成且至少一项可展示：汇总详情",
+      "from": "column_aggregate",
+      "role": "branch",
+      "variant": "emphasis",
+      "id": "column_show_aggregate"
+    },
+    {
+      "to": "detail_failure",
+      "label": "全部完成且无可展示内容：完整抓取失败",
+      "from": "column_aggregate",
+      "role": "error",
+      "variant": "security",
+      "id": "column_all_failed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "产品边界",
+      "items": [
+        "个人开发者桌面资料浏览器：集中、最新、少操作。",
+        "一个本地 Token、公开仓库、最多 50 个；不推荐、不评分、不替用户决策。",
+        "启动自动轻量刷新；清单回访 60 秒内不重复，手动“全部刷新”始终强制。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "摘要刷新与排序",
+      "items": [
+        "轻量字段：Stars、Forks、开放 Issue、最新 Release、最新 Tag、最近代码活动、最近协作活动。",
+        "按仓库游标逐个处理；普通网络错误记录后继续，全部处理完再排序回清单。",
+        "清单同时显示两种活动时间，按两者较新者排序。",
+        "清单为空时跳过刷新批次并回到空清单；Token 无效或限流时停止后续仓库，未更新仓库保留状态。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "详情判定与首版范围",
+      "items": [
+        "进入详情先读缓存：无缓存首次完整抓取；有缓存仅在 Release、Tag、代码或 Issue/PR 活动变化时完整抓取。",
+        "只有 Star/Fork/开放 Issue 变化时复用完整资料；“重新抓取”无条件完整更新。",
+        "首版详情：元数据、Release、Commit、Issue、PR、最近 5 次构建、README 多语言切换、目录结构。",
+        "Release/Commit/Issue/PR 默认各 10 条；Commit、Issue、PR 可继续加载更早内容。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "摘要快照与时间语义",
+      "items": [
+        "每次轻量成功、详情完整成功或复用成功都更新当天摘要快照；同仓库同日只留最后一档，保存 30 个自然日。",
+        "趋势只显示 Star/Fork；没有采集的日期不补点。",
+        "摘要更新时间与完整资料抓取时间分开显示；复用详情时明确提示详情来自上次完整抓取。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "栏目状态与异常",
+      "items": [
+        "栏目区分加载中、成功、无内容、无权访问、抓取失败、首版暂不支持。",
+        "完整抓取中成功栏目更新，失败栏目保留旧资料并显示错误。",
+        "没有 Release/Tag 时分别显示“暂无 Release”“暂无 Tag”；README 只切换仓库实际存在的语言版本。",
+        "仓库归档、删除或改名仍保留在清单；用户删除时清理当前资料与快照。",
+        "首次抓取没有旧资料时显示错误与空状态；新增仓库失败保留卡片并支持单仓库重试。",
+        "每个栏目响应先落到明确状态，再由聚合节点判断是否继续取下一栏目；全部完成且至少一项可展示才进入详情展示，全部失败则按完整抓取失败处理。"
+      ]
+    }
+  ],
+  "semanticChecks": {
+    "requiredEdges": [
+      {
+        "from": "confirm",
+        "to": "clear"
+      },
+      {
+        "from": "delete",
+        "to": "delete_data"
+      },
+      {
+        "from": "confirm",
+        "to": "cancel"
+      },
+      {
+        "from": "repo_keep",
+        "to": "batch_gate"
+      }
+    ],
+    "requiredPaths": [
+      {
+        "from": "replace",
+        "to": "reset"
+      }
+    ]
+  },
+  "mainPath": [
+    "refresh",
+    "refresh_gate",
+    "batch_start",
+    "batch_lock",
+    "list_state",
+    "light",
+    "summary_result",
+    "batch_gate",
+    "sort",
+    "scan",
+    "enter"
+  ]
+}

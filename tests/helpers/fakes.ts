@@ -1,5 +1,5 @@
 import type { Clock } from '../../src/main/core/infra/clock';
-import type { CipherBox } from '../../src/main/core/infra/cipher';
+import type { CipherBox } from '../../src/main/core/infra/encryption';
 
 /** 可拨动的测试时钟。 */
 export class FakeClock implements Clock {

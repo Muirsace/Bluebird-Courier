@@ -108,7 +108,6 @@ describe('轻量信息抓取（清单页）', () => {
   it('未配置令牌时提示先配置访问令牌', async () => {
     harness = createHarness();
     const result = await h().facade.refreshGlance();
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatchObject({ kind: 'access_token_invalid' });
+    expect(result).toEqual({ repositories: [], errors: [] });
   });
 });

@@ -1,28 +1,31 @@
-/**
- * Domain vocabulary shared by the use cases and their adapters.
- *
- * The domain has no platform or transport dependencies.  Values in this file
- * are deliberately neutral: protocol field names (for example GitHub's
- * `conclusion`) are translated before they cross into the domain.
- */
+// 领域层只保存平台无关的数据、状态与失败语义。
 
-// ---------- Errors ----------
-
-/** Normalized error classes exposed by the application. */
+// 错误类别保持跨进程展示层的稳定集合；更细的来源通过 FailureSource 表达。
 export type ErrorKind = 'access_token_invalid' | 'rate_limited' | 'not_found' | 'network' | 'unknown';
+export type FailureSource = 'token' | 'rate_limit' | 'network' | 'repository' | 'detail' | 'column' | 'persistence' | 'input' | 'unknown';
 
 export interface NormalizedError {
   kind: ErrorKind;
   message: string;
-  /** Quota recovery time (UTC ISO 8601), present for rate-limited failures. */
   resetAt?: string;
-  /** Repository context for batch operations. */
   fullName?: string;
+  source?: FailureSource;
+  occurredAt?: string;
+  lastSucceededAt?: string | null;
+  hasPreviousData?: boolean;
 }
 
-// ---------- Repository and detail values ----------
+export type RepositoryStatus = 'active' | 'archived' | 'deleted' | 'renamed';
+export type RepositoryId = number;
+export type PaginationCursor = string | null;
 
-/** Lightweight repository information shown in the watch list. */
+export interface ActivityTimes {
+  code: string | null;
+  collaboration: string | null;
+  latest: string | null;
+}
+export type ActivityTimestamp = string | null;
+
 export interface Glance {
   id: number;
   owner: string;
@@ -35,67 +38,60 @@ export interface Glance {
   pushedAt: string | null;
   latestReleaseTag: string | null;
   fetchedAt: string | null;
+  latestTag?: string | null;
+  collaborationAt?: string | null;
+  activityAt?: string | null;
+  status?: RepositoryStatus;
+  failure?: NormalizedError | null;
+  lastSucceededAt?: string | null;
 }
 
-/** Values returned by a lightweight metadata fetch before persistence. */
 export interface GlanceValues {
   stars: number;
   forks: number;
   openIssues: number;
   pushedAt: string | null;
   latestReleaseTag: string | null;
+  latestTag?: string | null;
+  collaborationAt?: string | null;
+  status?: RepositoryStatus;
 }
 
-/** Lightweight fetch values together with GitHub's canonical repository name. */
 export type FetchedGlance = GlanceValues & { fullName: string };
 
-export interface ReleaseItem {
-  tagName: string;
-  title: string;
-  publishedAt: string | null;
-}
+export interface ReleaseItem { tagName: string; title: string; publishedAt: string | null; }
+export interface TagItem { name: string; committedAt?: string | null; }
+export interface CommitItem { sha: string; message: string; authorName: string | null; committedAt: string; }
+export interface IssueItem { number: number; title: string; body: string | null; state: 'open' | 'closed'; authorName: string | null; updatedAt: string; }
+export interface PullRequestItem { number: number; title: string; body: string | null; state: 'open' | 'closed'; authorName: string | null; updatedAt: string; }
 
-export interface CommitItem {
-  sha: string;
-  message: string;
-  authorName: string | null;
-  committedAt: string;
-}
-
-export interface IssueItem {
-  number: number;
-  title: string;
-  /** GitHub issue body in plain text/Markdown, or null when the issue has no body. */
-  body: string | null;
-  state: 'open' | 'closed';
-  authorName: string | null;
-  updatedAt: string;
-}
-
-export interface PullRequestItem {
-  number: number;
-  title: string;
-  /** GitHub pull request body in plain text/Markdown, or null when the PR has no body. */
-  body: string | null;
-  state: 'open' | 'closed';
-  authorName: string | null;
-  updatedAt: string;
-}
-
-/** Build states understood by the product. */
 export type BuildStatus = 'success' | 'failure' | 'pending' | 'neutral' | 'none';
-
-/**
- * Protocol-neutral build information.  Adapters retain a provider's original
- * conclusion only as a descriptive result; callers use `status` for behavior.
- */
 export interface BuildInfo {
   status: BuildStatus;
   workflowName: string | null;
   url: string | null;
   finishedAt: string | null;
+  /** 兼容旧适配器的中立结果描述；供应商原文应在 shared DTO 中使用 conclusion。 */
   resultDescription: string | null;
+  id?: string | null;
 }
+
+export interface BuildItem extends BuildInfo { id: string | null; }
+export interface ReadmeDocument { language: string; content: string; }
+export interface TreeEntry { path: string; kind: 'file' | 'directory'; size?: number | null; }
+export interface RepositoryMetadata { description: string | null; homepage: string | null; license: string | null; defaultBranch: string | null; }
+
+export type ColumnName = 'overview' | 'releases' | 'tags' | 'commits' | 'issues' | 'pullRequests' | 'builds' | 'readme' | 'tree';
+export type ColumnStatus = 'loading' | 'success' | 'empty' | 'forbidden' | 'failed' | 'unsupported';
+export interface ColumnState<T = unknown> {
+  status: ColumnStatus;
+  value: T | null;
+  error: NormalizedError | null;
+  hasMore?: boolean;
+  cursor?: string | null;
+  updatedAt?: string | null;
+}
+export type ColumnResult<T = unknown> = ColumnState<T>;
 
 export interface Snapshot {
   capturedAt: string;
@@ -104,7 +100,13 @@ export interface Snapshot {
   openIssues: number | null;
   latestReleaseTag: string | null;
   pushedAt: string | null;
+  repositoryId?: number;
+  fullName?: string;
+  latestTag?: string | null;
+  collaborationAt?: string | null;
 }
+export type SnapshotRecord = Snapshot;
+export interface TrendPoint { capturedAt: string; stars: number | null; forks: number | null; }
 
 export interface DetailValues {
   releases: ReleaseItem[];
@@ -112,8 +114,16 @@ export interface DetailValues {
   issues: IssueItem[];
   pullRequests: PullRequestItem[];
   build: BuildInfo;
+  metadata?: RepositoryMetadata;
+  tags?: TagItem[];
+  builds?: BuildItem[];
+  readmes?: ReadmeDocument[];
+  tree?: TreeEntry[];
 }
 
+export type CacheSource = 'none' | 'fresh' | 'reused' | 'cache' | 'forced';
+export type CacheDecision = CacheSource;
+export type FailureState = 'preserve_previous' | 'empty';
 export interface Detail {
   repository: Glance;
   releases: ReleaseItem[];
@@ -122,23 +132,25 @@ export interface Detail {
   pullRequests: PullRequestItem[];
   build: BuildInfo;
   trend: Snapshot[];
+  metadata?: RepositoryMetadata;
+  tags?: TagItem[];
+  builds?: BuildItem[];
+  readmes?: ReadmeDocument[];
+  tree?: TreeEntry[];
+  columns?: Partial<Record<ColumnName, ColumnState>>;
+  cacheSource?: CacheSource;
+  summaryFetchedAt?: string | null;
+  detailFetchedAt?: string | null;
+  stale?: boolean;
+  failure?: NormalizedError | null;
 }
 
-// ---------- Settings and input rules ----------
-
-export interface SettingsState {
-  preferences: Record<string, string>;
-  accessTokenConfigured: boolean;
-}
-
+export interface Page<T> { items: T[]; nextCursor: string | null; hasMore: boolean; }
+export type HistoryPage<T> = Page<T>;
+export interface SettingsState { preferences: Record<string, string>; accessTokenConfigured: boolean; }
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type EffectiveTheme = 'light' | 'dark';
-
-export type RepoInputResult =
-  | { ok: true; owner: string; name: string }
-  | { ok: false; message: string };
-
-// ---------- Desktop integration ----------
+export type RepoInputResult = { ok: true; owner: string; name: string } | { ok: false; message: string };
 
 export type GitHubExternalTarget =
   | { kind: 'repository'; owner: string; name: string }
@@ -147,12 +159,5 @@ export type GitHubExternalTarget =
   | { kind: 'issue'; owner: string; name: string; number: number }
   | { kind: 'pull'; owner: string; name: string; number: number }
   | { kind: 'build'; owner: string; name: string; url: string };
-
-export interface OpenExternalResult {
-  ok: boolean;
-  reason: 'invalid_target' | 'open_failed' | null;
-}
-
-export interface ExternalLinkBridge {
-  openGitHubExternal(target: GitHubExternalTarget): Promise<OpenExternalResult>;
-}
+export interface OpenExternalResult { ok: boolean; reason: 'invalid_target' | 'open_failed' | null; }
+export interface ExternalLinkBridge { openGitHubExternal(target: GitHubExternalTarget): Promise<OpenExternalResult>; }

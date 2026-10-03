@@ -2,20 +2,22 @@ import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { openDatabase } from './core/infra/database';
-import { createSafeStorageCipherBox } from './core/infra/cipher';
+import { createSafeStorageCipherBox } from './core/infra/encryption';
 import { createFileLogger } from './core/infra/logger';
 import { systemClock } from './core/infra/clock';
-import { createHttpGitHub } from './core/adapters/github/http-github';
+import { createGitHubHttpClient } from './core/adapters/github-http-client';
+import { createGitHubTokenAdapter } from './core/adapters/github-token-adapter';
+import { createGitHubRepositoryAdapter } from './core/adapters/github-repository-adapter';
+import { createGitHubDetailAdapter } from './core/adapters/github-detail-adapter';
 import { openGitHubExternal } from './core/adapters/shell-links';
-import { applyThemeSource } from './core/adapters/theme';
-import { createFetching } from './features/fetching/implementation';
-import { createSettings } from './features/settings/implementation';
-import { createWatchlist } from './features/watchlist/implementation';
+import { createRepositoryList } from './features/repository-list/implementation/create';
+import { createRepositoryDetail } from './features/repository-detail/implementation/create';
+import { createTokenSettings } from './features/token-settings/implementation/create';
+import { createSnapshotTrend } from './features/snapshot-trend/implementation/create';
 import { createFacade } from './facade/facade';
 import { registerIpc } from './ipc';
 
-// productName changed for display, but existing installations store the database,
-// settings and safeStorage ciphertext under the former Electron userData directory.
+// 产品名变更后仍沿用旧版 Electron userData 目录，保持已有数据库、设置和密文可读。
 const LEGACY_USER_DATA_DIRECTORY = 'OCTO 仓库监控器';
 let legacyUserDataPath: string | null = null;
 let userDataPathError: unknown = null;
@@ -24,7 +26,7 @@ try {
   mkdirSync(legacyUserDataPath, { recursive: true });
   app.setPath('userData', legacyUserDataPath);
 } catch (error) {
-  // Do not continue with Electron's new productName-based directory if compatibility setup fails.
+  // 兼容目录设置失败时不继续使用 Electron 按产品名生成的新目录。
   userDataPathError = error;
 }
 
@@ -81,7 +83,7 @@ function reportStartupFailure(error: unknown): void {
   app.exit(1);
 }
 
-// 单实例：两个实例写同一个 SQLite 文件会互相撞写锁（SQLITE_BUSY），第二个实例直接让位
+// 单实例：两个实例写同一个 SQLite 文件会互相撞写锁，第二个实例直接让位。
 if (userDataPathError !== null) {
   void app.whenReady().then(() => reportStartupFailure(userDataPathError));
 } else if (!app.requestSingleInstanceLock()) {
@@ -96,25 +98,35 @@ if (userDataPathError !== null) {
 
   void app
     .whenReady()
-    .then(async () => {
+    .then(() => {
       const userData = app.getPath('userData');
-      const logger = createFileLogger(path.join(userData, 'logs'));
+      const logger = createFileLogger(path.join(userData, 'logs'), systemClock);
       logger.info('主进程启动');
       const db = openDatabase(path.join(userData, 'octo.db'));
       const cipher = createSafeStorageCipherBox(safeStorage);
-      const github = createHttpGitHub();
+      const githubClient = createGitHubHttpClient();
+      const github = {
+        ...createGitHubTokenAdapter(githubClient),
+        ...createGitHubRepositoryAdapter(githubClient),
+        ...createGitHubDetailAdapter(githubClient),
+      };
+      const repositoryList = createRepositoryList({ db, clock: systemClock, logger });
       const facade = createFacade({
-        settings: createSettings({ db, cipher, logger }),
-        watchlist: createWatchlist({ db, clock: systemClock, logger }),
-        fetching: createFetching({ github }),
+        repositoryList,
+        github,
+        repositoryDetail: createRepositoryDetail({
+          db,
+          github,
+          clock: systemClock,
+          repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
+        }),
+        tokenSettings: createTokenSettings({ db, cipher, github, logger }),
+        snapshotTrend: createSnapshotTrend({ db, clock: systemClock }),
         logger,
       });
       registerIpc(facade, {
         openGitHubExternal: (target) => openGitHubExternal(target, (url) => shell.openExternal(url)),
-        applyTheme: applyThemeSource,
       });
-      // 建窗口之前先落地主题偏好：首屏就按用户选的主题绘制，不闪一下再切
-      applyThemeSource((await facade.getSettings()).preferences);
       createWindow();
       logger.info('窗口已创建');
 

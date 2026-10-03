@@ -27,6 +27,9 @@ const GATEWAY_METHODS = [
   'accessTokenState',
   'validateAccessToken',
   'saveAccessToken',
+  'beginTokenReplacement',
+  'confirmTokenReplacement',
+  'cancelTokenReplacement',
   'getSettings',
   'updateSettings',
   'listRepositories',
@@ -34,7 +37,10 @@ const GATEWAY_METHODS = [
   'inspectRepositoryInput',
   'removeRepository',
   'refreshGlance',
+  'refreshRepository',
   'fetchDetail',
+  'loadHistory',
+  'trend',
   'openGitHubExternal',
 ] as const;
 

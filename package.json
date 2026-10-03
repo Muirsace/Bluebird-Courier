@@ -8,10 +8,10 @@
   "license": "UNLICENSED",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build:main && node --require ./tools/compat/no-pipe-spawn.cjs ./node_modules/vitest/vitest.mjs run",
-    "test:watch": "npm run build:main && node --require ./tools/compat/no-pipe-spawn.cjs ./node_modules/vitest/vitest.mjs",
+    "test": "npm run build:main && node ./node_modules/vitest/vitest.mjs run",
+    "test:watch": "npm run build:main && node ./node_modules/vitest/vitest.mjs",
     "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "node --require ./tools/compat/no-pipe-spawn.cjs ./node_modules/vite/bin/vite.js build",
+    "build:renderer": "node ./node_modules/vite/bin/vite.js build",
     "build": "npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win nsis"

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\candidate.json",
+    "sha256": "8228374fb93aa239ce82654fe10454cacf4d0a87e633f385c3cdb2b727278fc5",
+    "bytes": 13287
+  },
+  "artifact": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+    "sha256": "b80f5c820268cb38892888783518c05a1b91767d9196a33c3aaac8749c8034a1",
+    "bytes": 782104
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json\".",
+      "subject": {
+        "artifact": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+        "evidencePath": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-artifact-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.finalize.json",
+    "summaryReceipt": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.finalize-summary.json",
+    "browserCheckReceipt": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2188
+}

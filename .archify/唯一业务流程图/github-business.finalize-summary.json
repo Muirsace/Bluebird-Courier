@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "workflow",
+  "quality": "standard",
+  "specification": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\candidate.json",
+    "sha256": "bf8159071a61a9731748a4a6e9c942fc817d775d2762c8f96fd4dbac5e3e8653",
+    "bytes": 49035
+  },
+  "artifact": {
+    "path": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.html",
+    "sha256": "2e3dbf1524252cd416b5dcdaca205758a00f3774f37a846c9f7e8cbbc5ba40af",
+    "bytes": 965183
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/evidence-path-conflict",
+      "severity": "error",
+      "message": "browser-check will not replace the existing unowned evidence path \"D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.browser-check.json\".",
+      "subject": {
+        "artifact": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.html",
+        "evidencePath": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.browser-check.json"
+      },
+      "evidence": {
+        "reason": {
+          "code": "ownership-sidecar-path-mismatch"
+        }
+      },
+      "supportedFixes": [
+        "move the conflicting file aside, or choose a separate --out-dir, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.finalize.json",
+    "summaryReceipt": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.finalize-summary.json",
+    "browserCheckReceipt": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.browser-check.json"
+  },
+  "update": {
+    "status": "unavailable",
+    "installedVersion": null,
+    "availableVersion": null,
+    "releaseNotes": null,
+    "checkedAt": null,
+    "source": null,
+    "noticeRequired": false,
+    "noticeText": null,
+    "reason": "cache-unavailable"
+  },
+  "visualReview": "not-requested",
+  "durationMs": 3916
+}

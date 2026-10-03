@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "4a6d1c75-8788-4c95-843e-96b10e0fce5a",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\candidate.json",
+  "output": "D:\\study\\changshi\\jian kong\\.archify\\唯一业务流程图\\github-business.html",
+  "specification": {
+    "sha256": "bf8159071a61a9731748a4a6e9c942fc817d775d2762c8f96fd4dbac5e3e8653",
+    "bytes": 49035
+  },
+  "artifact": {
+    "sha256": "2e3dbf1524252cd416b5dcdaca205758a00f3774f37a846c9f7e8cbbc5ba40af",
+    "bytes": 965183
+  }
+}

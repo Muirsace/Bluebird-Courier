@@ -37,7 +37,7 @@ describe('门面入参守卫（错型入参不穿出原始引擎错误）', () =
     expect(result.repository).toBeNull();
     expect(result.error).toMatchObject({
       kind: 'not_found',
-      message: '仓库名格式应为 owner/repo 或 GitHub 仓库网址',
+      message: '仓库名格式应为 owner/repo 或 GitHub 仓库根网址',
     });
     const count = h().db.prepare('SELECT COUNT(*) AS n FROM repository').get() as { n: number };
     expect(count.n).toBe(0);

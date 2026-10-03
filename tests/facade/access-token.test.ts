@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createSafeStorageCipherBox } from '../../src/main/core/infra/cipher';
+import { createSafeStorageCipherBox } from '../../src/main/core/infra/encryption';
 import { createHarness, type Harness } from '../helpers/harness';
 import { fixtures } from '../helpers/fake-github';
 
@@ -16,6 +16,24 @@ afterEach(() => {
 });
 
 describe('访问令牌校验与保存', () => {
+  it('启动后仍能识别旧版 ss 格式保存的访问令牌', async () => {
+    const savedToken = 'ghp_legacy_fixture';
+    harness = createHarness({
+      cipher: createSafeStorageCipherBox({
+        isEncryptionAvailable: () => true,
+        encryptString: (value) => Buffer.from(value, 'utf8'),
+        decryptString: (value) => value.toString('utf8'),
+      }),
+    });
+    h().db.prepare('INSERT INTO setting (key, value) VALUES (?, ?)')
+      .run('access_token', `ss:${Buffer.from(savedToken, 'utf8').toString('base64')}`);
+
+    h().reopen();
+
+    expect(await h().facade.accessTokenState()).toEqual({ configured: true });
+    expect((await h().facade.getSettings()).accessTokenConfigured).toBe(true);
+  });
+
   it('有效访问令牌校验保存成功，并以密文落库', async () => {
     harness = createHarness();
 

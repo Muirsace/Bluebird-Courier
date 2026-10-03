@@ -1,0 +1,568 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "青鸟信使 · GitHub 仓库浏览系统架构",
+    "locale": "zh-CN",
+    "output": ".archify/architecture-github-skeleton-20261002-000000/github-architecture.html",
+    "visual_preset": "blueprint",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "frontend": {
+          "label": "界面与桥接"
+        },
+        "backend": {
+          "label": "用例与业务能力"
+        },
+        "database": {
+          "label": "本地资料与快照"
+        },
+        "cloud": {
+          "label": "平台适配与基础设施"
+        },
+        "security": {
+          "label": "边界、校验与契约"
+        },
+        "external": {
+          "label": "用户与 GitHub 出口"
+        }
+      }
+    },
+    "views": [
+      {
+        "id": "request-path",
+        "label": "请求主路径",
+        "focus": [
+          "user",
+          "renderer",
+          "preload",
+          "ipc",
+          "facade",
+          "repo_feature",
+          "detail_feature",
+          "core_adapters"
+        ],
+        "note": "从用户操作进入主进程，经 facade 编排业务能力并访问 GitHub。"
+      },
+      {
+        "id": "persistence",
+        "label": "本地资料链路",
+        "focus": [
+          "repo_feature",
+          "detail_feature",
+          "snapshot_feature",
+          "core_infra",
+          "local_store",
+          "domain"
+        ],
+        "note": "清单、详情缓存、失败状态与 30 日摘要快照均留在本机。"
+      },
+      {
+        "id": "boundary-rules",
+        "label": "边界与依赖",
+        "focus": [
+          "shared",
+          "domain",
+          "main_index",
+          "repo_feature",
+          "detail_feature",
+          "token_feature",
+          "snapshot_feature",
+          "core_infra",
+          "core_adapters",
+          "renderer",
+          "preload",
+          "ipc"
+        ],
+        "note": "展示层只消费 shared 契约；main/index 负责组合根接线，feature 之间由 facade 编排。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "user",
+      "type": "external",
+      "label": "个人开发者",
+      "sublabel": "桌面 App 使用者",
+      "icon": "person",
+      "pos": [
+        40,
+        390
+      ],
+      "size": [
+        136,
+        64
+      ]
+    },
+    {
+      "id": "renderer",
+      "type": "frontend",
+      "label": "renderer",
+      "sublabel": "页面、组件、展示映射",
+      "tag": "只消费 shared",
+      "pos": [
+        220,
+        390
+      ],
+      "size": [
+        148,
+        66
+      ]
+    },
+    {
+      "id": "preload",
+      "type": "security",
+      "label": "preload",
+      "sublabel": "BluebirdCourierBridge",
+      "tag": "受限桥接",
+      "pos": [
+        410,
+        390
+      ],
+      "size": [
+        148,
+        66
+      ]
+    },
+    {
+      "id": "shared",
+      "type": "security",
+      "label": "shared",
+      "sublabel": "IPC 常量与对外结果类型",
+      "tag": "跨进程契约",
+      "pos": [
+        410,
+        540
+      ],
+      "size": [
+        148,
+        66
+      ]
+    },
+    {
+      "id": "ipc",
+      "type": "security",
+      "label": "main/ipc",
+      "sublabel": "通道注册、转发、返回",
+      "pos": [
+        600,
+        390
+      ],
+      "size": [
+        148,
+        66
+      ]
+    },
+    {
+      "id": "main_index",
+      "type": "security",
+      "label": "main/index",
+      "sublabel": "唯一组合根",
+      "tag": "创建与注入",
+      "pos": [
+        600,
+        150
+      ],
+      "size": [
+        148,
+        66
+      ]
+    },
+    {
+      "id": "facade",
+      "type": "backend",
+      "label": "facade",
+      "sublabel": "用例入口与跨 feature 编排",
+      "tag": "只依赖契约",
+      "pos": [
+        790,
+        390
+      ],
+      "size": [
+        158,
+        66
+      ]
+    },
+    {
+      "id": "repo_feature",
+      "type": "backend",
+      "label": "仓库清单 feature",
+      "sublabel": "添加、轻量刷新、排序、删除、状态保留",
+      "pos": [
+        990,
+        180
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "detail_feature",
+      "type": "backend",
+      "label": "仓库详情 feature",
+      "sublabel": "缓存判定、栏目抓取、分页与聚合",
+      "pos": [
+        990,
+        310
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "token_feature",
+      "type": "security",
+      "label": "Token 设置 feature",
+      "sublabel": "验证、更换、二次确认与清空",
+      "pos": [
+        990,
+        440
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "snapshot_feature",
+      "type": "backend",
+      "label": "快照趋势 feature",
+      "sublabel": "当天最后一档、30 日保留、Star/Fork 趋势",
+      "pos": [
+        990,
+        570
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "domain",
+      "sublabel": "领域类型、端口与纯业务规则",
+      "tag": "零 I/O / 零平台依赖",
+      "pos": [
+        790,
+        710
+      ],
+      "size": [
+        158,
+        72
+      ]
+    },
+    {
+      "id": "core_infra",
+      "type": "cloud",
+      "label": "core/infra",
+      "sublabel": "数据库、迁移、时钟、日志等可替换能力",
+      "pos": [
+        990,
+        710
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "local_store",
+      "type": "database",
+      "label": "本地资料库",
+      "sublabel": "Token、清单、详情缓存、失败状态、快照",
+      "tag": "本机持久化",
+      "pos": [
+        1260,
+        710
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "core_adapters",
+      "type": "cloud",
+      "label": "core/adapters",
+      "sublabel": "GitHub 协议适配与响应形状转换",
+      "tag": "实现 domain port",
+      "pos": [
+        1170,
+        310
+      ],
+      "size": [
+        172,
+        72
+      ]
+    },
+    {
+      "id": "github_api",
+      "type": "external",
+      "label": "GitHub API",
+      "sublabel": "Token 校验、仓库摘要与详情",
+      "icon": "cloud",
+      "pos": [
+        1378,
+        180
+      ],
+      "size": [
+        146,
+        72
+      ]
+    },
+    {
+      "id": "github_web",
+      "type": "external",
+      "label": "GitHub 网页",
+      "sublabel": "原始页面出口",
+      "pos": [
+        1380,
+        860
+      ],
+      "size": [
+        146,
+        72
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Electron 渲染进程",
+      "wraps": [
+        "renderer"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "受限预加载桥接",
+      "wraps": [
+        "preload"
+      ],
+      "pad": 16
+    },
+    {
+      "kind": "region",
+      "label": "Electron 主进程",
+      "wraps": [
+        "ipc",
+        "main_index",
+        "facade",
+        "repo_feature",
+        "detail_feature",
+        "token_feature",
+        "snapshot_feature",
+        "domain",
+        "core_infra",
+        "core_adapters"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "security-group",
+      "label": "features 隔离边界",
+      "wraps": [
+        "repo_feature",
+        "detail_feature",
+        "token_feature",
+        "snapshot_feature"
+      ],
+      "pad": 16
+    },
+    {
+      "kind": "region",
+      "label": "本地持久化边界",
+      "wraps": [
+        "local_store"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-renderer",
+      "from": "user",
+      "to": "renderer",
+      "variant": "emphasis",
+      "label": "使用"
+    },
+    {
+      "id": "renderer-preload",
+      "from": "renderer",
+      "to": "preload",
+      "variant": "security",
+      "label": "桥接"
+    },
+    {
+      "id": "preload-ipc",
+      "from": "preload",
+      "to": "ipc",
+      "variant": "security",
+      "label": "IPC"
+    },
+    {
+      "id": "shared-renderer",
+      "from": "shared",
+      "to": "renderer",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": 42,
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "shared-ipc",
+      "from": "shared",
+      "to": "ipc",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": 42,
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ipc-facade",
+      "from": "ipc",
+      "to": "facade",
+      "variant": "emphasis",
+      "label": "转发"
+    },
+    {
+      "id": "main-index-ipc",
+      "from": "main_index",
+      "to": "ipc",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "main-index-facade",
+      "from": "main_index",
+      "to": "facade",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "facade-repo",
+      "from": "facade",
+      "to": "repo_feature",
+      "variant": "emphasis",
+      "route": "orthogonal-h",
+      "label": "编排"
+    },
+    {
+      "id": "facade-detail",
+      "from": "facade",
+      "to": "detail_feature",
+      "variant": "emphasis",
+      "route": "orthogonal-h"
+    },
+    {
+      "id": "facade-token",
+      "from": "facade",
+      "to": "token_feature",
+      "variant": "security",
+      "route": "orthogonal-h"
+    },
+    {
+      "id": "facade-snapshot",
+      "from": "facade",
+      "to": "snapshot_feature",
+      "variant": "dashed",
+      "route": "orthogonal-h"
+    },
+    {
+      "id": "core-infra-store",
+      "from": "core_infra",
+      "to": "local_store",
+      "variant": "emphasis",
+      "label": "持久化"
+    },
+    {
+      "id": "adapters-domain-port",
+      "from": "core_adapters",
+      "to": "domain",
+      "variant": "dashed",
+      "label": "实现领域端口"
+    },
+    {
+      "id": "facade-domain-types",
+      "from": "facade",
+      "to": "domain",
+      "variant": "dashed",
+      "label": "领域类型"
+    },
+    {
+      "id": "adapters-github-api",
+      "from": "core_adapters",
+      "to": "github_api",
+      "variant": "emphasis",
+      "label": "HTTPS"
+    },
+    {
+      "id": "renderer-github-web",
+      "from": "renderer",
+      "to": "github_web",
+      "variant": "dashed",
+      "route": "orthogonal-v",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          294,
+          840
+        ],
+        [
+          1453,
+          840
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "用户主路径",
+      "items": [
+        "renderer 只负责页面、组件、展示映射；所有业务调用经 BluebirdCourierBridge 进入主进程。",
+        "main/ipc 只注册通道、转发参数并返回 facade 结果，不承载业务规则。",
+        "facade 编排仓库清单、仓库详情、Token 设置和快照趋势四个 feature 的对外契约。",
+        "main/index 是唯一组合根，负责创建基础设施、适配器、feature 和 facade，并完成依赖注入。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "业务能力落位",
+      "items": [
+        "仓库清单 feature 覆盖添加、最多 50 个、60 秒刷新窗口、逐仓游标、排序、删除和仓库状态保留。",
+        "仓库详情 feature 覆盖缓存变化判定、完整抓取、栏目状态、部分失败保留旧资料和 Commit / Issue / PR 分页。",
+        "Token 设置 feature 覆盖校验、更换 Token 的二次确认清空、失败重试与限流停止。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "本地资料语义",
+      "items": [
+        "Token、清单、当前详情、失败状态和摘要快照都留在本机，不上传产品服务器。",
+        "快照 feature 写入当天最后一档并保留最近 30 个自然日；趋势只读取 Star / Fork。",
+        "四个 feature 通过注入的 core/infra 访问本地资料；core/infra 提供可替换的数据库、迁移、时钟和日志能力，本地资料库是唯一持久化出口。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "错误与外部边界",
+      "items": [
+        "GitHub 响应先由 core/adapters 转为 domain 可理解的形状，再由 feature 聚合成功、无内容、无权、失败和暂不支持状态。",
+        "普通网络错误记录后继续批次；Token 无效或限流停止后续请求并保留当前仓库状态。",
+        "feature 之间禁止直接 import；跨 feature 协作只经过 facade，平台端口由 main/index 创建并注入。"
+      ]
+    }
+  ]
+}

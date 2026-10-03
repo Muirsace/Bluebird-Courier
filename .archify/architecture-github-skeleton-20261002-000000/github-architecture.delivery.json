@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "8d0fbc54-4776-4094-b805-7af8e4efa83b",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\candidate.json",
+  "output": "D:\\study\\changshi\\jian kong\\.archify\\architecture-github-skeleton-20261002-000000\\github-architecture.html",
+  "specification": {
+    "sha256": "0dcac0b5d94ed5d3bc664a84012bb7c8cb5a582af39492809f1f6212c7d0d187",
+    "bytes": 13385
+  },
+  "artifact": {
+    "sha256": "6543eb3500f16440ebb5027255e8bd41b35e44edeb9bf1a6f7600c822d26225e",
+    "bytes": 782167
+  }
+}
