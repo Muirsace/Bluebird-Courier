@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { appScrollRoot } from '../lib/app-layout';
@@ -9,10 +9,11 @@ import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
 import { Loading } from '../components/Loading';
-import { RepositorySidebarRow } from '../components/watchlist/RepositorySidebarRow';
-import { RepoRow } from '../components/RepoRow';
+import { DesktopWatchlistView } from '../components/watchlist/DesktopWatchlistView';
+import { NarrowWatchlistView } from '../components/watchlist/NarrowWatchlistView';
+import type { WatchlistPresentationProps } from '../components/watchlist/WatchlistPresentation';
 import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
-import { PageSlot, usePageHost } from '../components/shell/PageHost';
+import { usePageHost } from '../components/shell/PageHost';
 import { prefersReducedMotion, revealScrollFallbackMs } from '../lib/motion';
 import type { AddRepositoryOutcome, AddRepositoryPosition } from '../components/watchlist/AddRepositoryForm';
 
@@ -63,7 +64,6 @@ function focusAfterRemoval(repositoryId: number): void {
 }
 
 export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, active = true, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
-  const RepositoryItem = sidebar ? RepositorySidebarRow : RepoRow;
   const pageRef = useRef<HTMLDivElement>(null);
   const listViewportRef = useRef<HTMLDivElement>(null);
   const chromeHost = usePageHost();
@@ -400,11 +400,12 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
     </>
   );
 
-  const listContent = listQuery.isPending && !listQuery.data ? (
+  // One Query branch and Presence contract; views supply only list/item presentation.
+  const renderList: WatchlistPresentationProps['renderList'] = (RepositoryItem, className) => listQuery.isPending && !listQuery.data ? (
     <Loading label="正在加载监控清单…" />
   ) : listUnavailable ? null : (
     <>
-      <ul className={`repo-list${sidebar ? ' repository-sidebar-list' : ''}`} hidden={displayed.length === 0 && exitingIds.length === 0}>
+      <ul className={className} hidden={displayed.length === 0 && exitingIds.length === 0}>
         <AnimatePresence key={`${sidebar}:${active}`} initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
           {displayed.map((repo) => (
             <RepositoryItem
@@ -436,16 +437,10 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
 
   return (
     <>
-    <div ref={pageRef} className="watchlist-page min-w-0" data-sidebar={sidebar}>
+    <div ref={pageRef} className={`watchlist-page min-w-0 ${sidebar ? 'desktop-watchlist-view' : 'narrow-watchlist-view'}`} data-sidebar={sidebar}>
       {sidebar ? (
-        <>
-          <div className="watchlist-sidebar-chrome"><PageSlot host={chromeHost} /></div>
-          {/* layoutScroll 属于实际列表 scrollport；行与 Presence 的 Motion 保持原样。 */}
-          <motion.div ref={listViewportRef} layoutScroll className="repository-list-viewport" data-app-scroll-root="sidebar">
-            <div className="repository-list-content">{listContent}</div>
-          </motion.div>
-        </>
-      ) : <><PageSlot host={chromeHost} />{listContent}</>}
+        <DesktopWatchlistView chromeHost={chromeHost} listViewportRef={listViewportRef} renderList={renderList} />
+      ) : <NarrowWatchlistView chromeHost={chromeHost} renderList={renderList} />}
     </div>
     {createPortal(chrome, chromeHost)}
     </>

@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { RepositoryOmnibox } from './RepositoryOmnibox';
+import { DesktopWatchlistHeading } from './DesktopWatchlistView';
+import { NarrowWatchlistHeading } from './NarrowWatchlistView';
 import { Spinner } from '../Spinner';
 import { appScrollRoot } from '../../lib/app-layout';
 import type { Glance } from '../../../shared/types';
@@ -72,7 +74,6 @@ export function WatchlistHeader({
     };
   }, [sidebar, active]);
 
-  const Heading = sidebar ? 'h2' : 'h1';
   const count = repositoryCount !== null ? (
     <span className={`watchlist-count ${sidebar ? 'text-xs text-muted' : 'text-sm text-secondary'}`} aria-label={`${repositoryCount} 个仓库`}>
       {repositoryCount}{sidebar ? '' : ' 个仓库'}
@@ -100,15 +101,8 @@ export function WatchlistHeader({
 
   return (
     <>
-      <div className="watchlist-page-heading relative flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <Heading className={`${sidebar ? 'text-base' : 'text-xl'} font-semibold text-primary`}>监控清单</Heading>
-        {sidebar ? <div className="watchlist-title-actions flex items-center gap-2">{count}{refresh}</div> : count}
-        {!sidebar ? <span
-          ref={toolbarSentinelRef}
-          aria-hidden="true"
-          className="watchlist-toolbar-sentinel"
-        /> : null}
-      </div>
+      {sidebar ? <DesktopWatchlistHeading count={count} refresh={refresh} />
+        : <NarrowWatchlistHeading count={count} sentinelRef={toolbarSentinelRef} />}
 
       <div className="watchlist-page-toolbar" data-stuck={toolbarStuck ? 'true' : undefined}>
         <div className="watchlist-toolbar flex w-full flex-wrap items-start gap-2">
