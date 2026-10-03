@@ -20,9 +20,12 @@ export function DesktopWatchlistView({ chromeHost, renderList, listViewportRef }
 
 export function DesktopWatchlistHeading({ count, refresh }: { count: ReactNode; refresh: ReactNode }) {
   return (
-    <div className="watchlist-page-heading relative flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-      <h2 className="text-base font-semibold text-primary">监控清单</h2>
-      <div className="watchlist-title-actions flex items-center gap-2">{count}{refresh}</div>
+    <div className="desktop-watchlist-heading watchlist-page-heading relative flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <div className="desktop-watchlist-title flex min-w-0 items-center gap-2">
+        <h2 className="text-sm font-semibold text-primary">监控清单</h2>
+        {count}
+      </div>
+      {refresh}
     </div>
   );
 }

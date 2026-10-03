@@ -563,3 +563,91 @@
     background-color: var(--repository-row-background);
   }
 }
+
+
+/* Phase 4B: static Desktop presentation only; shared input, Motion and scroll behavior stay frozen. */
+.desktop-watchlist-view .watchlist-sidebar-chrome {
+  padding: 0 16px 8px;
+  border-bottom: 0;
+}
+
+.desktop-watchlist-view .desktop-watchlist-heading {
+  min-height: 36px;
+  flex-wrap: nowrap;
+}
+
+.desktop-watchlist-view .watchlist-sidebar-chrome .responsive-page-host > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: 4px;
+}
+
+.desktop-watchlist-view .sidebar-refresh {
+  color: rgb(var(--color-text-muted));
+}
+
+.desktop-watchlist-view .sidebar-refresh:hover:not(:disabled) {
+  color: rgb(var(--color-text));
+}
+
+.desktop-watchlist-view .repository-list-viewport {
+  padding: 6px 8px 20px;
+}
+
+.desktop-watchlist-view .repository-sidebar-list {
+  gap: 0;
+}
+
+.desktop-watchlist-view .desktop-repository-row {
+  height: 58px;
+  border-radius: 4px;
+}
+
+.desktop-watchlist-view .repository-sidebar-activator {
+  padding: 9px 8px;
+}
+
+.desktop-watchlist-view .repository-sidebar-metadata {
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.desktop-watchlist-view .repository-sidebar-owner {
+  color: rgb(var(--color-text-muted));
+}
+
+.desktop-watchlist-view .repository-sidebar-activity {
+  font-size: 11px;
+}
+
+.desktop-watchlist-view .desktop-repository-row:hover {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 65%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .desktop-repository-row[data-pressed='true'] {
+  --repository-row-background: rgb(var(--color-surface-active));
+}
+
+.desktop-watchlist-view .desktop-repository-row:has(.repository-action-positioner[data-context-point='true']) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 70%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .desktop-repository-row[data-selected='true'],
+.desktop-watchlist-view .desktop-repository-row[data-selected='true'][data-pressed='true'],
+.desktop-watchlist-view .desktop-repository-row[data-selected='true']:has(.repository-action-positioner) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-accent-soft)) 78%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .desktop-repository-row::before {
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+}
+
+.desktop-watchlist-view .repository-sidebar-list > .repo-row-slot:not(:last-child) .desktop-repository-row::after {
+  inset: auto 8px -1px 8px;
+  background: color-mix(in srgb, rgb(var(--color-border-subtle)) 35%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .repository-sidebar-list > .repo-row-slot:not(:last-child) .desktop-repository-row[data-selected='true']::after,
+.desktop-watchlist-view .repository-sidebar-list > .repo-row-slot:has(+ .repo-row-slot .desktop-repository-row[data-selected='true']) .desktop-repository-row::after {
+  background: transparent;
+}

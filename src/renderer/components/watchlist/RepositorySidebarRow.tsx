@@ -40,7 +40,7 @@ export const RepositorySidebarRow = forwardRef<HTMLLIElement, RepositorySidebarR
   return (
     <RepositoryMotionItem ref={forwardedRef} {...props}>
       {(exiting) => (
-        <div className="repository-sidebar-row" data-selected={selected ? 'true' : undefined}
+        <div className="desktop-repository-row repository-sidebar-row" data-selected={selected ? 'true' : undefined}
           data-pressed={press === 'pressed' && !exiting ? 'true' : undefined}
           data-press-released={press === 'released' && !exiting ? 'true' : undefined}
           onTransitionEnd={(event) => {
