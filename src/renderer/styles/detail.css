@@ -68,8 +68,9 @@
   min-width: 0;
 }
 
+/* Desktop information stays below the Shell's existing native caption strip.
+ * Repository name, quiet metadata, tools, then a four-column scan row. */
 .detail-page .desktop-repository-header {
-  /* 留白沿用 Workspace 内容槽位，表头只承担底部分隔。 */
   padding: 0 0 8px;
   border: 0;
   border-bottom: 1px solid rgb(var(--color-border-subtle));
@@ -78,39 +79,75 @@
 }
 
 .detail-page .desktop-repository-header .repository-header-top {
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: 24px;
 }
 
 .detail-page .desktop-repository-header .repository-header-identity {
-  flex: 1;
   min-width: 0;
 }
 
 .detail-page .desktop-repository-header .repository-header-name {
+  font-size: 20px;
+  line-height: 26px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .detail-page .desktop-repository-header .repository-header-owner {
-  font-size: 13px;
-  line-height: 18px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 400;
+}
+
+.detail-page .desktop-repository-header .repository-header-fetched {
+  margin-top: 2px;
+  line-height: 16px;
+  /* Reserve the status line so refreshing never pushes Metrics or Tabs down. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-page .desktop-repository-header .repository-header-actions {
   flex: none;
-  padding-top: 2px;
+  flex-wrap: nowrap;
+  padding-top: 0;
+}
+
+.detail-page .desktop-repository-header .repository-header-actions button {
+  height: 32px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
+.detail-page .desktop-repository-header .repository-header-actions button[aria-label] {
+  border-color: transparent;
+  color: rgb(var(--color-text-secondary));
+}
+
+.detail-page .desktop-repository-header .repository-header-actions button[aria-busy] {
+  /* Same width for idle and spinner states, without measuring text in JS. */
+  width: 104px;
 }
 
 .detail-page .desktop-repository-header .repository-header-metrics {
-  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  margin-top: 8px;
   gap: 8px 24px;
 }
 
-.detail-page .desktop-repository-header .repository-header-fetched {
-  margin-top: 4px;
-  line-height: 16px;
+.detail-page .desktop-repository-header .repository-header-metrics > div:not(.repository-header-release),
+.detail-page .desktop-repository-header .repository-header-release > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 /* One restrained spacing rhythm for existing Workspace sections and cards. */

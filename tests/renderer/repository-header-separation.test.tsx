@@ -61,6 +61,29 @@ describe('Repository Header presentation separation', () => {
     expect(metrics.textContent).toContain('v1.0.1');
   });
 
+  it.each([900, 899])('%ipx preserves the full identity and external target for a long repository name', async width => {
+    const owner = 'very-long-organization-name-for-layout-testing';
+    const name = 'extremely-long-bluebird-courier-repository-name-for-desktop-layout';
+    const longRepo = makeGlance(2, `${owner}/${name}`);
+    setViewportWidth(width);
+    stub = createStub({ repositories: [longRepo] });
+    view = await renderApp(stub);
+    await settle();
+    await click(repoOpenButton(longRepo.fullName));
+    await settle();
+    const heading = document.querySelector('.repository-header-name')!;
+    expect(heading.textContent).toBe(name);
+    expect(heading.getAttribute('title')).toBe(longRepo.fullName);
+    expect(heading.getAttribute('aria-label')).toBe(longRepo.fullName);
+    expect(heading.tagName).toBe(width === 900 ? 'H2' : 'H1');
+    expect(document.querySelector('.repository-header-owner')?.textContent).toBe(owner);
+    await click(document.querySelector(`button[aria-label="在 GitHub 打开 ${longRepo.fullName}"]`));
+    await settle();
+    expect(stub.calls.openGitHubExternal).toBe(1);
+    expect(stub.externalTargets).toEqual([{ kind: 'repository', owner, name }]);
+    expect(stub.calls.fetchDetail).toBe(1);
+  });
+
   it('replaces only the Header across five boundaries and the full journey, keeping Detail, Trend, sentinels and queries', async () => {
     const overlay = Object.assign(new EventTarget(), {
       visible: true,
