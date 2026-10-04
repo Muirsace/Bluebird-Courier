@@ -69,19 +69,24 @@ describe('仓库清单 feature', () => {
     });
   });
 
-  it('按最近添加优先排序；同时间由 id 决胜，重复、刷新与重启都保持顺序', async () => {
+  it('按最近活动时间排序：最新活动在前；同时间由 id 决胜；重复、刷新与重启都保持顺序', async () => {
     await ready();
     const base = makeRepoData();
-    const names = ['acme/first', 'acme/second', 'acme/third'];
+    const pushes: Array<[string, string]> = [
+      ['acme/first', '2026-09-20T00:00:00.000Z'],
+      ['acme/second', '2026-09-25T00:00:00.000Z'],
+      ['acme/third', '2026-09-10T00:00:00.000Z'],
+      ['acme/tie-a', '2026-09-15T00:00:00.000Z'],
+      ['acme/tie-b', '2026-09-15T00:00:00.000Z'],
+    ];
 
-    for (const [index, fullName] of names.entries()) {
-      h().github.addRepo({ ...base, meta: { ...base.meta, fullName } });
+    for (const [fullName, pushedAt] of pushes) {
+      h().github.addRepo({ ...base, meta: { ...base.meta, fullName, pushedAt } });
       const result = await h().facade.addRepository(fullName);
       expect(result.ok).toBe(true);
-      if (index === 1) h().clock.advanceMs(1000);
     }
 
-    const expected = ['acme/third', 'acme/second', 'acme/first'];
+    const expected = ['acme/second', 'acme/first', 'acme/tie-b', 'acme/tie-a', 'acme/third'];
     const orderedNames = async (): Promise<string[]> =>
       (await h().facade.listRepositories()).map((repository) => repository.fullName);
 
@@ -94,8 +99,29 @@ describe('仓库清单 feature', () => {
     await h().facade.refreshGlance();
     expect(await orderedNames()).toEqual(expected);
 
+    // 活动时间变化后刷新按新活动重排：抓取时间（fetchedAt）不参与排序。
+    h().github.repos.get('acme/third')!.meta.pushedAt = '2026-09-27T00:00:00.000Z';
+    h().clock.advanceMs(60_000);
+    await h().facade.refreshGlance();
+    const updated = ['acme/third', 'acme/second', 'acme/first', 'acme/tie-b', 'acme/tie-a'];
+    expect(await orderedNames()).toEqual(updated);
+
     h().reopen();
-    expect(await orderedNames()).toEqual(expected);
+    expect(await orderedNames()).toEqual(updated);
+  });
+
+  it('没有活动时间的失败卡片按加入时间参与排序，仍在最前', async () => {
+    await ready();
+    const base = makeRepoData();
+    h().github.addRepo({ ...base, meta: { ...base.meta, fullName: 'acme/active', pushedAt: '2026-09-20T00:00:00.000Z' } });
+    expect((await h().facade.addRepository('acme/active')).ok).toBe(true);
+    h().clock.advanceMs(60_000);
+
+    const failed = await h().facade.addRepository('octo-demo/ghost');
+    expect(failed.ok).toBe(false);
+
+    const names = (await h().facade.listRepositories()).map((repository) => repository.fullName);
+    expect(names).toEqual(['octo-demo/ghost', 'acme/active']);
   });
 
   it('加入不存在或无权访问的仓库（404）保留失败卡片供重试', async () => {

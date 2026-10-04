@@ -5,6 +5,7 @@ import { AnimatePresence } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { resolveAppScrollRoot, scrollTarget, scrollPositionElement, scrollViewportHeight } from '../lib/app-scroll-root';
+import type { AppScrollRoot } from '../lib/app-scroll-root';
 import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
@@ -20,6 +21,8 @@ import type { AddRepositoryOutcome, AddRepositoryPosition } from '../components/
 /** 启动时自动抓取一次轻量信息（整个会话一次；之后走「全部刷新」）。 */
 let startupRefreshed = false;
 const WATCHLIST_TOP_PROXIMITY_PX = 144;
+/** 新增落点的实测等待上限；超时按不可见处理（宁可多给一个「查看位置」）。 */
+const CARD_LANDING_TIMEOUT_MS = 600;
 
 interface PendingViewportAnchor {
   repositoryId: number;
@@ -40,6 +43,42 @@ interface WatchlistPageProps {
   active?: boolean;
   selectedRepositoryId?: number | null;
   onRepositoryRemoved?: (repositoryId: number) => void;
+}
+
+/**
+ * 等新卡片提交到 DOM。MutationObserver 走微任务（测试环境的假计时器下同样能等到），
+ * 超时说明清单没刷新出这张卡，返回 null 由调用方兜底。
+ */
+function awaitCardLanding(repositoryId: number, timeoutMs: number): Promise<HTMLElement | null> {
+  const find = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>(`ul.repo-list > li[data-repository-id="${repositoryId}"]`);
+  const immediate = find();
+  if (immediate) return Promise.resolve(immediate);
+  return new Promise((resolve) => {
+    const finish = (row: HTMLElement | null): void => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      resolve(row);
+    };
+    const observer = new MutationObserver(() => {
+      const row = find();
+      if (row) finish(row);
+    });
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
+}
+
+/**
+ * 落点可见性：与清单视口有重叠算可见。
+ * 未布局（0×0，如无布局引擎的环境）无法实测，退回滚动位置的启发式。
+ */
+function landingPositionOf(row: HTMLElement, root: AppScrollRoot, fallback: AddRepositoryPosition): AddRepositoryPosition {
+  const rect = row.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return fallback;
+  const viewportTop = root.element?.getBoundingClientRect().top ?? 0;
+  const viewportBottom = viewportTop + scrollViewportHeight(root);
+  return rect.bottom > viewportTop && rect.top < viewportBottom ? 'visible' : 'offscreen';
 }
 
 /**
@@ -208,7 +247,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
   const removed = new Set(removedIds);
   const displayed = repositories.filter((repo) => !removed.has(repo.id));
 
-  /** 新卡片完整落入 DOM 后、绘制前补偿顶部增加的真实高度，独立于导航返回恢复。 */
+  /** 新卡片完整落入 DOM 后、绘制前补偿插入在视口上方增加的真实高度，独立于导航返回恢复。 */
   useLayoutEffect(() => {
     const pending = pendingViewportAnchorRef.current;
     if (!pending) return;
@@ -220,6 +259,11 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
 
     pendingViewportAnchorRef.current = null;
     const root = resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current);
+    // 按活动时间排序后，新卡片可能落在列表任意位置：只有插入在视口上方才需要补偿，
+    // 落在视口下方时下方内容增长不影响当前视图。
+    const row = document.querySelector<HTMLElement>(`ul.repo-list > li[data-repository-id="${pending.repositoryId}"]`);
+    const viewportTop = root.element?.getBoundingClientRect().top ?? 0;
+    if (row && row.getBoundingClientRect().top > viewportTop) return;
     const scrollRoot = scrollPositionElement(root);
     const heightDelta = scrollRoot.scrollHeight - pending.scrollHeight;
     if (heightDelta !== 0) {
@@ -297,24 +341,41 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
         }
         return { result, newCardPosition };
       }
+      const repository = result.repository;
       const scrollRoot = scrollPositionElement(resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current));
       const scrollTop = scrollRoot.scrollTop;
       const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
       newCardPosition = nearTop ? 'visible' : 'offscreen';
-      if (result.repository) {
+      if (repository) {
         pendingViewportAnchorRef.current = null;
         addedLayoutRef.current = layoutRef.current.sidebar;
-        setNewlyAddedId(nearTop && layoutRef.current.active ? result.repository.id : null);
+        setNewlyAddedId(nearTop && layoutRef.current.active ? repository.id : null);
 
         if (!nearTop && layoutRef.current.active) {
           pendingViewportAnchorRef.current = {
-            repositoryId: result.repository.id,
+            repositoryId: repository.id,
             scrollTop,
             scrollHeight: scrollRoot.scrollHeight,
           };
         }
       }
       await queryClient.invalidateQueries({ queryKey: ['repositories'] });
+      // 按提交后的真实落点定位置：卡片确实可见，表单才允许自动收起；
+      // 在视口上方或下方都必须给出「查看位置」（活动时间排序下 nearTop 不再等价于可见）。
+      if (repository && layoutRef.current.active) {
+        const row = await awaitCardLanding(repository.id, CARD_LANDING_TIMEOUT_MS);
+        newCardPosition = row
+          ? landingPositionOf(
+              row,
+              resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current),
+              nearTop ? 'visible' : 'offscreen',
+            )
+          : 'offscreen';
+        if (row && newCardPosition === 'visible' && !nearTop) {
+          // 滚动中的可见新增没有进场动画，补一次定位脉冲，让用户看见卡片落在哪。
+          setHighlightRequest({ repositoryId: repository.id, token: ++highlightSequenceRef.current, sidebar: layoutRef.current.sidebar });
+        }
+      }
       return { result, newCardPosition };
     } catch {
       return {

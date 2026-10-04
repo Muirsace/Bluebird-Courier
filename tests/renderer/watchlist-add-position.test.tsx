@@ -229,6 +229,86 @@ describe('Watchlist 新增位置', () => {
     expect(scrollIntoViewCalls[0]?.options).toEqual({ behavior: 'smooth', block: 'center' });
   });
 
+  it('下方新增但卡片落在视口下方时不补偿 viewport（活动时间排序下位置不定）', async () => {
+    await mount(8);
+    let heightRead = 0;
+    Object.defineProperty(scrollRoot, 'scrollHeight', {
+      configurable: true,
+      get: () => (heightRead++ === 0 ? 2200 : 2350),
+    });
+    scrollRoot.scrollTop = 640;
+    // 新卡片这次按活动时间排在列表末尾：插入点在视口下方，视口上方的内容没有变化。
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect(): DOMRect {
+      if (this.matches('li[data-repository-id="9"]') || this.closest('li[data-repository-id="9"]')) {
+        return {
+          top: 900, bottom: 1000, height: 100, left: 0, right: 500,
+          width: 500, x: 0, y: 900, toJSON: () => ({}),
+        };
+      }
+      return realGetBoundingClientRect.call(this);
+    };
+
+    await addRepository('octo/new-below');
+
+    expect(watchlistSlotIds()).toContain('9');
+    expect(scrollToCalls).toHaveLength(0);
+    expect(buttonByText('查看位置')).not.toBeNull();
+  });
+
+  it('顶部新增但卡片落在视口下方：给出「查看位置」且不自动收起', async () => {
+    await mount(8);
+    scrollRoot.scrollTop = 0;
+    // nearTop 不再等价于可见：卡片按活动时间落到了视口下方。
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect(): DOMRect {
+      if (this.matches('li[data-repository-id="9"]') || this.closest('li[data-repository-id="9"]')) {
+        return {
+          top: 900, bottom: 1000, height: 100, left: 0, right: 500,
+          width: 500, x: 0, y: 900, toJSON: () => ({}),
+        };
+      }
+      return realGetBoundingClientRect.call(this);
+    };
+
+    await addRepository('octo/new-low');
+
+    expect(buttonByText('查看位置')).not.toBeNull();
+    // 不可见时不走「可见新增」的 1.4s 自动收起：等到 1.6s 提示仍在、可点「查看位置」。
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
+    expect(buttonByText('查看位置')).not.toBeNull();
+  });
+
+  it('滚动中新增但卡片落进视口：不出「查看位置」，改发定位脉冲并照常自动收起', async () => {
+    await mount(8);
+    scrollRoot.scrollTop = 640;
+    // 卡片这次落在用户正看着的视口内（没有进场动画，靠脉冲指出它落在哪）。
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect(): DOMRect {
+      if (this.matches('li[data-repository-id="9"]') || this.closest('li[data-repository-id="9"]')) {
+        return {
+          top: 300, bottom: 400, height: 100, left: 0, right: 500,
+          width: 500, x: 0, y: 300, toJSON: () => ({}),
+        };
+      }
+      return realGetBoundingClientRect.call(this);
+    };
+
+    await addRepository('octo/new-seen');
+
+    const newCard = repoRows()[0];
+    expect(buttonByText('查看位置')).toBeNull();
+    expect(newCard?.dataset.highlightOnly).toBe('true');
+    expect(scrollToCalls).toHaveLength(0);
+    // 可见新增沿用自动收起：约 1.4s 后提示与输入框一起收回。
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    });
+    expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('false');
+    expect(buttonByText('查看位置')).toBeNull();
+  });
+
   it('上一条滚动的 scrollend 残留不会提前收尾（高亮必须等滚动真的开始）', async () => {
     await mount(8);
     scrollRoot.scrollTop = 640;

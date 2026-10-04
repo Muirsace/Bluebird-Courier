@@ -6,6 +6,7 @@ import { describeError } from '../../lib/errors';
 import { Spinner } from '../Spinner';
 import { InlineFeedback } from '../StateMessage';
 
+/** 新卡片提交后的实际落点：'visible' = 已在清单视口内（提示可自动收起），'offscreen' = 视口外（必须提供「查看位置」）。 */
 export type AddRepositoryPosition = 'visible' | 'offscreen';
 
 export interface AddRepositoryOutcome {

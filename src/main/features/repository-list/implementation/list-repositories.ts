@@ -1,21 +1,19 @@
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { Glance } from '../../../../domain/types';
+import { compareActivity } from '../../../../domain/rules/activity-sort';
 import { isPositiveId, readRow, readRowByFullName, rowToGlance } from './repository-list-store';
-
-function timestamp(value: string | null | undefined): number {
-  const parsed = value ? Date.parse(value) : NaN;
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
 
 export function listRepositories(db: LocalDatabase): Glance[] {
   const rows = db.prepare('SELECT * FROM repository').all() as Parameters<typeof rowToGlance>[0][];
   return rows
     .map(rowToGlance)
-    .sort((a, b) => {
-      const aActivity = Math.max(timestamp(a.pushedAt), timestamp(a.fetchedAt), timestamp(a.addedAt));
-      const bActivity = Math.max(timestamp(b.pushedAt), timestamp(b.fetchedAt), timestamp(b.addedAt));
-      return bActivity - aActivity || b.id - a.id;
-    });
+    .sort((a, b) =>
+      compareActivity(
+        // 无活动数据（如抓取失败的卡片）按加入时间参与排序，保持刚加入的可见性。
+        { code: a.activityAt ?? a.addedAt, collaboration: a.collaborationAt },
+        { code: b.activityAt ?? b.addedAt, collaboration: b.collaborationAt },
+      ) || b.id - a.id,
+    );
 }
 
 export function findRepositoryById(db: LocalDatabase, id: number): Glance | null {
