@@ -125,3 +125,9 @@ button:disabled {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--color-surface-active));
 }
+
+/* 输入框与按钮的统一聚焦轮廓（两种主题下都使用独立的焦点色） */
+*:focus-visible {
+  outline: 2px solid rgb(var(--color-focus-ring));
+  outline-offset: 1px;
+}

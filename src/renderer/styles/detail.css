@@ -166,20 +166,14 @@
   padding-block: 12px;
 }
 
-.detail-page .desktop-repository-header .repository-header-metrics > div {
-  max-width: 100%;
-}
-
-.detail-page .desktop-repository-header .repository-header-metrics > div > span:last-child {
-  @apply text-sm;
-}
-
-.detail-page .desktop-repository-header .repository-header-release > div > span:last-child {
-  @apply text-sm;
-}
-
+.detail-page .desktop-repository-header .repository-header-metrics > div,
 .detail-page .desktop-repository-header .repository-header-release {
   max-width: 100%;
+}
+
+.detail-page .desktop-repository-header .repository-header-metrics > div > span:last-child,
+.detail-page .desktop-repository-header .repository-header-release > div > span:last-child {
+  @apply text-sm;
 }
 
 .detail-page .desktop-repository-header .repository-header-release > div > span:last-child,

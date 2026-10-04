@@ -437,7 +437,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
 
   return (
     <>
-    <div ref={pageRef} className={`watchlist-page min-w-0 ${sidebar ? 'desktop-watchlist-view' : 'narrow-watchlist-view'}`} data-sidebar={sidebar}>
+    <div ref={pageRef} className={`watchlist-page min-w-0 ${sidebar ? 'desktop-watchlist-view' : 'narrow-watchlist-view'}`}>
       {sidebar ? (
         <DesktopWatchlistView chromeHost={chromeHost} sidebarScrollRootRef={sidebarScrollRootRef} renderList={renderList} />
       ) : <NarrowWatchlistView chromeHost={chromeHost} renderList={renderList} />}
