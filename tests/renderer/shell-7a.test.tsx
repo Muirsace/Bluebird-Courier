@@ -70,7 +70,7 @@ describe('Shell-7A identity and action semantics', () => {
     await mount(); await typeInto(input(), fullName);
     expect(action().querySelector('.repository-omnibox-clear-icon')).not.toBeNull();
     expect(action().title).toBe('清除输入');
-    await click(action()); await click(action());
+    await click(action());
     expect(input().value).toBe(''); expect(stub.calls.addRepository).toBe(0); expect(stub.calls.removeRepository).toBe(0);
   });
 });
@@ -127,10 +127,10 @@ describe('Shell-7A visual contracts', () => {
   const css = readRendererStyles().replace(/\/\*[\s\S]*?\*\//g, '');
   it('square is 34px, 16px official icon, no text CTA', () => {
     expect(css).toMatch(/\.watchlist-add-content \.watchlist-add-action\s*\{[^}]*width: 34px;[^}]*height: 34px;[^}]*padding: 0/);
-    expect(css).toContain("url('./assets/icons/plus.svg')"); expect(css).toContain("url('./assets/icons/x.svg')");
+    expect(css).toContain("url('./assets/icons/plus.svg')");
   });
   it('current wide viewport hides both responsive compact hosts and cannot animate', () => {
-    expect(css).toMatch(/@media \(min-width: 1152px\)\s*\{\s*\.compact-repo-context\s*\{[^}]*display: none !important;[^}]*transition: none !important/);
+    expect(css).toMatch(/@media \(min-width: 900px\)\s*\{\s*\.compact-repo-context\s*\{[^}]*display: none !important;[^}]*transition: none !important/);
     expect(css).toMatch(/\.workspace-repo-context\s*\{[^}]*height: var\(--workspace-context-height\)/);
     expect(css).toContain('--workspace-context-height: 1.5rem');
   });

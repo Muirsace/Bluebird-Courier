@@ -245,13 +245,17 @@ export function DetailPage({
   // 首次抓取的揭示窗口。首帧就有数据（缓存命中）直接算 ready，所以只播一次；
   // 手动重新抓取时旧数据一直都在，阶段早已离开 loading，也不会重播。
   const reveal = useDetailReveal(detail !== null, DETAIL_REVEAL_TOTAL_MS, workspace);
+  // App 按 repositoryId 重挂详情。只在挂载首帧已有全量缓存时播工作区切换；
+  // 冷缓存的数据到达继续走原有揭示，不能在 loading → ready 时补整页入场、带着表头再动一次。
+  const [hasDetailOnMount] = useState(() => detail !== null);
+  const cachedWorkspaceSwitch = workspace && workspaceRepoSwitch && hasDetailOnMount;
   /** 真·抓取中：刷新时旧数据仍在，这里不算 pending，表头与内容都保持原样。 */
   const pending = detailQuery.isPending && !detail;
 
   return (
     <div className="detail-page space-y-4" data-workspace={workspace}
-      data-workspace-switch={workspace && workspaceRepoSwitch || undefined}
-      data-workspace-enter={workspace && workspaceRepoSwitch && detail !== null || undefined}>
+      data-workspace-switch={cachedWorkspaceSwitch || undefined}
+      data-workspace-enter={cachedWorkspaceSwitch || undefined}>
       {/*
         表头与它的哨兵同属一个定位容器：哨兵的落点由 CSS 按顶部栏实测高度从这块区域的下沿往上量，
         所以包装层只提供包含块，不参与视觉（表头仍是这一个，没有复制）。

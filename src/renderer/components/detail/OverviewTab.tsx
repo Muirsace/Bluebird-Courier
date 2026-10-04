@@ -76,7 +76,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
         shiftPx={DETAIL_REVEAL_MOTION.buildShiftPx}
       >
         <Section title="构建状态">
-          <BuildStatusPanel build={build} owner={owner} name={name} />
+          <BuildStatusPanel build={build} owner={owner} name={name} compact />
         </Section>
       </RevealItem>
 

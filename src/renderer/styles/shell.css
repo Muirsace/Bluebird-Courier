@@ -14,7 +14,7 @@
 }
 
 :root[data-window-controls-overlay] {
-  --window-controls-height: env(titlebar-area-height, 52px);
+  --window-controls-height: env(titlebar-area-height, 46px);
 }
 
 :root[data-window-controls-overlay] .window-drag-region {
@@ -48,7 +48,7 @@
 }
 
 /* 8px instead of the 20px page rhythm: that is what puts the repository title's ink
-   baseline on the sidebar heading's (52px strip + 8px = 60px text top on both sides). */
+   baseline on the sidebar heading's (46px strip + 8px = 54px text top on both sides). */
 :root[data-window-controls-overlay] .app-frame[data-desktop='true'] .app-shell-slot-content {
   padding-top: 8px;
   min-height: calc(100% - var(--window-controls-height));
@@ -122,11 +122,11 @@
 .desktop-sidebar-brand {
   display: flex;
   flex: none;
-  min-height: 52px;
+  min-height: 46px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 7px 16px;
 }
 
 /* DesktopWatchlistView chrome stays outside SidebarScrollRoot. */
@@ -320,7 +320,7 @@
 }
 
 /* Preserve the host and observer coordinates; only the visual docking offset changes. */
-@media (min-width: 1152px) {
+@media (min-width: 900px) {
   /* Cover the old Narrow host before React migrates the page into Workspace. */
   .compact-repo-context {
     display: none !important;
@@ -330,6 +330,7 @@
   }
   .app-shell-workspace {
     --workspace-sticky-offset: 0px;
+    --app-header-height: 0px;
   }
 
   :root[data-window-controls-overlay] .app-shell-workspace {

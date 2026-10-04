@@ -1,8 +1,8 @@
 import { nativeTheme } from 'electron';
 import type { BrowserWindow, BrowserWindowConstructorOptions, TitleBarOverlayOptions } from 'electron';
 
-// DIP, aligned with the existing 52px Desktop sidebar brand row.
-const WINDOW_CONTROLS_HEIGHT = 52;
+// DIP; 46px keeps the native caption buttons square and matches the Desktop top bar.
+const WINDOW_CONTROLS_HEIGHT = 46;
 
 function shouldUseDarkWindowChrome(): boolean {
   return nativeTheme.themeSource === 'dark'

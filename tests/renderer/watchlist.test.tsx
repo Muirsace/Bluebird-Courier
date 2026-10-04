@@ -331,12 +331,12 @@ describe('监控清单 · 添加仓库', () => {
     expect(document.querySelector('.watchlist-add-form .add-repository-status')).toBeNull();
   });
 
-  it('本地识别重复仓库：已添加可切到清除，修改输入后恢复加入', async () => {
+  it('本地识别重复仓库：单次点击清除，修改输入后恢复加入', async () => {
     await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
     const listCalls = handle.calls.listRepositories;
     const input = await expandAddForm();
     await typeInto(input, 'https://github.com/DeepSeek-AI/DeepSeek-Harness.git');
-    expect(activeAddButtonLabel()).toBe('added');
+    expect(activeAddButtonLabel()).toBe('clear');
     expect(addSubmitButton().getAttribute('aria-hidden')).toBe('false');
     expect(addSubmitButton().tabIndex).toBe(0);
     expect(addSubmitButton().disabled).toBe(false);
@@ -344,8 +344,8 @@ describe('监控清单 · 添加仓库', () => {
     expect(addStatus()).not.toBeNull();
     expect(input.value).toBe('https://github.com/DeepSeek-AI/DeepSeek-Harness.git');
     await click(addSubmitButton());
-    expect(activeAddButtonLabel()).toBe('clear');
-    expect(addStatus()?.textContent).toContain('打开详情');
+    expect(input.value).toBe('');
+    expect(addStatus()).toBeNull();
     await typeInto(input, 'facebook/react');
     expect(addStatus()).toBeNull();
     expect(activeAddButtonLabel()).toBe('join');
@@ -357,12 +357,10 @@ describe('监控清单 · 添加仓库', () => {
     expect(handle.calls.addRepository).toBe(1);
   });
 
-  it('重复仓库按钮阶段结束后变为清除，但 duplicate message 仍保留', async () => {
+  it('重复仓库从一开始即可清除，输入期间持续显示重复提示', async () => {
     await mount({ repositories: [makeGlance(1, 'deepseek-ai/deepseek-harness')] });
     const input = await expandAddForm();
     await typeInto(input, 'deepseek-ai/deepseek-harness');
-    expect(activeAddButtonLabel()).toBe('added');
-    await new Promise((resolve) => setTimeout(resolve, 1300));
     expect(activeAddButtonLabel()).toBe('clear');
     expect(addSubmitButton().disabled).toBe(false);
     expect(input.value).toBe('deepseek-ai/deepseek-harness');
@@ -411,7 +409,7 @@ describe('监控清单 · 添加仓库', () => {
     await typeInto(input, 'deepseek-ai/deepseek-harness');
     expect(addStatus()).not.toBeNull();
     await typeInto(input, 'deepseek-ai/deepseek-harness ');
-    expect(activeAddButtonLabel()).toBe('added');
+    expect(activeAddButtonLabel()).toBe('clear');
     expect(addSubmitButton().disabled).toBe(false);
     await typeInto(input, 'facebook/react');
     expect(addStatus()).toBeNull();
@@ -529,6 +527,10 @@ describe('监控清单 · 添加仓库', () => {
     expect(addError()).toBeNull();
     expect(buttonByText('打开详情')?.disabled).toBe(false);
     expect(addSubmitButton().disabled).toBe(false);
+    expect(activeAddButtonLabel()).toBe('clear');
+    await click(addSubmitButton());
+    expect(input.value).toBe('');
+    expect(addStatus()).toBeNull();
     await typeInto(input, 'facebook/react');
     expect(addStatus()).toBeNull();
     expect(handle.calls.addRepository).toBe(1);

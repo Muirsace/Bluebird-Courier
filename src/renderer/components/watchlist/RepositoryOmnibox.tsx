@@ -32,7 +32,6 @@ const DUPLICATE_MESSAGE = '该仓库已在监控清单中';
 const VISIBLE_SUCCESS_MS = 1400;
 /** 「查看位置」到位后提示停留多久：够看完高亮，然后提示与输入框一起收回。 */
 const REVEAL_SUCCESS_MS = 700;
-const DUPLICATE_ACTION_MS = 1200;
 // Keep content mounted through --ui-feedback-layout-ms so collapse can finish.
 const MESSAGE_EXIT_MS = 200;
 const FALLBACK_ERROR: NormalizedError = {
@@ -48,7 +47,7 @@ type SuccessRepository = {
 
 type FeedbackState =
   | { kind: 'none' }
-  | { kind: 'duplicate'; name: string; repository: Glance | null; phase: 'confirming' | 'manual-clear' }
+  | { kind: 'duplicate'; name: string; repository: Glance | null }
   | { kind: 'remote-error'; input: string; error: NormalizedError }
   | { kind: 'success'; repository: SuccessRepository; phase: 'confirming' | 'manual-clear' | 'revealing' };
 
@@ -92,7 +91,6 @@ export function RepositoryOmnibox({
   const wasExpanded = useRef(false);
   const restoreTriggerFocus = useRef(false);
   const submissionId = useRef(0);
-  const valueRef = useRef('');
   const feedbackRef = useRef<FeedbackState>({ kind: 'none' });
   const successTimerRef = useRef<number | null>(null);
 
@@ -116,9 +114,13 @@ export function RepositoryOmnibox({
   const localDuplicate = parsed.ok
     ? findRepository(repositories, `${parsed.owner}/${parsed.name}`)
     : null;
-  const duplicateFeedback = feedback.kind === 'duplicate' ? feedback : null;
-  const duplicateRepository = duplicateFeedback?.repository ?? localDuplicate;
-  const duplicateName = duplicateFeedback?.name ?? duplicateRepository?.fullName ?? null;
+  // A resolved remote duplicate belongs to that live row. Deleting it
+  // invalidates the server acknowledgement immediately.
+  // An unresolved remote duplicate can still show its server acknowledgement.
+  const duplicateFeedback = feedback.kind === 'duplicate' &&
+    (!feedback.repository || feedback.repository.id === localDuplicate?.id) ? feedback : null;
+  const duplicateRepository = localDuplicate;
+  const duplicateName = duplicateRepository?.fullName ?? duplicateFeedback?.name ?? null;
   const isDuplicate = duplicateName !== null && hasInput;
   const hasRemoteError = feedback.kind === 'remote-error' && feedback.input === value;
   const successRepository = feedback.kind === 'success' ? feedback.repository : null;
@@ -168,9 +170,7 @@ export function RepositoryOmnibox({
       ? 'join'
       : successRepository
         ? feedback.kind === 'success' && feedback.phase !== 'confirming' ? 'clear' : 'added'
-        : isDuplicate
-          ? duplicateFeedback?.phase === 'manual-clear' ? 'clear' : 'added'
-          : invalid || hasRemoteError
+        : isDuplicate || invalid || hasRemoteError
           ? 'clear'
           : 'join';
   const actionVisible = formOpen && hasInput;
@@ -199,7 +199,6 @@ export function RepositoryOmnibox({
     restoreTriggerFocus.current =
       returnFocus && containerRef.current?.contains(document.activeElement) === true;
     submissionId.current += 1;
-    valueRef.current = '';
     setValue('');
     feedbackRef.current = { kind: 'none' };
     setFeedback({ kind: 'none' });
@@ -209,7 +208,6 @@ export function RepositoryOmnibox({
   function resetToEditing(): void {
     cancelSuccessTimer();
     submissionId.current += 1;
-    valueRef.current = '';
     setValue('');
     updateFeedback({ kind: 'none' });
     inputRef.current?.focus();
@@ -244,24 +242,6 @@ export function RepositoryOmnibox({
     }, VISIBLE_SUCCESS_MS);
     return cancelSuccessTimer;
   }, [expanded, feedback, collapse]);
-
-  useEffect(() => {
-    if (!expanded || !isDuplicate || duplicateFeedback?.phase === 'manual-clear') return;
-    const name = duplicateName;
-    const input = value;
-    const timeout = window.setTimeout(() => {
-      if (valueRef.current !== input || feedbackRef.current.kind === 'success') return;
-      const next: FeedbackState = {
-        kind: 'duplicate',
-        name: name ?? input,
-        repository: duplicateRepository,
-        phase: 'manual-clear',
-      };
-      feedbackRef.current = next;
-      setFeedback(next);
-    }, DUPLICATE_ACTION_MS);
-    return () => window.clearTimeout(timeout);
-  }, [expanded, isDuplicate, duplicateFeedback?.phase, duplicateName, duplicateRepository, value]);
 
   useEffect(() => {
     if (!formOpen || !active) return;
@@ -328,7 +308,6 @@ export function RepositoryOmnibox({
         kind: 'duplicate',
         name,
         repository: findRepository(repositories, name),
-        phase: 'confirming',
       });
       return;
     }
@@ -369,12 +348,8 @@ export function RepositoryOmnibox({
                 // 输入意图随同一实例迁移到 Narrow；空的 Desktop 首屏仍对应折叠 Legacy。
                 if (sidebar && nextValue.length > 0) setExpanded(true);
                 cancelSuccessTimer();
-                valueRef.current = nextValue;
                 setValue(nextValue);
-                const duplicate = findRepository(repositories, nextValue);
-                updateFeedback(duplicate
-                  ? { kind: 'duplicate', name: duplicate.fullName, repository: duplicate, phase: 'confirming' }
-                  : { kind: 'none' });
+                updateFeedback({ kind: 'none' });
               }}
               placeholder={sidebar ? '输入 owner/repo 添加仓库…' : 'owner/repo 或 GitHub 网址'}
               aria-label="监控仓库（owner/repo 或 GitHub 网址）"
@@ -399,13 +374,6 @@ export function RepositoryOmnibox({
                 cancelSuccessTimer();
                 if (feedbackRef.current.kind === 'success') {
                   updateFeedback({ ...feedbackRef.current, phase: 'manual-clear' });
-                } else if (duplicateName) {
-                  updateFeedback({
-                    kind: 'duplicate',
-                    name: duplicateName,
-                    repository: duplicateRepository,
-                    phase: 'manual-clear',
-                  });
                 }
               }
             }}
@@ -422,7 +390,7 @@ export function RepositoryOmnibox({
                 : actionDisabled ? 'text-muted' : 'text-accent'
             }`}
           >
-            <span className="watchlist-add-action-label" aria-hidden="true">
+            <span className="watchlist-add-action-label" data-error={hasRemoteError || undefined} aria-hidden="true">
               {adding ? <Spinner className="watchlist-add-spinner h-3.5 w-3.5" /> : (
                 <span className={`repository-omnibox-action-icon ${displayedAction === 'clear' || displayedAction === 'added' ? 'repository-omnibox-clear-icon' : 'repository-omnibox-add-icon'}`} />
               )}

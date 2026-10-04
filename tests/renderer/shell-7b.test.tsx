@@ -38,8 +38,8 @@ describe('Shell-7B outgoing Omnibox action', () => {
     const stub = await mount(); await typeInto(input(), value); await clearWithoutFlash();
     expect(stub.calls.addRepository).toBe(0);
   });
-  it('duplicate confirming → manual clear → exit keeps X', async () => {
-    const stub = await mount(); await typeInto(input(), 'owner/existing'); await click(action());
+  it('duplicate clears on the first click and keeps X through exit', async () => {
+    const stub = await mount(); await typeInto(input(), 'owner/existing');
     expect(action().dataset.actionKind).toBe('clear'); await clearWithoutFlash();
     expect(stub.calls.removeRepository).toBe(0); expect(stub.calls.addRepository).toBe(0);
   });
@@ -84,12 +84,12 @@ describe('Shell-7B shared CSS and header contracts', () => {
     expect(css).toMatch(/\.repo-row:has\(\[data-row-activator\]:active\),\s*\.repository-sidebar-row[^}]+> \.repository-sidebar-press-surface\s*\{[^}]*translate: 0 1px;[^}]*scale: 0.985;[^}]*var\(--motion-ease-in\)/);
   });
   it('wide sticky offset is zero without changing the compact host or observer offset', () => {
-    expect(css).toMatch(/@media \(min-width: 1152px\)[\s\S]*?--workspace-sticky-offset: 0px/);
+    expect(css).toMatch(/@media \(min-width: 900px\)[\s\S]*?--workspace-sticky-offset: 0px/);
     expect(css).toContain('--workspace-sticky-offset: var(--workspace-context-height)');
     expect(css).toContain('top: var(--workspace-sticky-offset)');
     expect(css).toContain('height: var(--workspace-context-height)');
   });
-  it('1366 → 1000 → 1366 keeps observer roots, thresholds, hysteresis and cleanup', async () => {
+  it('1366 → 1000 → 900 → 1366 keeps observer roots, thresholds, hysteresis and cleanup', async () => {
     const records: Array<{callback: IntersectionObserverCallback; options?: IntersectionObserverInit; target?: Element; disconnect: () => void}> = [];
     class Observer {
       record: typeof records[number];
@@ -107,7 +107,7 @@ describe('Shell-7B shared CSS and header contracts', () => {
     expect(context.options?.root).toBe(root); expect(tabs.options?.root).toBe(root);
     expect(context.options?.threshold).toEqual([0,1]); expect(tabs.options?.threshold).toBeUndefined();
     const host = document.querySelector<HTMLElement>('.workspace-repo-context')!;
-    for (const width of [1000,1366]) {
+    for (const width of [1000,900,1366]) {
       await act(async () => setViewportWidth(width)); await settle();
       expect(context.disconnect).not.toHaveBeenCalled(); expect(tabs.disconnect).not.toHaveBeenCalled();
       expect(document.querySelector('.workspace-repo-context')).toBe(host);

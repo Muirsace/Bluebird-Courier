@@ -3,7 +3,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
 import {
-  buttonByLabel, buttonByText, click, createStub, makeGlance, navButton, openAddInput,
+  buttonByLabel, buttonByText, click, createStub, makeGlance, menuItem, navButton, openAddInput, openRepositoryActions,
   pressEscape, refreshAllButton, renderApp, repoOpenButton, repoSlot,
   resetReducedMotion, setReducedMotion, setViewportWidth, settle, settleMotion,
   submitForm, typeInto,
@@ -95,7 +95,7 @@ describe('Desktop Repository Omnibox shell', () => {
   it('already-added feedback belongs to the input; only Open detail changes selection', async () => {
     await mount(); await typeInto(input(), 'owner/B');
     expect(action().type).toBe('button');
-    expect(action().dataset.actionKind).toBe('added');
+    expect(action().dataset.actionKind).toBe('clear');
     expect(input().form?.querySelector('#add-repository-duplicate')?.textContent).toContain('已在监控清单中');
     expect(workspace().querySelector('.workspace-empty')).not.toBeNull();
     await submitForm(input().form!);
@@ -105,14 +105,53 @@ describe('Desktop Repository Omnibox shell', () => {
     expect(stub.calls.fetchDetail).toBe(1);
   });
 
-  it('already-added action retains the original manual clear path', async () => {
-    await mount(); await typeInto(input(), 'owner/A');
-    await click(action());
+  it.each([1152, 480])('an existing repository at %ipx clears on the first click', async (width) => {
+    setViewportWidth(width); await mount(); const field = await openAddInput();
+    await typeInto(field, 'owner/A');
+    expect(action().dataset.actionKind).toBe('clear');
     expect(action().getAttribute('aria-label')).toBe('清除输入');
     await click(action());
-    expect(input().value).toBe('');
-    expect(input().disabled).toBe(false);
-    expect(input().form?.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('false');
+    expect(field.value).toBe('');
+    expect(field.disabled).toBe(false);
+    expect(document.activeElement).toBe(field);
+    expect(field.form?.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('false');
+    expect(stub.calls.addRepository).toBe(0); expect(stub.calls.removeRepository).toBe(0);
+  });
+
+  it.each([1152, 480])('removing the typed duplicate at %ipx clears feedback and allows adding it again', async (width) => {
+    setViewportWidth(width); setReducedMotion(true); await mount();
+    const field = await openAddInput();
+    await typeInto(field, 'owner/A');
+    expect(field.form?.querySelector('#add-repository-duplicate')?.textContent).toContain('已在监控清单中');
+    await openRepositoryActions('owner/A');
+    await click(menuItem('从监控清单移除'));
+    stub.setRepositories([repos[1]!]);
+    await click(buttonByText('移除')); await settleMotion(250);
+    expect(repoOpenButton('owner/A')).toBeNull();
+    expect(field.value).toBe('owner/A');
+    expect(field.form?.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('false');
+    expect(action().type).toBe('submit');
+    expect(action().getAttribute('aria-label')).toBe('添加仓库');
+    await submitForm(field.form!); await settle();
+    expect(stub.addInputs).toEqual(['owner/A']);
+    expect(repoOpenButton('owner/A')).not.toBeNull();
+  });
+
+  it.each(['unrelated', 'failed'])('keeps duplicate feedback after an %s removal', async (scenario) => {
+    setReducedMotion(true); await mount({ removeFails: scenario === 'failed' });
+    await typeInto(input(), 'https://github.com/OWNER/a');
+    const target = scenario === 'unrelated' ? 'owner/B' : 'owner/A';
+    await openRepositoryActions(target);
+    await click(menuItem('从监控清单移除'));
+    if (scenario === 'unrelated') stub.setRepositories([repos[0]!]);
+    await click(buttonByText('移除')); await settleMotion(250);
+    expect(repoOpenButton('owner/A')).not.toBeNull();
+    expect(input().form?.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
+    expect(input().form?.querySelector('#add-repository-duplicate')?.textContent).toContain('已在监控清单中');
+    expect(action().type).toBe('button');
+    expect(action().getAttribute('aria-label')).toBe('清除输入');
+    await submitForm(input().form!);
+    expect(stub.calls.addRepository).toBe(0);
   });
 
   it('success auto-clear leaves the same Desktop input available', async () => {

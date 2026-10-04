@@ -3,12 +3,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DETAIL_REVEAL_TOTAL_MS } from '../../src/renderer/lib/motion';
 import { cardLayoutTransition, cardVariants } from '../../src/renderer/components/watchlist/card-motion';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
 import {
-  buttonByLabel, click, createStub, makeGlance, navButton, openAddInput, renderApp,
+  buttonByLabel, buttonByText, click, createStub, factSwaps, loadingSlot, makeGlance, navButton, revealPhase, openAddInput, renderApp,
   repoOpenButton, repoSlot, resetReducedMotion, resetSystemTheme, setReducedMotion,
-  setSystemTheme, setViewportWidth, settle, settleMotion, submitForm, typeInto,
+  setSystemTheme, setViewportWidth, settle, settleMotion, submitForm, tab, typeInto,
 } from './helpers';
 import { readRendererStyles } from './support/styles';
 
@@ -48,26 +49,50 @@ describe('Desktop repo switch entrance ownership', () => {
     expect(detail()?.dataset.workspaceEnter).toBeUndefined();
   });
 
-  it('A → pending B replaces the complete identity immediately, enters only once B data exists', async () => {
-    await mount(); await open('A');
-    const release = stub.holdNextDetail();
-    await open('B');
-    expect(detail()?.dataset.workspaceSwitch).toBe('true');
-    expect(detail()?.dataset.workspaceEnter).toBeUndefined();
-    expect(detail()?.querySelector('.repository-header-name')?.textContent).toBe('B');
-    expect(detail()?.querySelector('[role="tabpanel"]')).toBeNull();
+  it('A → pending B shows Header/Loading immediately and preserves the full data reveal without a workspace entrance', async () => {
+    vi.useFakeTimers(); await mount(); await open('A');
+    await settleMotion(DETAIL_REVEAL_TOTAL_MS + 200);
+    const release = stub.holdNextDetail(); await open('B');
+    const page = detail(), header = page?.querySelector('.repository-header');
+    const title = page?.querySelector('.repository-header-name');
+    const refetch = buttonByText('抓取中…');
+    expect(page?.dataset.workspaceSwitch).toBeUndefined();
+    expect(page?.dataset.workspaceEnter).toBeUndefined();
+    expect(title?.textContent).toBe('B');
+    expect(revealPhase()).toBe('loading');
+    expect(loadingSlot()?.dataset.state).toBe('visible');
+    expect(page?.querySelector('[role="tabpanel"]')).toBeNull();
     expect(document.querySelectorAll('.detail-page')).toHaveLength(1);
     await act(async () => release()); await settle();
-    expect(detail()?.dataset.workspaceEnter).toBe('true');
-    expect(detail()?.textContent).toContain('v1.0.2');
-    expect(detail()?.textContent).not.toContain('v1.0.1');
+    expect(detail()).toBe(page);
+    expect(page?.querySelector('.repository-header')).toBe(header);
+    expect(page?.querySelector('.repository-header-name')).toBe(title);
+    expect(buttonByText('重新抓取')).toBe(refetch);
+    expect(page?.dataset.workspaceSwitch).toBeUndefined();
+    expect(page?.dataset.workspaceEnter).toBeUndefined();
+    expect(revealPhase()).toBe('revealing');
+    expect(loadingSlot()?.dataset.state).toBe('exiting');
+    expect(factSwaps()).toHaveLength(4);
+    expect(page?.querySelectorAll('.detail-reveal-item').length).toBeGreaterThan(1);
+    expect(page?.querySelector('.detail-refetch-label')).not.toBeNull();
+    expect(page?.textContent).toContain('v1.0.2');
+    expect(page?.textContent).not.toContain('v1.0.1');
     expect(stub.calls.fetchDetail).toBe(2);
+    await settleMotion(DETAIL_REVEAL_TOTAL_MS + 200);
+    expect(revealPhase()).toBe('ready');
+    expect(loadingSlot()).toBeNull();
+    expect(factSwaps()).toHaveLength(0);
+    expect(page?.dataset.workspaceEnter).toBeUndefined();
   });
 
-  it('cached replacement immediately enters; same repo retains DOM, tab and animation identity', async () => {
-    await mount(); await open('A'); await open('B'); await open('A');
+  it('cached replacement immediately enters without reveal; same repo retains DOM and animation identity', async () => {
+    vi.useFakeTimers(); await mount(); await open('A'); await open('B'); await open('A');
     const before = detail(), rows = repos.map(repo => repoSlot(repo.fullName));
+    expect(before?.dataset.workspaceSwitch).toBe('true');
     expect(before?.dataset.workspaceEnter).toBe('true');
+    expect(revealPhase()).toBe('ready');
+    expect(loadingSlot()).toBeNull();
+    expect(factSwaps()).toHaveLength(0);
     await open('A');
     expect(detail()).toBe(before);
     expect(repos.map(repo => repoSlot(repo.fullName))).toEqual(rows);
@@ -97,11 +122,13 @@ describe('Desktop repo switch entrance ownership', () => {
     expect(detail()).toBe(latest);
     expect(latest?.querySelector('.repository-header-name')?.getAttribute('aria-label')).toBe('owner/C');
     expect(latest?.textContent).not.toContain('owner/B');
-    expect(document.querySelectorAll('[data-workspace-enter="true"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-workspace-enter="true"]')).toHaveLength(0);
+    expect(latest?.dataset.workspaceSwitch).toBeUndefined();
   });
 
   it('breakpoint migration cancels switch entrance without replacing DetailPage', async () => {
-    await mount(); await open('A'); await open('B'); const before = detail();
+    await mount(); await open('A'); await open('B'); await open('A'); const before = detail();
+    expect(before?.dataset.workspaceEnter).toBe('true');
     for (const width of [899, 900, 899, 1152]) {
       await act(async () => setViewportWidth(width)); await settle();
       expect(detail()).toBe(before);
@@ -112,7 +139,7 @@ describe('Desktop repo switch entrance ownership', () => {
   });
 
   it('system theme changes retain DOM and entrance marker, so cannot restart keyframes', async () => {
-    await mount({ preferences: { theme: 'system' } }); await open('A'); await open('B');
+    await mount({ preferences: { theme: 'system' } }); await open('A'); await open('B'); await open('A');
     const before = detail();
     for (const theme of ['dark', 'light', 'dark'] as const) {
       await act(async () => setSystemTheme(theme)); await settle();
@@ -137,6 +164,86 @@ describe('Desktop repo switch entrance ownership', () => {
     expect(detail()?.dataset.workspaceSwitch).toBeUndefined();
     expect(detail()?.dataset.workspaceEnter).toBeUndefined();
     expect(document.querySelector<HTMLElement>('.view-transition')?.dataset.viewMotion).toBe('forward');
+  });
+
+  it('cold switch stays outside workspace entrance across tabs, theme updates and manual refresh', async () => {
+    vi.useFakeTimers(); await mount({ preferences: { theme: 'system' } }); await open('A'); await open('B');
+    const before = detail();
+    await settleMotion(DETAIL_REVEAL_TOTAL_MS + 200);
+    await click(tab('发版')); await settle();
+    const panel = before?.querySelector('[role="tabpanel"]');
+    expect(panel?.className).toContain('tab-panel-enter');
+    await act(async () => setSystemTheme('dark')); await settle();
+    const release = stub.holdNextDetail(); await click(buttonByText('重新抓取')); await settle();
+    expect(revealPhase()).toBe('ready');
+    expect(loadingSlot()).toBeNull();
+    await act(async () => release()); await settle();
+    expect(detail()).toBe(before);
+    expect(before?.querySelector('[role="tabpanel"]')).toBe(panel);
+    expect(before?.dataset.workspaceEnter).toBeUndefined();
+    expect(before?.dataset.workspaceSwitch).toBeUndefined();
+    expect(factSwaps()).toHaveLength(0);
+    expect(stub.calls.fetchDetail).toBe(3);
+  });
+
+  it('Reduced Motion cold switch shows loading then direct ready, without workspace entrance', async () => {
+    vi.useFakeTimers(); setReducedMotion(true); await mount(); await open('A');
+    const release = stub.holdNextDetail(); await open('B');
+    expect(revealPhase()).toBe('loading');
+    expect(loadingSlot()?.dataset.state).toBe('visible');
+    const before = detail();
+    await act(async () => release()); await settle();
+    expect(detail()).toBe(before);
+    expect(revealPhase()).toBe('ready');
+    expect(loadingSlot()).toBeNull();
+    expect(factSwaps()).toHaveLength(0);
+    expect(before?.dataset.workspaceEnter).toBeUndefined();
+    expect(before?.dataset.workspaceSwitch).toBeUndefined();
+    expect(before?.textContent).toContain('v1.0.2');
+  });
+
+  it('theme and layout migration during a cold fetch never turn arriving data into a cached switch', async () => {
+    vi.useFakeTimers(); await mount({ preferences: { theme: 'system' } }); await open('A');
+    const release = stub.holdNextDetail(); await open('B');
+    const before = detail();
+    await act(async () => setSystemTheme('dark')); await settle();
+    for (const width of [899, 1152]) {
+      await act(async () => setViewportWidth(width)); await settle();
+      expect(detail()).toBe(before);
+      expect(revealPhase()).toBe('loading');
+      expect(loadingSlot()?.dataset.state).toBe('visible');
+      expect(before?.dataset.workspaceEnter).toBeUndefined();
+      expect(before?.dataset.workspaceSwitch).toBeUndefined();
+    }
+    await act(async () => release()); await settle();
+    expect(detail()).toBe(before);
+    expect(revealPhase()).toBe('revealing');
+    expect(factSwaps()).toHaveLength(4);
+    expect(before?.dataset.workspaceEnter).toBeUndefined();
+    expect(before?.dataset.workspaceSwitch).toBeUndefined();
+    expect(stub.calls.fetchDetail).toBe(2);
+  });
+
+  it('cold first-fetch failure then retry reveals data without retroactively assigning a workspace entrance', async () => {
+    vi.useFakeTimers(); await mount(); await open('A');
+    const fetchDetail = stub.api.fetchDetail;
+    stub.api.fetchDetail = async () => ({ detail: null, error: { kind: 'unknown', message: 'fixture error' } });
+    await open('B');
+    const before = detail();
+    expect(before?.querySelector('[role="alert"]')?.textContent).toContain('fixture error');
+    stub.api.fetchDetail = fetchDetail;
+    const release = stub.holdNextDetail(); await click(buttonByLabel('重新抓取仓库详情')); await settle();
+    expect(revealPhase()).toBe('loading');
+    // 失败 envelope 已是 query data：重试期间沿用原错误面板和禁用按钮。
+    expect(loadingSlot()).toBeNull();
+    expect(buttonByLabel('重新抓取仓库详情')?.disabled).toBe(true);
+    await act(async () => release()); await settle();
+    expect(detail()).toBe(before);
+    expect(revealPhase()).toBe('revealing');
+    expect(factSwaps()).toHaveLength(4);
+    expect(before?.querySelector('[role="alert"]')).toBeNull();
+    expect(before?.dataset.workspaceEnter).toBeUndefined();
+    expect(before?.dataset.workspaceSwitch).toBeUndefined();
   });
 
   it('switched first-fetch errors have no decorative workspace entrance', async () => {

@@ -93,11 +93,11 @@ describe('Watchlist Desktop / Narrow presentation separation', () => {
     expect(stub.calls).toEqual(calls);
   });
 
-  it('preserves duplicate feedback and its manual-clear phase without duplicate handlers', async () => {
+  it('preserves duplicate feedback and its immediate clear action across layouts', async () => {
     await mount(899);
     const input = await openAddInput();
     await typeInto(input, repository.fullName);
-    await vi.waitFor(() => expect(document.querySelector('.watchlist-add-action')?.getAttribute('data-action-kind')).toBe('clear'), { timeout: 2000 });
+    expect(document.querySelector('.watchlist-add-action')?.getAttribute('data-action-kind')).toBe('clear');
     const calls = { ...stub.calls };
     for (const width of stress) {
       await resize(width);

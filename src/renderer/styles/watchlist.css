@@ -297,20 +297,41 @@
   border-top-color: transparent;
 }
 
+/* One persistent glyph lets interrupted plus / clear transitions reverse in place. */
 .repository-omnibox-action-icon {
   display: block;
   width: 16px;
   height: 16px;
   background-color: currentColor;
-  mask: center / contain no-repeat;
-}
-
-.repository-omnibox-add-icon {
-  mask-image: url('./assets/icons/plus.svg');
+  mask: url('./assets/icons/plus.svg') center / contain no-repeat;
+  transform: rotate(0deg);
+  transition: transform var(--ui-selected-ms) var(--motion-ease-out);
 }
 
 .repository-omnibox-clear-icon {
-  mask-image: url('./assets/icons/x.svg');
+  transform: rotate(45deg);
+}
+
+/* Feedback lives on the label so its tiny shake cannot override the glyph rotation.
+ * CSS owns the finite visual cue; clearing/editing removes it immediately, and the
+ * actual error message and clear action do not depend on animation completion. */
+.watchlist-add-action-label[data-error='true'] {
+  animation:
+    omnibox-error-color 1200ms linear,
+    omnibox-error-shake 280ms var(--motion-ease-out);
+}
+
+@keyframes omnibox-error-color {
+  0%, 70% { color: rgb(var(--color-danger)); }
+  100% { color: rgb(var(--color-text-secondary)); }
+}
+
+@keyframes omnibox-error-shake {
+  0%, 100% { translate: 0; }
+  20% { translate: -2px 0; }
+  40% { translate: 2px 0; }
+  60% { translate: -1px 0; }
+  80% { translate: 1px 0; }
 }
 
 /* The stable track interpolates its row size while its keyed visual owns opacity. */

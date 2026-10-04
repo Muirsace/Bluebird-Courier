@@ -36,11 +36,11 @@ describe('Windows native window chrome', () => {
     expect(windowsWindowChromeOptions()).toEqual({
       titleBarStyle: 'hidden',
       backgroundColor: '#f5f7fa',
-      titleBarOverlay: { height: 52, color: '#f5f7fa', symbolColor: '#172033' },
+      titleBarOverlay: { height: 46, color: '#f5f7fa', symbolColor: '#172033' },
     });
     theme.shouldUseDarkColors = true;
     expect(windowsWindowChromeOptions().titleBarOverlay).toEqual({
-      height: 52, color: '#020617', symbolColor: '#f1f5f9',
+      height: 46, color: '#020617', symbolColor: '#f1f5f9',
     });
   });
 
@@ -67,7 +67,7 @@ describe('Windows native window chrome', () => {
       theme.shouldUseDarkColors = dark;
       events.emit('updated');
       expect(window.setTitleBarOverlay).toHaveBeenLastCalledWith({
-        height: 52, color: dark ? '#020617' : '#f5f7fa', symbolColor: dark ? '#f1f5f9' : '#172033',
+        height: 46, color: dark ? '#020617' : '#f5f7fa', symbolColor: dark ? '#f1f5f9' : '#172033',
       });
       expect(window.setBackgroundColor).toHaveBeenLastCalledWith(dark ? '#020617' : '#f5f7fa');
     }
@@ -83,7 +83,7 @@ describe('Windows native window chrome', () => {
     refreshWindowsWindowChrome(window as unknown as BrowserWindow);
 
     expect(window.setTitleBarOverlay).toHaveBeenCalledWith({
-      height: 52, color: '#020617', symbolColor: '#f1f5f9',
+      height: 46, color: '#020617', symbolColor: '#f1f5f9',
     });
     expect(window.setBackgroundColor).toHaveBeenCalledWith('#020617');
     expect(window.setTitleBarOverlay).toHaveBeenCalledOnce();

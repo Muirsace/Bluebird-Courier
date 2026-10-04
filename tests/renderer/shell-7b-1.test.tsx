@@ -65,7 +65,7 @@ describe('Shell-7B.1 focus and current-viewport contracts', () => {
     expect(css).toMatch(/\.watchlist-add-form input:focus-visible\s*\{[^}]*outline: none;[^}]*box-shadow:/);
   });
   it('wide hide covers both compact hosts regardless of responsive commit history', () => {
-    expect(css).toMatch(/@media \(min-width: 1152px\)\s*\{\s*\.compact-repo-context\s*\{[^}]*display: none !important;[^}]*transition: none !important/);
+    expect(css).toMatch(/@media \(min-width: 900px\)\s*\{\s*\.compact-repo-context\s*\{[^}]*display: none !important;[^}]*transition: none !important/);
   });
   it('newly mounted feedback has a starting style while exit transitions only opacity', () => {
     expect(css).toContain('@starting-style');

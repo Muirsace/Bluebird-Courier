@@ -16,6 +16,15 @@
     transform: none;
   }
 
+  .repository-omnibox-action-icon {
+    transition: none !important;
+  }
+
+  /* Keep the timed red cue, without any shake or gradual color motion. */
+  .watchlist-add-action-label[data-error='true'] {
+    animation: omnibox-error-color 1200ms step-end;
+  }
+
   .watchlist-add-form,
   .watchlist-add-content,
   .watchlist-add-control-row,
