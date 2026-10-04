@@ -1,35 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1280 1280" role="img" aria-labelledby="title desc">
   <title id="title">青鸟信使</title>
-  <desc id="desc">青鸟信使应用图标：深蓝圆角底、蓝色折纸翅膀与飞行中的蓝鸟。</desc>
+  <desc id="desc">青鸟信使应用图标：白底圆角卡片、蓝色折纸翅膀与飞行中的蓝鸟。</desc>
   <defs>
-    <linearGradient id="tile" x1="150" y1="80" x2="1120" y2="1210" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#062361"/>
-      <stop offset=".55" stop-color="#04194E"/>
-      <stop offset="1" stop-color="#05205A"/>
-    </linearGradient>
     <linearGradient id="body" x1="880" y1="480" x2="470" y2="1040" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#106BFF"/>
-      <stop offset=".55" stop-color="#0960FA"/>
-      <stop offset="1" stop-color="#0958EC"/>
+      <stop stop-color="#0B55D9"/>
+      <stop offset=".55" stop-color="#084FC8"/>
+      <stop offset="1" stop-color="#073FAF"/>
     </linearGradient>
     <linearGradient id="wing" x1="225" y1="225" x2="780" y2="661" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2D9BFA"/>
-      <stop offset="1" stop-color="#2994F6"/>
+      <stop stop-color="#1879D3"/>
+      <stop offset="1" stop-color="#146ABF"/>
     </linearGradient>
     <linearGradient id="fold" x1="260" y1="440" x2="715" y2="751" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#0755EF"/>
-      <stop offset="1" stop-color="#0750DD"/>
+      <stop stop-color="#104ACB"/>
+      <stop offset="1" stop-color="#0B40B3"/>
     </linearGradient>
     <linearGradient id="beak" x1="1049" y1="532" x2="1133" y2="598" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#62DFFC"/>
-      <stop offset="1" stop-color="#8EECFF"/>
+      <stop stop-color="#087A97"/>
+      <stop offset="1" stop-color="#0C657C"/>
     </linearGradient>
   </defs>
-  <!-- Rounded application tile; the exterior remains transparent. -->
-  <rect x="63" y="75" width="1129" height="1114" rx="211" fill="url(#tile)"/>
-  <!-- Beak sits behind the head, keeping the silhouette continuous. -->
+  <!-- 白色圆角卡片底；圆角以外保持透明。 -->
+  <rect x="63" y="75" width="1129" height="1114" rx="211" fill="#FFFFFF"/>
+  <!-- 极细描边只为在纯白背景上勾出卡片边缘，小尺寸下不可见。 -->
+  <rect x="63" y="75" width="1129" height="1114" rx="211" fill="none" stroke="#0B2A6B" stroke-opacity="0.12" stroke-width="6"/>
+  <!-- 鸟喙压在头部下层，保证轮廓连成一体。 -->
   <path fill="url(#beak)" d="M1042 527 L1128 575 Q1141 583 1125 593 L1056 624 Z"/>
-  <!-- Body and broad, tapered tail. -->
+  <!-- 身体与宽大的渐收尾羽。 -->
   <path fill="url(#body)" d="M604 743
     C658 723 707 648 755 574
     C803 501 855 468 918 468
@@ -43,13 +40,13 @@
     C344 1010 287 976 226 939
     C208 928 208 917 230 910
     C356 872 483 822 604 743 Z"/>
-  <!-- Folded wing underside. -->
+  <!-- 折翼下侧。 -->
   <path fill="url(#fold)" d="M205 390
     L787 644 Q831 666 799 699
     C769 729 707 746 646 748
     C541 752 448 717 377 652
     C305 587 252 493 205 390 Z"/>
-  <!-- Large clean upper wing, with the fold terminating at the tip. -->
+  <!-- 干净的大面积上翼，折线在翼尖收束。 -->
   <path fill="url(#wing)" d="M160 222
     C252 231 387 266 517 299
     C588 317 639 337 671 381

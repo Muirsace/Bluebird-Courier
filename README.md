@@ -272,7 +272,7 @@ icacls node_modules\electron\dist /setintegritylevel "(OI)(CI)Medium" /T /C
 
 ## 🌐 抓取与 GitHub API
 
-所有请求打向 `https://api.github.com`，统一带请求头：`Authorization: Bearer <PAT>`、`Accept: application/vnd.github+json`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: octo-monitor`。
+所有请求打向 `https://api.github.com`，统一带请求头：`Authorization: Bearer <PAT>`、`Accept: application/vnd.github+json`、`X-GitHub-Api-Version: 2022-11-28`、`User-Agent: bluebird-courier`。
 
 | 场景 | 端点 | 调用次数 |
 |---|---|---|
@@ -358,7 +358,7 @@ npm run dist   # = build + electron-builder --win nsis
 配置见 `electron-builder.yml`：
 
 - `appId: com.octo.monitor`（升级身份保持不变），`productName: 青鸟信使`；Windows 可执行文件名与旧版保持一致，快捷方式显示名为“青鸟信使”。
-- 固定应用图标来自 `resources/icons/bluebird-app.svg` / `.ico`，运行时 PNG 随主进程资源打包；主题适配 mark 位于 `src/renderer/assets/`。
+- 固定应用图标（白底圆角方块 + 折纸蓝鸟）来自 `resources/icons/bluebird-app.svg` / `.ico`，运行时 PNG 随主进程资源打包；应用内 mark 位于 `src/renderer/assets/`，保持主题适配（浅色界面用深蓝 mark，深色界面用亮蓝 mark）。
 - 旧版 `productName` 对应的 `%APPDATA%\OCTO 仓库监控器` 数据目录继续使用，数据库与已加密访问令牌不会因改名切换目录。
 - 目标：Windows **NSIS x64**，输出到 `release/`
 - `oneClick: false` + `allowToChangeInstallationDirectory: true` → 走安装向导、可自选安装目录
