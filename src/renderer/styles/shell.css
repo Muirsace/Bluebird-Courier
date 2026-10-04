@@ -1,0 +1,415 @@
+/* Shared page hosts; Desktop shell geometry and native caption below. */
+.responsive-page-host,
+.responsive-page-slot {
+  /* 布局壳迁移页面实例的容器，不增加盒模型或改变 legacy spacing。 */
+  display: contents;
+}
+
+/* Chromium supplies the actual titlebar's free rectangle in CSS pixels/DIP.
+   Defaults collapse to zero in browsers and on platforms without our Windows overlay.
+   Geometry updates automatically on resize, maximize/restore and DPI changes. */
+:root {
+  --window-controls-safe-width: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+  --window-controls-height: env(titlebar-area-height, 0px);
+}
+
+:root[data-window-controls-overlay] {
+  --window-controls-height: env(titlebar-area-height, 46px);
+}
+
+:root[data-window-controls-overlay] .window-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+:root[data-window-controls-overlay] .window-drag-region :is(
+  button, input, textarea, select, a, [role='button'], [role='tab'], [contenteditable='true']
+) {
+  -webkit-app-region: no-drag;
+}
+
+:root[data-window-controls-overlay] .app-global-header {
+  padding-right: calc(1rem + var(--window-controls-safe-width));
+}
+
+/* The native caption remains the only window control surface. This empty, sticky strip
+   reserves its height in Workspace and paints the band edge to edge; the opaque caption
+   paints the native buttons over it. Stopping at the safe width left a page-colored sliver
+   beside the buttons whenever Workspace showed its 9px classic scrollbar (that gutter is
+   outside the content box the strip's 100% resolves against). */
+:root[data-window-controls-overlay] .app-frame[data-desktop='true'] .app-shell-window-drag-strip {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: block;
+  width: 100%;
+  height: var(--window-controls-height);
+  background-color: rgb(var(--color-app));
+}
+
+/* 8px instead of the 20px page rhythm: that is what puts the repository title's ink
+   baseline on the sidebar heading's (46px strip + 8px = 54px text top on both sides). */
+:root[data-window-controls-overlay] .app-frame[data-desktop='true'] .app-shell-slot-content {
+  padding-top: 8px;
+  min-height: calc(100% - var(--window-controls-height));
+}
+
+:root[data-window-controls-overlay] .app-shell-workspace {
+  --workspace-sticky-offset: calc(var(--window-controls-height) + var(--workspace-context-height));
+  --app-header-height: calc(var(--window-controls-height) + var(--workspace-context-height));
+}
+
+/* Content starts below the strip, so its actions can use the full Workspace width. */
+:root[data-window-controls-overlay] .app-shell-workspace .repository-header-top {
+  flex-wrap: wrap;
+}
+
+:root[data-window-controls-overlay] .app-shell-workspace .repository-header-identity {
+  flex-basis: 12rem;
+}
+
+:root[data-window-controls-overlay] .app-shell-workspace .repository-header-actions {
+  max-width: 100%;
+  flex-shrink: 1;
+}
+
+.app-shell-window-drag-strip {
+  display: none;
+}
+
+.app-shell {
+  --app-rail-width: 0px;
+  --app-sidebar-width: 336px;
+  display: grid;
+  grid-template-columns: var(--app-rail-width) var(--app-sidebar-width) minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell-rail {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.app-shell-sidebar,
+.app-shell-workspace {
+  /* Narrow 的全局 Header 高度不参与 Desktop 滚动槽位的吸附线。 */
+  --app-header-height: 0px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+.app-shell-sidebar {
+  grid-column: 2;
+  border-right: 1px solid rgb(var(--color-border-subtle));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell-sidebar-body,
+.watchlist-page.desktop-watchlist-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.desktop-sidebar-brand {
+  display: flex;
+  flex: none;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 16px;
+}
+
+/* DesktopWatchlistView chrome stays outside SidebarScrollRoot. */
+.watchlist-sidebar-chrome {
+  flex: none;
+  min-width: 0;
+  padding: 0 16px 8px;
+  border-bottom: 0;
+}
+
+.watchlist-sidebar-chrome .responsive-page-host > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: 4px;
+}
+
+/* NarrowWatchlistView retains the shared page rhythm. */
+.watchlist-page.narrow-watchlist-view .responsive-page-host > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: var(--watchlist-page-gap);
+}
+
+.watchlist-page.desktop-watchlist-view > :not([hidden]) ~ :not([hidden]) {
+  margin-block-start: 0;
+}
+
+.watchlist-sidebar-chrome .watchlist-page-toolbar {
+  position: static;
+  min-height: 0;
+  padding-block: 0;
+  border-bottom: 0;
+}
+
+.watchlist-sidebar-chrome .watchlist-add-form[data-expanded='true'] {
+  width: 100%;
+}
+
+.watchlist-sidebar-chrome .watchlist-page-heading {
+  align-items: center;
+}
+
+.repository-refresh-icon,
+.repository-omnibox-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+}
+
+.repository-refresh-icon {
+  mask-image: url('./assets/icons/refresh-cw.svg');
+}
+
+.watchlist-add-form[data-omnibox='true'] {
+  transition: none;
+}
+
+.watchlist-add-form[data-omnibox='true'] .watchlist-add-field {
+  position: relative;
+  overflow: visible;
+}
+
+.repository-omnibox-icon {
+  position: absolute;
+  inset: 9px auto auto 10px;
+  color: rgb(var(--color-text-muted));
+  pointer-events: none;
+  mask-image: url('./assets/icons/search.svg');
+}
+
+.watchlist-add-form[data-omnibox='true'] input {
+  height: 36px;
+  padding-inline-start: 34px;
+  font-size: 13px;
+  background-color: rgb(var(--color-surface));
+}
+
+.watchlist-add-form[data-omnibox='true'] input:not([aria-invalid='true']):not(:focus) {
+  border-color: rgb(var(--color-border));
+}
+
+.watchlist-add-form[data-omnibox='true'] .watchlist-feedback-visual > div {
+  padding-top: 8px;
+}
+
+.watchlist-add-form[data-omnibox='true'] .add-repository-status {
+  overflow-wrap: anywhere;
+}
+
+.sidebar-refresh-spinner {
+  border-color: currentColor;
+  border-top-color: transparent;
+}
+
+.repository-list-viewport {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  overflow-anchor: none;
+  padding: 6px 8px 20px;
+}
+
+/* Keep the existing scroll root/gutter; only the scrollbar palette is quieter. */
+.repository-list-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.repository-list-viewport::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border-strong) / 0.65);
+  border-color: rgb(var(--color-app));
+}
+
+.repository-list-viewport:hover::-webkit-scrollbar-thumb,
+.repository-list-viewport::-webkit-scrollbar-thumb:active {
+  background: rgb(var(--color-text-muted) / 0.65);
+}
+
+[data-theme='dark'] .repository-list-viewport::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border-strong));
+}
+
+[data-theme='dark'] .repository-list-viewport:hover::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-text-muted) / 0.55);
+}
+
+.repository-list-viewport .repo-row-slot {
+  /* 固定 Chrome 已在 scrollport 外，定位不再需要给旧 toolbar 让位。 */
+  scroll-margin-top: 0;
+}
+
+/* 留白属于内容层，不能放在 scrollport 上，否则 sticky 停靠线会被 padding 下推。 */
+.app-shell-slot-content {
+  display: flex;
+  min-height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  padding: 20px 16px;
+}
+
+.app-shell-workspace {
+  grid-column: 3;
+  --workspace-context-height: 1.5rem;
+  --workspace-sticky-offset: var(--workspace-context-height);
+  /* 原 Compact Context 改由 Workspace 接管；sticky tabs 紧接这条身份行。 */
+  --app-header-height: var(--workspace-context-height);
+}
+
+.workspace-repo-context {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: var(--workspace-context-height);
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  /* Also blocks the universal Reduced Motion duration from creating an implicit all transition. */
+  transition: none;
+}
+
+.workspace-repo-context[data-visible='true'] {
+  background-color: rgb(var(--color-app));
+}
+
+.workspace-repo-context .compact-repo-context-divider {
+  display: none;
+}
+
+.workspace-repo-context .compact-repo-context {
+  max-width: 100%;
+  /* The absolute 1.5rem host and sticky offsets are never animated. */
+  transform: translateY(var(--ui-context-shift));
+  transition:
+    opacity var(--ui-context-exit-ms) var(--motion-ease-in),
+    transform var(--ui-context-exit-ms) var(--motion-ease-in);
+}
+
+.workspace-repo-context .compact-repo-context[data-visible='true'] {
+  transform: translateY(0);
+  transition:
+    opacity var(--ui-context-enter-ms) var(--motion-ease-out),
+    transform var(--ui-context-enter-ms) var(--motion-ease-out);
+}
+
+.workspace-repo-context .compact-repo-context > span:last-child {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Preserve the host and observer coordinates; only the visual docking offset changes. */
+@media (min-width: 900px) {
+  /* Cover the old Narrow host before React migrates the page into Workspace. */
+  .compact-repo-context {
+    display: none !important;
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+  }
+  .app-shell-workspace {
+    --workspace-sticky-offset: 0px;
+    --app-header-height: 0px;
+  }
+
+  :root[data-window-controls-overlay] .app-shell-workspace {
+    --workspace-sticky-offset: var(--window-controls-height);
+    --app-header-height: var(--window-controls-height);
+  }
+}
+
+.app-shell-workspace .detail-tabs-sticky {
+  top: var(--workspace-sticky-offset);
+}
+
+.workspace-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.app-shell-workspace .detail-tab-content-anchor {
+  scroll-margin-top: calc(var(--workspace-sticky-offset) + var(--detail-tabs-height, 0px) + 8px);
+  min-height: calc(100vh - var(--app-chrome-height, 0px) - var(--workspace-sticky-offset) - var(--detail-tabs-height, 0px) - 28px);
+}
+
+/* 菜单使用原有 DOM / 交互，仅在 Shell 内进入 Chromium top layer，避开滚动裁剪。 */
+.repository-action-positioner[data-shell-overlay='true'] {
+  position: fixed;
+  inset: auto;
+  right: var(--overlay-right);
+  top: var(--overlay-top);
+  bottom: var(--overlay-bottom);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+
+/* 与同一次 React layout commit 切换；media query 先解开高度会提前夹掉列表 scrollTop。 */
+html:has(.app-frame[data-desktop='true']) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.app-frame[data-desktop='true'] {
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  overflow: hidden;
+}
+
+.app-frame[data-desktop='true'] > main {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+
+/* The keyed DetailPage is replaced immediately; there is no old-repo exit or queue. */
+.detail-page[data-workspace-enter='true'] {
+  animation: workspace-repo-enter var(--ui-workspace-enter-ms) var(--motion-ease-out);
+}
+
+/* One complete Workspace entrance owns switched repos, including delayed first fetches.
+   Keep the existing initial-app data reveal, but do not stack its section/metric entrances here. */
+.detail-page[data-workspace-switch='true'] .detail-reveal-item,
+.detail-page[data-workspace-switch='true'] .detail-fact-to,
+.detail-page[data-workspace-switch='true'] .detail-refetch-label {
+  animation: none;
+}
+
+.detail-page[data-workspace-switch='true'] .detail-fact-from {
+  display: none;
+}
+
+@keyframes workspace-repo-enter {
+  from { opacity: var(--ui-workspace-opacity); transform: translateY(var(--ui-workspace-shift)); }
+  to { opacity: 1; transform: translateY(0); }
+}

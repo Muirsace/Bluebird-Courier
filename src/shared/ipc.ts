@@ -8,6 +8,7 @@ export const IPC_CHANNELS = {
   cancelTokenReplacement: 'octo:cancelTokenReplacement',
   getSettings: 'octo:getSettings',
   updateSettings: 'octo:updateSettings',
+  setThemePreference: 'octo:setThemePreference',
   inspectRepositoryInput: 'octo:inspectRepositoryInput',
   listRepositories: 'octo:listRepositories',
   addRepository: 'octo:addRepository',

@@ -114,4 +114,9 @@ export interface BluebirdCourierFacade {
 }
 
 export type SettingsView = SettingsState;
-export type BluebirdCourierBridge = BluebirdCourierFacade;
+/** 用例门面之外的受限平台外观命令。 */
+export interface ThemeAppearanceBridge {
+  setThemePreference(preference: ThemePreference): Promise<void>;
+}
+
+export type BluebirdCourierBridge = BluebirdCourierFacade & ThemeAppearanceBridge;

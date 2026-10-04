@@ -1,4 +1,9 @@
 @media (prefers-reduced-motion: reduce) {
+  .state-spinner,
+  .sidebar-refresh-spinner {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {
@@ -11,6 +16,15 @@
     transform: none;
   }
 
+  .repository-omnibox-action-icon {
+    transition: none !important;
+  }
+
+  /* Keep the timed red cue, without any shake or gradual color motion. */
+  .watchlist-add-action-label[data-error='true'] {
+    animation: omnibox-error-color 1200ms step-end;
+  }
+
   .watchlist-add-form,
   .watchlist-add-content,
   .watchlist-add-control-row,
@@ -19,6 +33,18 @@
   .watchlist-add-action,
   .watchlist-inline-message {
     transition: none !important;
+  }
+
+  .watchlist-feedback-visual,
+  .watchlist-inline-message[data-open='true'] .watchlist-feedback-visual,
+  .repository-sidebar-row,
+  .repository-sidebar-row::before {
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .detail-page[data-workspace-enter='true'] {
+    animation: none !important;
   }
 
   .github-token-feedback {
@@ -38,7 +64,9 @@
 
   /* 卡片位移与退出淡出由 Motion 降级；CSS 仍关闭两种颜色高亮。 */
   .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repo-row,
-  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row {
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repo-row,
+  .repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface,
+  .repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface {
     animation: none !important;
   }
 
@@ -59,7 +87,8 @@
   }
 
   /* 卡片：按下仍然变灰，但整卡不再下压 */
-  .repo-row:has([data-row-activator]:active) {
+  .repo-row:has([data-row-activator]:active),
+  .repository-sidebar-row[data-pressed='true']:not(:has(.repository-action-positioner)) > .repository-sidebar-press-surface {
     translate: none;
     scale: none;
   }
@@ -82,6 +111,11 @@
   }
 
   .tab-indicator {
+    transition: none !important;
+  }
+
+  /* Universal reduced duration must not create a default `all` transition on coordinates. */
+  .repository-action-positioner[data-shell-overlay='true'] {
     transition: none !important;
   }
 

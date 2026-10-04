@@ -7,6 +7,7 @@ import { RepositoryHeader } from '../../src/renderer/components/detail/Repositor
 import { DETAIL_REVEAL_TOTAL_MS } from '../../src/renderer/lib/motion';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
 import {
+  buttonByLabel,
   buttonByText,
   click,
   createStub,
@@ -73,7 +74,7 @@ describe('详情揭示 · 首次抓取', () => {
 
     expect(revealPhase()).toBe('loading');
     expect(loadingSlot()?.dataset.state).toBe('visible');
-    expect(document.body.textContent).toContain('正在抓取全量信息…');
+    expect(document.body.textContent).toContain('正在加载仓库详情…');
     expect(document.querySelector('[role="tabpanel"]')).toBeNull();
     // 指标还是占位符
     expect(document.body.textContent).not.toContain('1,001');
@@ -86,7 +87,7 @@ describe('详情揭示 · 首次抓取', () => {
     expect(loadingSlot()?.dataset.state).toBe('exiting');
     expect(document.querySelector('[role="tabpanel"]')?.id).toBe('detail-panel-overview');
     expect(document.body.textContent).toContain('1,001');
-    expect(document.body.textContent).toContain('正在抓取全量信息…');
+    expect(document.body.textContent).toContain('正在加载仓库详情…');
 
     // 窗口走完：Loading 卡卸掉，揭示阶段收起
     await finishReveal();
@@ -254,7 +255,9 @@ describe('详情揭示 · 失败与降级', () => {
     expect(loadingSlot()).toBeNull();
     expect(document.querySelector('[role="tabpanel"]')).toBeNull();
     expect(document.body.textContent).toContain('抓取全量信息失败');
-    expect(document.body.textContent).toContain('暂无全量信息');
+    expect(document.body.textContent).toContain('加载仓库详情失败');
+    expect(document.body.textContent).not.toContain('暂无全量信息');
+    expect(buttonByLabel('重新抓取仓库详情')).not.toBeNull();
   });
 
   it('prefers-reduced-motion：数据到达直接就是最终状态，没有 revealing 阶段', async () => {
@@ -311,6 +314,7 @@ describe('详情揭示 · 表头细节', () => {
     view = await renderNode(
       handle,
       <RepositoryHeader
+        presentation="narrow"
         fullName={FIRST}
         repository={makeGlance(1, FIRST)}
         fetching={false}
@@ -336,6 +340,7 @@ describe('详情揭示 · 表头细节', () => {
     view = await renderNode(
       handle,
       <RepositoryHeader
+        presentation="narrow"
         fullName={FIRST}
         repository={makeGlance(1, FIRST)}
         fetching={false}

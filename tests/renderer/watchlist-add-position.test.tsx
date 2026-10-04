@@ -164,10 +164,10 @@ describe('Watchlist 新增位置', () => {
     });
     expect(buttonByText('查看位置')).not.toBeNull();
     expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('true');
-    expect(document.querySelector('.watchlist-add-action')?.textContent).toContain('已添加');
+    expect(document.querySelector<HTMLElement>('.watchlist-add-action')?.dataset.actionKind).toBe('added');
 
     await click(document.querySelector<HTMLButtonElement>('.watchlist-add-action'));
-    expect(document.querySelector('.watchlist-add-action')?.textContent).toContain('清除');
+    expect(document.querySelector<HTMLElement>('.watchlist-add-action')?.dataset.actionKind).toBe('clear');
     expect(buttonByText('查看位置')).not.toBeNull();
 
     const newCard = repoRows()[0];
@@ -204,7 +204,7 @@ describe('Watchlist 新增位置', () => {
     // 提示在滚动期间保持可见：还没到位就收起会让工具栏变矮，卡片会被再挪一次。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('true');
     expect(buttonByText('查看位置')?.disabled).toBe(true);
-    expect(document.querySelector('.watchlist-add-action')?.textContent).toContain('清除');
+    expect(document.querySelector<HTMLElement>('.watchlist-add-action')?.dataset.actionKind).toBe('clear');
 
     await finishSmoothReveal();
     expect(newCard?.dataset.highlightOnly).toBe('true');
@@ -222,7 +222,7 @@ describe('Watchlist 新增位置', () => {
     expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('false');
     expect(document.querySelector<HTMLInputElement>('#add-repository-input')?.disabled).toBe(true);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 220));
     });
     expect(buttonByText('查看位置')).toBeNull();
     expect(scrollIntoViewCalls).toHaveLength(1);
@@ -316,10 +316,10 @@ describe('Watchlist 新增位置', () => {
     expect(repoMotionForSlot(newCard)).toBe('idle');
     expect(newCard.dataset.highlightOnly).toBe('true');
     expect(newCard.dataset.highlight).toBeUndefined();
-    // 兜底收尾同样先停留再收起：1600ms 时消息已关，内容再走 130ms 退场。
+    // 兜底收尾同样先停留再收起：1600ms 时消息已关，内容再走 200ms 退场。
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('false');
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 220));
     });
     expect(buttonByText('查看位置')).toBeNull();
   });
@@ -421,7 +421,7 @@ describe('Watchlist 新增位置', () => {
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('false');
     expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('false');
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 220));
     });
     expect(buttonByText('查看位置')).toBeNull();
   });
@@ -488,7 +488,7 @@ describe('Watchlist 新增位置', () => {
     });
     expect(document.querySelector('.watchlist-inline-message')?.getAttribute('data-open')).toBe('false');
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 220));
     });
     expect(buttonByText('查看位置')).toBeNull();
   });

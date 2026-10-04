@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, TransitionEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NormalizedError, AccessTokenResult } from '../../shared/types';
@@ -7,6 +7,7 @@ import { prefersReducedMotion } from '../lib/motion';
 import { SettingSection } from '../components/SettingSection';
 import { Spinner } from '../components/Spinner';
 import { ThemeSelector } from '../components/ThemeSelector';
+import { InlineFeedback } from '../components/StateMessage';
 
 interface SettingsPageProps {
   /** 令牌保存并验证成功后调用（App 负责跳转到监控清单）。 */
@@ -59,6 +60,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   const accessTokenValueRef = useRef('');
   const requestIdRef = useRef(0);
   const savedTimerRef = useRef<number | null>(null);
+  const onSavedRef = useRef(onSaved);
+  useLayoutEffect(() => { onSavedRef.current = onSaved; }, [onSaved]);
 
   useEffect(() => {
     return () => {
@@ -129,7 +132,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         if (savedTimerRef.current !== null) window.clearTimeout(savedTimerRef.current);
         savedTimerRef.current = window.setTimeout(() => {
           savedTimerRef.current = null;
-          onSaved();
+          onSavedRef.current();
         }, 900);
       } else {
         updateFeedback({ kind: 'error', message: tokenErrorMessage(errorFrom(result)) });
@@ -183,7 +186,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
           <h3 className="min-w-0 text-sm font-medium text-secondary">Personal Access Token</h3>
           <div className="flex shrink-0 items-center gap-2">
             {accessTokenStateQuery.isPending ? (
-              <span className="flex items-center gap-1.5 text-xs text-muted">
+              <span role="status" aria-busy="true" aria-atomic="true" className="flex items-center gap-1.5 text-xs text-muted">
                 <Spinner className="h-3.5 w-3.5" /> 读取中…
               </span>
             ) : (
@@ -312,15 +315,16 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
             <div className="github-token-feedback-clip">
               <div className="pt-1.5">
                 {renderedFeedback ? (
-                  <div
-                    role={feedback ? (renderedFeedback.kind === 'success' ? 'status' : 'alert') : undefined}
-                    className={`settings-inline-status github-token-feedback-status ${renderedFeedback.kind === 'success' ? 'text-success' : 'text-danger'}`}
+                  <InlineFeedback
+                    announcement={feedback ? (renderedFeedback.kind === 'success' ? 'status' : 'alert') : undefined}
+                    tone={renderedFeedback.kind === 'success' ? 'success' : 'danger'}
+                    className="settings-inline-status github-token-feedback-status"
                   >
                     <span aria-hidden="true" className="shrink-0 font-medium">
                       {renderedFeedback.kind === 'success' ? '✓' : '⚠'}
                     </span>
                     <span className="min-w-0 break-words">{renderedFeedback.message}</span>
-                  </div>
+                  </InlineFeedback>
                 ) : null}
               </div>
             </div>

@@ -1,10 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { AddRepositoryForm } from './AddRepositoryForm';
+import { RepositoryOmnibox } from './RepositoryOmnibox';
+import { DesktopWatchlistHeading } from './DesktopWatchlistView';
+import { NarrowWatchlistHeading } from './NarrowWatchlistView';
 import { Spinner } from '../Spinner';
+import { resolveAppScrollRoot } from '../../lib/app-scroll-root';
 import type { Glance } from '../../../shared/types';
 import type { AddRepositoryOutcome } from './AddRepositoryForm';
 
 interface WatchlistHeaderProps {
+  sidebar?: boolean;
+  active?: boolean;
   /** 当前清单里的仓库数量；读取中为 null（此时不显示数量，避免先显示 0 再跳数）。 */
   repositoryCount: number | null;
   repositories: Glance[];
@@ -18,6 +23,8 @@ interface WatchlistHeaderProps {
 
 /** 清单页标题与唯一一组页面操作。 */
 export function WatchlistHeader({
+  sidebar = false,
+  active = true,
   repositoryCount,
   repositories,
   adding,
@@ -31,19 +38,26 @@ export function WatchlistHeader({
   const [toolbarStuck, setToolbarStuck] = useState(false);
 
   useLayoutEffect(() => {
+    // Desktop Chrome 在列表滚动根之外，既不用吸附，也不再安装 toolbar Observer。
+    setToolbarStuck(false);
+    if (sidebar || !active) return;
     const sentinel = toolbarSentinelRef.current;
-    const appHeader = document.querySelector<HTMLElement>('header');
+    const appHeader = document.querySelector<HTMLElement>('.app-global-header');
     if (!sentinel || !appHeader || typeof IntersectionObserver === 'undefined') return;
+    const scrollRoot = resolveAppScrollRoot(sentinel).element;
 
     let observer: IntersectionObserver | null = null;
+    let live = true;
     const observeAtHeader = (): void => {
+      if (!live) return;
       observer?.disconnect();
       // Read the rendered Header height because IntersectionObserver rootMargin cannot use CSS vars.
-      const headerHeight = appHeader.getBoundingClientRect().height;
-      setToolbarStuck(sentinel.getBoundingClientRect().top <= headerHeight);
+      const headerHeight = scrollRoot ? 0 : appHeader.getBoundingClientRect().height;
+      const stickyTop = scrollRoot?.getBoundingClientRect().top ?? headerHeight;
+      setToolbarStuck(sentinel.getBoundingClientRect().top <= stickyTop);
       observer = new IntersectionObserver(
-        ([entry]) => setToolbarStuck(entry ? !entry.isIntersecting : false),
-        { rootMargin: `-${headerHeight}px 0px 0px 0px`, threshold: 0 },
+        ([entry]) => { if (live) setToolbarStuck(entry ? !entry.isIntersecting : false); },
+        { root: scrollRoot, rootMargin: `-${headerHeight}px 0px 0px 0px`, threshold: 0 },
       );
       observer.observe(sentinel);
     };
@@ -54,44 +68,54 @@ export function WatchlistHeader({
     resizeObserver?.observe(appHeader);
 
     return () => {
+      live = false;
       observer?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, []);
+  }, [sidebar, active]);
+
+  const count = repositoryCount !== null ? (
+    <span className={`watchlist-count ${sidebar ? 'text-xs text-muted' : 'text-sm text-secondary'}`} aria-label={`${repositoryCount} 个仓库`}>
+      {repositoryCount}{sidebar ? '' : ' 个仓库'}
+    </span>
+  ) : null;
+  const refresh = (
+    <button
+      type="button"
+      onClick={onRefresh}
+      disabled={refreshing}
+      aria-busy={refreshing}
+      aria-label={sidebar ? '全部刷新' : undefined}
+      title={sidebar ? '全部刷新' : undefined}
+      data-button-motion={sidebar ? 'icon' : undefined}
+      className={sidebar
+        ? 'sidebar-refresh inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-secondary transition-colors hover:bg-surface-hover hover:text-primary active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60'
+        : 'ml-auto flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60'}
+    >
+      {sidebar ? (refreshing
+        ? <Spinner className="sidebar-refresh-spinner h-4 w-4" />
+        : <span className="repository-refresh-icon" aria-hidden="true" />
+      ) : <>{refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}{refreshing ? '刷新中…' : '全部刷新'}</>}
+    </button>
+  );
 
   return (
     <>
-      <div className="watchlist-page-heading relative flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="text-xl font-semibold text-primary">监控清单</h1>
-        {repositoryCount !== null ? (
-          <span className="text-sm text-secondary">{repositoryCount} 个仓库</span>
-        ) : null}
-        <span
-          ref={toolbarSentinelRef}
-          aria-hidden="true"
-          className="watchlist-toolbar-sentinel"
-        />
-      </div>
+      {sidebar ? <DesktopWatchlistHeading count={count} refresh={refresh} />
+        : <NarrowWatchlistHeading count={count} sentinelRef={toolbarSentinelRef} />}
 
       <div className="watchlist-page-toolbar" data-stuck={toolbarStuck ? 'true' : undefined}>
         <div className="watchlist-toolbar flex w-full flex-wrap items-start gap-2">
-          <AddRepositoryForm
+          <RepositoryOmnibox
+            sidebar={sidebar}
+            active={active}
             repositories={repositories}
             adding={adding}
             onSubmit={onAdd}
             onOpenRepository={onOpenRepository}
             onViewPosition={onViewPosition}
           />
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={refreshing}
-            aria-busy={refreshing}
-            className="ml-auto flex h-9 min-w-26 shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}
-            {refreshing ? '刷新中…' : '全部刷新'}
-          </button>
+          {!sidebar ? refresh : null}
         </div>
       </div>
     </>

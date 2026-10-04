@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'motion/react';
 import type { Glance, NormalizedError } from '../../shared/types';
 import { getApi } from '../lib/api';
+import { resolveAppScrollRoot, scrollTarget, scrollPositionElement, scrollViewportHeight } from '../lib/app-scroll-root';
 import { dedupeErrors } from '../lib/errors';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBar } from '../components/ErrorBar';
 import { Loading } from '../components/Loading';
-import { RepoRow } from '../components/RepoRow';
+import { DesktopWatchlistView } from '../components/watchlist/DesktopWatchlistView';
+import { NarrowWatchlistView } from '../components/watchlist/NarrowWatchlistView';
+import type { WatchlistPresentationProps } from '../components/watchlist/WatchlistPresentation';
 import { WatchlistHeader } from '../components/watchlist/WatchlistHeader';
+import { usePageHost } from '../components/shell/PageHost';
 import { prefersReducedMotion, revealScrollFallbackMs } from '../lib/motion';
 import type { AddRepositoryOutcome, AddRepositoryPosition } from '../components/watchlist/AddRepositoryForm';
 
@@ -30,6 +35,11 @@ interface PendingReveal {
 interface WatchlistPageProps {
   onOpenDetail: (repo: Glance) => void;
   onGoSettings: () => void;
+  /** Presentation/lifecycle only; DOM scroll ownership is resolved through AppScrollRoot. */
+  sidebar?: boolean;
+  active?: boolean;
+  selectedRepositoryId?: number | null;
+  onRepositoryRemoved?: (repositoryId: number) => void;
 }
 
 /**
@@ -53,7 +63,13 @@ function focusAfterRemoval(repositoryId: number): void {
   button?.focus();
 }
 
-export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps) {
+export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, active = true, selectedRepositoryId, onRepositoryRemoved }: WatchlistPageProps) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const sidebarScrollRootRef = useRef<HTMLDivElement>(null);
+  const chromeHost = usePageHost();
+  const layoutRef = useRef({ sidebar, active });
+  const onRepositoryRemovedRef = useRef(onRepositoryRemoved);
+  const addedLayoutRef = useRef(sidebar);
   const queryClient = useQueryClient();
   const listQuery = useQuery({
     queryKey: ['repositories'],
@@ -68,6 +84,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const [highlightRequest, setHighlightRequest] = useState<{
     repositoryId: number;
     token: number;
+    sidebar: boolean;
   } | null>(null);
   const [pendingReveal, setPendingReveal] = useState<PendingReveal | null>(null);
   /** 仅用于退场期间保留列表容器与空态时序；卡片 DOM 本身由 AnimatePresence 管理。 */
@@ -76,7 +93,21 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const pendingViewportAnchorRef = useRef<PendingViewportAnchor | null>(null);
   const highlightSequenceRef = useRef(0);
-  const cancelRevealRef = useRef<(() => void) | null>(null);
+  const cancelRevealRef = useRef<((settleFeedback?: boolean) => void) | null>(null);
+  useLayoutEffect(() => {
+    onRepositoryRemovedRef.current = onRepositoryRemoved;
+    const previous = layoutRef.current;
+    layoutRef.current = { sidebar, active };
+    if (previous.sidebar === sidebar && previous.active === active) return;
+    // 旧 scrollport 的定位不继续驱动新布局，列表替换也不被当成新加入。
+    cancelRevealRef.current?.(true);
+    cancelRevealRef.current = null;
+    pendingViewportAnchorRef.current = null;
+    setPendingReveal(null);
+    setNewlyAddedId(null);
+    setExitingIds([]);
+    setHighlightRequest(null);
+  }, [sidebar, active, onRepositoryRemoved]);
 
   const startReveal = useCallback((
     repositoryId: number,
@@ -89,14 +120,16 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     pendingViewportAnchorRef.current = null;
     setPendingReveal((current) => (current?.repositoryId === repositoryId ? null : current));
 
-    const scrollRoot = document.scrollingElement ?? document.documentElement;
-    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const root = resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current);
+    const scrollRoot = scrollPositionElement(root);
+    const scrollEvents = scrollTarget(root);
+    const viewportHeight = scrollViewportHeight(root);
     const targetOf = (): number => {
       const rect = target.getBoundingClientRect();
       const maxScrollTop = Math.max(0, scrollRoot.scrollHeight - viewportHeight);
       return Math.min(
         maxScrollTop,
-        Math.max(0, scrollRoot.scrollTop + rect.top + rect.height / 2 - viewportHeight / 2),
+        Math.max(0, scrollRoot.scrollTop + rect.top - (root.element?.getBoundingClientRect().top ?? 0) + rect.height / 2 - viewportHeight / 2),
       );
     };
     const behavior =
@@ -113,8 +146,8 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     let verifyFrame = 0;
     let verifyAttempts = 0;
     const cleanup = (): void => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('scrollend', handleScrollEnd);
+      scrollEvents.removeEventListener('scroll', handleScroll);
+      scrollEvents.removeEventListener('scrollend', handleScrollEnd);
       window.clearTimeout(fallback);
       window.cancelAnimationFrame(settleFrame);
       window.cancelAnimationFrame(verifyFrame);
@@ -124,7 +157,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
       finished = true;
       cleanup();
       cancelRevealRef.current = null;
-      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current });
+      setHighlightRequest({ repositoryId, token: ++highlightSequenceRef.current, sidebar: layoutRef.current.sidebar });
       onRevealSettled();
     };
     const handleScroll = (): void => {
@@ -150,14 +183,19 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     if (behavior === 'auto') {
       settleFrame = window.requestAnimationFrame(finish);
     } else {
-      window.addEventListener('scroll', handleScroll, { passive: true });
-      window.addEventListener('scrollend', handleScrollEnd);
+      scrollEvents.addEventListener('scroll', handleScroll, { passive: true });
+      scrollEvents.addEventListener('scrollend', handleScrollEnd);
       fallback = window.setTimeout(finish, revealScrollFallbackMs(Math.abs(targetOf() - scrollRoot.scrollTop)));
       verifyFrame = window.requestAnimationFrame(verifyStarted);
     }
-    cancelRevealRef.current = () => {
+    cancelRevealRef.current = (settleFeedback = false) => {
       finished = true;
       cleanup();
+      if (settleFeedback && behavior === 'smooth') {
+        scrollTarget(root).scrollTo({ top: scrollRoot.scrollTop, behavior: 'instant' });
+      }
+      // 中断定位也交还表单的反馈生命周期，避免永久卡在 revealing。
+      if (settleFeedback) onRevealSettled();
     };
   }, []);
 
@@ -181,10 +219,11 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
     }
 
     pendingViewportAnchorRef.current = null;
-    const scrollRoot = document.scrollingElement ?? document.documentElement;
+    const root = resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current);
+    const scrollRoot = scrollPositionElement(root);
     const heightDelta = scrollRoot.scrollHeight - pending.scrollHeight;
     if (heightDelta !== 0) {
-      window.scrollTo({
+      scrollTarget(root).scrollTo({
         top: Math.max(0, pending.scrollTop + heightDelta),
         behavior: 'instant',
       });
@@ -243,7 +282,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
 
   /** 退场播完仅交接焦点；数据删除与 DOM 保留分别由请求结果和 Motion 负责。 */
   const handleExited = useCallback((repositoryId: number) => {
-    focusAfterRemoval(repositoryId);
+    if (layoutRef.current.active) focusAfterRemoval(repositoryId);
   }, []);
 
   /** 新增失败由表单局部展示；重复响应刷新本地清单以提供对应仓库的详情入口。 */
@@ -258,15 +297,16 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
         }
         return { result, newCardPosition };
       }
-      const scrollRoot = document.scrollingElement ?? document.documentElement;
+      const scrollRoot = scrollPositionElement(resolveAppScrollRoot(sidebarScrollRootRef.current ?? pageRef.current));
       const scrollTop = scrollRoot.scrollTop;
       const nearTop = scrollTop <= WATCHLIST_TOP_PROXIMITY_PX;
       newCardPosition = nearTop ? 'visible' : 'offscreen';
       if (result.repository) {
         pendingViewportAnchorRef.current = null;
-        setNewlyAddedId(nearTop ? result.repository.id : null);
+        addedLayoutRef.current = layoutRef.current.sidebar;
+        setNewlyAddedId(nearTop && layoutRef.current.active ? result.repository.id : null);
 
-        if (!nearTop) {
+        if (!nearTop && layoutRef.current.active) {
           pendingViewportAnchorRef.current = {
             repositoryId: result.repository.id,
             scrollTop,
@@ -313,6 +353,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
    */
   async function handleRemove(repositoryId: number): Promise<void> {
     await getApi().removeRepository(repositoryId);
+    onRepositoryRemovedRef.current?.(repositoryId);
     // 请求成功的当下就停止交互，覆盖 Motion 启动 exit 之前的提交窗口。
     const slot = document.querySelector<HTMLElement>(`ul.repo-list > li[data-repository-id="${repositoryId}"]`);
     slot?.setAttribute('inert', '');
@@ -327,9 +368,11 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
   /** 加载失败且没有任何缓存数据：只显示错误条，不能再显示空态（否则被误读成清单被清空）。 */
   const listUnavailable = listQuery.isError && !listQuery.data;
 
-  return (
-    <div className="watchlist-page min-w-0">
+  const chrome = (
+    <>
       <WatchlistHeader
+        sidebar={sidebar}
+        active={active}
         repositoryCount={listQuery.data ? repositories.length : null}
         repositories={repositories}
         adding={adding}
@@ -354,39 +397,52 @@ export function WatchlistPage({ onOpenDetail, onGoSettings }: WatchlistPageProps
           action={{ label: '重试', onClick: () => void listQuery.refetch() }}
         />
       ) : null}
+    </>
+  );
 
-      {listQuery.isPending && !listQuery.data ? (
-        <Loading label="正在加载监控清单…" />
-      ) : listUnavailable ? null : (
-        <>
-          <ul className="repo-list" hidden={displayed.length === 0 && exitingIds.length === 0}>
-            <AnimatePresence initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
-              {displayed.map((repo) => (
-                <RepoRow
-                  key={repo.id}
-                  repo={repo}
-                  onOpen={onOpenDetail}
-                  onRemove={handleRemove}
-                  refreshing={refreshing}
-                  justAdded={repo.id === newlyAddedId}
-                  highlightRequest={
-                    repo.id === highlightRequest?.repositoryId ? highlightRequest.token : undefined
-                  }
-                  onEntered={handleEntered}
-                  removing={exitingIds.length > 0}
-                  onExited={handleExited}
-                />
-              ))}
-            </AnimatePresence>
-          </ul>
-          {displayed.length === 0 && exitingIds.length === 0 ? (
-            <EmptyState
-              title="还没有监控仓库"
-              hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
+  // One Query branch and Presence contract; views supply only list/item presentation.
+  const renderList: WatchlistPresentationProps['renderList'] = (RepositoryItem, className) => listQuery.isPending && !listQuery.data ? (
+    <Loading label="正在加载监控清单…" />
+  ) : listUnavailable ? null : (
+    <>
+      <ul className={className} hidden={displayed.length === 0 && exitingIds.length === 0}>
+        <AnimatePresence key={`${sidebar}:${active}`} initial={false} mode="popLayout" onExitComplete={() => setExitingIds([])}>
+          {displayed.map((repo) => (
+            <RepositoryItem
+              key={repo.id}
+              repo={repo}
+              selected={repo.id === selectedRepositoryId}
+              onOpen={onOpenDetail}
+              onRemove={handleRemove}
+              refreshing={refreshing}
+              justAdded={repo.id === newlyAddedId && addedLayoutRef.current === sidebar}
+              highlightRequest={
+                repo.id === highlightRequest?.repositoryId && highlightRequest.sidebar === sidebar ? highlightRequest.token : undefined
+              }
+              onEntered={handleEntered}
+              removing={exitingIds.length > 0}
+              onExited={handleExited}
             />
-          ) : null}
-        </>
-      )}
+          ))}
+        </AnimatePresence>
+      </ul>
+      {displayed.length === 0 && exitingIds.length === 0 ? (
+        <EmptyState
+          title="还没有监控仓库"
+          hint="添加一个 GitHub 仓库，青鸟信使会帮你跟踪发版、提交、Issue、构建和趋势。"
+        />
+      ) : null}
+    </>
+  );
+
+  return (
+    <>
+    <div ref={pageRef} className={`watchlist-page min-w-0 ${sidebar ? 'desktop-watchlist-view' : 'narrow-watchlist-view'}`}>
+      {sidebar ? (
+        <DesktopWatchlistView chromeHost={chromeHost} sidebarScrollRootRef={sidebarScrollRootRef} renderList={renderList} />
+      ) : <NarrowWatchlistView chromeHost={chromeHost} renderList={renderList} />}
     </div>
+    {createPortal(chrome, chromeHost)}
+    </>
   );
 }

@@ -2,10 +2,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useQuery } from '@tanstack/react-query';
 import type { Detail, DetailResult } from '../../shared/types';
 import { getApi } from '../lib/api';
+import { resolveAppScrollRoot } from '../lib/app-scroll-root';
 import { useDetailReveal } from '../lib/detail-reveal';
 import { DETAIL_REVEAL_MOTION, DETAIL_REVEAL_TOTAL_MS } from '../lib/motion';
 import { ErrorBar } from '../components/ErrorBar';
+import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
 import { Loading } from '../components/Loading';
+import { WorkspaceMessage } from '../components/StateMessage';
+import { describeError } from '../lib/errors';
 import { BuildTab } from '../components/detail/BuildTab';
 import { CommitTab } from '../components/detail/CommitTab';
 import { DetailTabs } from '../components/detail/DetailTabs';
@@ -18,9 +22,13 @@ import { RevealItem } from '../components/detail/RevealItem';
 import { TrendTab } from '../components/detail/TrendTab';
 
 interface DetailPageProps {
+  /** Presentation/lifecycle from App; Sticky observer roots follow actual DOM ownership. */
+  workspace: boolean;
+  workspaceRepoSwitch?: boolean;
+  repositoryContextVisible: boolean;
   repositoryId: number;
   fullName: string;
-  /** 上报"页面顶部那块 Repository Header 是否已滚出视口"，由 App 决定顶部栏要不要接管仓库名。 */
+  /** 上报 Repository Header 是否已滚出视口，由 App 同步当前宿主中的 Compact Context。 */
   onRepositoryContextChange: (visible: boolean) => void;
   onBack: () => void;
   onGoSettings: () => void;
@@ -53,6 +61,9 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
 }
 
 export function DetailPage({
+  workspace,
+  workspaceRepoSwitch = false,
+  repositoryContextVisible,
   repositoryId,
   fullName,
   onRepositoryContextChange,
@@ -99,22 +110,24 @@ export function DetailPage({
    */
   const repoContextSentinelRef = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sentinel = repoContextSentinelRef.current;
     // 没有布局引擎（测试环境）时不装观察器：顶部栏保持不接管
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    let live = true;
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!live) return;
         const entry = entries[0];
         if (!entry) return;
         if (entry.intersectionRatio === 0) onRepositoryContextChange(true);
         else if (entry.intersectionRatio === 1) onRepositoryContextChange(false);
       },
-      { threshold: [0, 1] },
+      { root: resolveAppScrollRoot(sentinel).element, threshold: [0, 1] },
     );
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [onRepositoryContextChange]);
+    return () => { live = false; observer.disconnect(); };
+  }, [onRepositoryContextChange, workspace]);
   /**
    * Tabs 吸附态。吸附线是"顶部栏下沿"，所以哨兵放在吸附线正上方一个顶部栏高度处：
    * 它越过视口顶端的那一刻，正好就是 Tabs 抵达吸附线的那一刻。
@@ -125,18 +138,20 @@ export function DetailPage({
   const tabsSentinelRef = useRef<HTMLSpanElement>(null);
   const [tabsStuck, setTabsStuck] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const sentinel = tabsSentinelRef.current;
     // 没有布局引擎（测试环境）时不装观察器：stuck 恒为 false，不影响语义与 ARIA
     if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+    let live = true;
     const observer = new IntersectionObserver((entries) => {
+      if (!live) return;
       const entry = entries[0];
       if (!entry) return;
       setTabsStuck(!entry.isIntersecting);
-    });
+    }, { root: resolveAppScrollRoot(sentinel).element });
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, []);
+    return () => { live = false; observer.disconnect(); };
+  }, [workspace]);
 
   /**
    * 记下"这一次 Tab 切换要播内容进场"。
@@ -161,6 +176,15 @@ export function DetailPage({
    * 新 Tab 更矮时还会把 scrollY 直接夹掉，那时再读 tabsStuck 已经不是触发切换时的状态了。
    */
   const resetTabScrollRef = useRef(false);
+  const previousLayoutRef = useRef(workspace);
+  useLayoutEffect(() => {
+    if (previousLayoutRef.current === workspace) return;
+    previousLayoutRef.current = workspace;
+    setTabsStuck(false);
+    onRepositoryContextChange(false);
+    setTabContentSwitched(null);
+    resetTabScrollRef.current = false;
+  }, [workspace, onRepositoryContextChange]);
 
   const selectTab = useCallback(
     (id: DetailTabId): void => {
@@ -197,6 +221,8 @@ export function DetailPage({
    * 优先级不依赖两者谁先注册。
    */
   useEffect(() => {
+    // 常驻 Sidebar 的工作区不承担“返回父页”导航；单栏仍复用原来的 Back / Esc 路径。
+    if (workspace) return;
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape') return;
       if (event.defaultPrevented || event.isComposing) return;
@@ -205,28 +231,38 @@ export function DetailPage({
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onBack]);
+  }, [onBack, workspace]);
 
   const fetchedDetail = detailQuery.data?.detail ?? null;
   const keptDetail = lastDetail && lastDetail.id === repositoryId ? lastDetail.detail : null;
   const detail = fetchedDetail ?? keptDetail;
   const fetchError = detailQuery.data?.error ?? null;
+  const detailError = fetchError ?? (detailQuery.isError
+    ? { kind: 'unknown' as const, message: '全量信息加载失败，请稍后重试' }
+    : null);
   const repository = detail?.repository;
 
   // 首次抓取的揭示窗口。首帧就有数据（缓存命中）直接算 ready，所以只播一次；
   // 手动重新抓取时旧数据一直都在，阶段早已离开 loading，也不会重播。
-  const reveal = useDetailReveal(detail !== null, DETAIL_REVEAL_TOTAL_MS);
+  const reveal = useDetailReveal(detail !== null, DETAIL_REVEAL_TOTAL_MS, workspace);
+  // App 按 repositoryId 重挂详情。只在挂载首帧已有全量缓存时播工作区切换；
+  // 冷缓存的数据到达继续走原有揭示，不能在 loading → ready 时补整页入场、带着表头再动一次。
+  const [hasDetailOnMount] = useState(() => detail !== null);
+  const cachedWorkspaceSwitch = workspace && workspaceRepoSwitch && hasDetailOnMount;
   /** 真·抓取中：刷新时旧数据仍在，这里不算 pending，表头与内容都保持原样。 */
   const pending = detailQuery.isPending && !detail;
 
   return (
-    <div className="space-y-4">
+    <div className="detail-page space-y-4" data-workspace={workspace}
+      data-workspace-switch={cachedWorkspaceSwitch || undefined}
+      data-workspace-enter={cachedWorkspaceSwitch || undefined}>
       {/*
         表头与它的哨兵同属一个定位容器：哨兵的落点由 CSS 按顶部栏实测高度从这块区域的下沿往上量，
         所以包装层只提供包含块，不参与视觉（表头仍是这一个，没有复制）。
       */}
       <div className="repo-context-scope">
         <RepositoryHeader
+          presentation={workspace ? 'desktop' : 'narrow'}
           fullName={fullName}
           repository={repository}
           fetching={detailQuery.isFetching}
@@ -237,12 +273,12 @@ export function DetailPage({
         <span ref={repoContextSentinelRef} aria-hidden="true" className="repo-context-sentinel" />
       </div>
 
-      {fetchError ? <ErrorBar error={fetchError} onGoSettings={onGoSettings} /> : null}
-      {detailQuery.isError ? (
+      {detail && detailError ? (
         <ErrorBar
-          error={{ kind: 'unknown', message: '全量信息加载失败，请稍后重试' }}
+          error={detailError}
+          summary="重新抓取失败"
           onGoSettings={onGoSettings}
-          action={{ label: '重试', onClick: () => void detailQuery.refetch() }}
+          action={{ label: '重试', onClick: () => void detailQuery.refetch(), disabled: detailQuery.isFetching }}
         />
       ) : null}
 
@@ -259,8 +295,8 @@ export function DetailPage({
         <span ref={tabsSentinelRef} aria-hidden="true" className="detail-tabs-sentinel" />
 
         {pending || reveal === 'revealing' ? (
-          <div className="detail-loading-slot" data-state={pending ? 'visible' : 'exiting'}>
-            <Loading label="正在抓取全量信息…" />
+          <div className="detail-loading-slot" data-state={pending ? 'visible' : 'exiting'} aria-hidden={!pending}>
+            <Loading label="正在加载仓库详情…" active={pending} />
           </div>
         ) : null}
 
@@ -272,13 +308,18 @@ export function DetailPage({
               durationMs={DETAIL_REVEAL_MOTION.tabsMs}
               shiftPx={DETAIL_REVEAL_MOTION.tabsShiftPx}
             >
+              {workspace ? (
+                <div className="workspace-repo-context" data-visible={repositoryContextVisible}>
+                  <CompactRepositoryContext presentation="desktop" fullName={fullName} visible={repositoryContextVisible} />
+                </div>
+              ) : null}
               <DetailTabs active={activeTab} onChange={selectTab} stuck={tabsStuck} />
             </RevealItem>
             {/*
               内容起点：切 Tab 的滚动落点。它只是给滚动定位用的普通 div（没有 role / tabIndex），
               不是第二套语义——tabpanel 还是同一个，aria-controls / aria-labelledby 关系不变。
             */}
-            <div ref={tabContentTopRef} className="detail-tab-content-anchor">
+            <div ref={tabContentTopRef} className="detail-tab-content-anchor detail-content-responsive">
               {/*
                 刷新期间旧数据仍然有效：不灰化、不遮罩，只由表头的按钮与「正在更新…」表态。
                 key 只认 activeTab：数据更新不会换节点，也就不会把这一屏内容重新播一遍进场；
@@ -296,9 +337,15 @@ export function DetailPage({
             </div>
           </div>
         ) : pending ? null : (
-          <div className="rounded-lg border border-dashed border-strong bg-surface/50 px-6 py-10 text-center text-sm text-muted">
-            暂无全量信息，请点击「重新抓取」
-          </div>
+          <WorkspaceMessage title={detailError ? '加载仓库详情失败' : '暂无全量信息'}
+            description={detailError ? describeError(detailError) : '请点击「重新抓取」'}
+            announcement={detailError ? 'alert' : undefined}>
+            <button type="button" className="state-action" aria-label="重新抓取仓库详情"
+              onClick={() => void detailQuery.refetch()} disabled={detailQuery.isFetching}>重新抓取</button>
+            {detailError?.kind === 'access_token_invalid' ? (
+              <button type="button" className="state-action" onClick={onGoSettings}>去设置</button>
+            ) : null}
+          </WorkspaceMessage>
         )}
       </div>
     </div>

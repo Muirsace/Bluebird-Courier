@@ -1,10 +1,11 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc';
-import type { BluebirdCourierFacade, OpenExternalResult } from '../shared/types';
+import type { BluebirdCourierFacade, OpenExternalResult, ThemePreference } from '../shared/types';
 
 export interface IpcHandlers {
   /** 外链属于主进程平台出口，IPC 只把目标转发给已注入的出口。 */
   openGitHubExternal(target: unknown): Promise<OpenExternalResult>;
+  applyTheme(preference: ThemePreference): void;
 }
 
 /** IPC 层只负责注册通道、转发参数和返回门面或平台出口结果。 */
@@ -17,6 +18,10 @@ export function registerIpc(facade: BluebirdCourierFacade, handlers: IpcHandlers
   ipcMain.handle(IPC_CHANNELS.cancelTokenReplacement, () => facade.cancelTokenReplacement!());
   ipcMain.handle(IPC_CHANNELS.getSettings, () => facade.getSettings());
   ipcMain.handle(IPC_CHANNELS.updateSettings, (_event, patch: unknown) => facade.updateSettings((patch ?? {}) as Record<string, string>));
+  ipcMain.handle(IPC_CHANNELS.setThemePreference, (_event, preference: unknown) => {
+    if (preference !== 'system' && preference !== 'light' && preference !== 'dark') return;
+    handlers.applyTheme(preference);
+  });
   ipcMain.handle(IPC_CHANNELS.inspectRepositoryInput, (_event, input: unknown) => facade.inspectRepositoryInput(input as string));
   ipcMain.handle(IPC_CHANNELS.listRepositories, () => facade.listRepositories());
   ipcMain.handle(IPC_CHANNELS.addRepository, (_event, fullName: unknown) => facade.addRepository(fullName as string));

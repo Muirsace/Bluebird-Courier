@@ -109,7 +109,7 @@ function contextEl(): HTMLElement | null {
 }
 
 function contextName(): string {
-  return contextEl()?.textContent?.replace('│', '').trim() ?? '';
+  return contextEl()?.querySelector('[title]')?.getAttribute('title') ?? '';
 }
 
 /** data-visible：true = 顶部栏正在接管仓库名。 */
@@ -300,7 +300,7 @@ describe('Compact Context · 结构与无障碍', () => {
     await openDetail(fullName);
 
     const name = contextEl()?.querySelector('.compact-repo-context-name, span:last-child');
-    expect(name?.textContent?.trim()).toBe(fullName);
+    expect(name?.textContent?.trim()).toBe('Bluebird-Code-Courier · haobahaobaenenen');
     expect(name?.getAttribute('title')).toBe(fullName);
     expect(name?.className).toContain('truncate');
     expect(name?.className).toContain('font-mono');

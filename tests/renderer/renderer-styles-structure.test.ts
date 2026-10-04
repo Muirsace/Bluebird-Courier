@@ -15,6 +15,7 @@ describe('Renderer stylesheet structure', () => {
       'styles/navigation.css',
       'styles/detail.css',
       'styles/watchlist.css',
+      'styles/shell.css',
       'styles/accessibility.css',
     ]);
     // Reading the entire cascade also verifies that every imported file exists.

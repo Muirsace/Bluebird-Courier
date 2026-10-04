@@ -10,6 +10,8 @@ import { createGitHubTokenAdapter } from './core/adapters/github-token-adapter';
 import { createGitHubRepositoryAdapter } from './core/adapters/github-repository-adapter';
 import { createGitHubDetailAdapter } from './core/adapters/github-detail-adapter';
 import { openGitHubExternal } from './core/adapters/shell-links';
+import { applyThemeSource } from './core/adapters/theme';
+import { refreshWindowsWindowChrome, syncWindowsWindowChrome, windowsWindowChromeOptions } from './core/adapters/window-chrome';
 import { createRepositoryList } from './features/repository-list/implementation/create';
 import { createRepositoryDetail } from './features/repository-detail/implementation/create';
 import { createTokenSettings } from './features/token-settings/implementation/create';
@@ -50,12 +52,14 @@ function createWindow(): BrowserWindow {
     autoHideMenuBar: true,
     title: '青鸟信使',
     icon: appIconPath(),
+    ...windowsWindowChromeOptions(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  syncWindowsWindowChrome(window);
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
@@ -98,7 +102,7 @@ if (userDataPathError !== null) {
 
   void app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       const userData = app.getPath('userData');
       const logger = createFileLogger(path.join(userData, 'logs'), systemClock);
       logger.info('主进程启动');
@@ -126,7 +130,13 @@ if (userDataPathError !== null) {
       });
       registerIpc(facade, {
         openGitHubExternal: (target) => openGitHubExternal(target, (url) => shell.openExternal(url)),
+        applyTheme: (preference) => {
+          applyThemeSource({ theme: preference });
+          for (const window of BrowserWindow.getAllWindows()) refreshWindowsWindowChrome(window);
+        },
       });
+      // 创建窗口前应用已保存的主题，避免首屏与原生标题栏闪烁。
+      applyThemeSource((await facade.getSettings()).preferences);
       createWindow();
       logger.info('窗口已创建');
 

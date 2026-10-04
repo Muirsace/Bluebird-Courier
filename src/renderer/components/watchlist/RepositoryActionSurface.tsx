@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AnimationEvent as ReactAnimationEvent, CSSProperties, ReactNode, RefObject } from 'react';
 import { motionCompletionMs, OVERLAY_MOTION, prefersReducedMotion } from '../../lib/motion';
-import { chooseOverlayPlacement, overlayMaxWidth, VIEWPORT_SAFE_GAP } from '../../lib/overlay-placement';
+import { chooseContextPlacement, chooseOverlayPlacement, overlayMaxWidth, VIEWPORT_SAFE_GAP } from '../../lib/overlay-placement';
+import type { ContextPoint } from '../../lib/overlay-placement';
 import type { OverlayPlacementResult } from '../../lib/overlay-placement';
+import { resolveAppScrollRoot } from '../../lib/app-scroll-root';
 
 /** 两种内容的宽度（对应 w-44 / w-72）：换内容时外壳按这两个值连续过渡，不是瞬变。 */
 const STAGE_WIDTH = { menu: 176, confirm: 288 } as const;
@@ -17,6 +19,7 @@ interface RepositoryActionSurfaceProps {
   closing: boolean;
   onExitEnd: () => void;
   triggerRef: RefObject<HTMLButtonElement>;
+  contextPoint?: ContextPoint;
   children: ReactNode;
 }
 
@@ -25,7 +28,7 @@ interface SurfaceSize {
   height: number;
 }
 
-type SurfaceLayout = OverlayPlacementResult & SurfaceSize & { clamped: boolean };
+type SurfaceLayout = OverlayPlacementResult & SurfaceSize & { clamped: boolean; right: number; edge: number };
 
 /**
  * `···` 菜单与移除确认共用的那一个浮层外壳。
@@ -45,6 +48,7 @@ export function RepositoryActionSurface({
   closing,
   onExitEnd,
   triggerRef,
+  contextPoint,
   children,
 }: RepositoryActionSurfaceProps) {
   const positionerRef = useRef<HTMLDivElement>(null);
@@ -52,8 +56,11 @@ export function RepositoryActionSurface({
   const contentRef = useRef<HTMLDivElement>(null);
   /** null = 还没量过：首帧先按保守值画，布局效果会在 paint 前用实测值纠正。 */
   const [layout, setLayout] = useState<SurfaceLayout | null>(null);
+  const [shellOverlay, setShellOverlay] = useState(false);
   /** 上一次内容尺寸：换内容时"从小到大"这件事需要一个起点。 */
   const previousSizeRef = useRef<SurfaceSize | null>(null);
+  /** Keep the resolved menu's top-left origin through content swaps. */
+  const contextMenuOriginRef = useRef<ContextPoint | null>(null);
   const previousContentRef = useRef<{ stage: SurfaceStage; node: ReactNode } | null>(null);
   /** 换内容期间的旧内容：留在 out 层淡出，新内容在流里淡入。 */
   const [swap, setSwap] = useState<{ outgoing: ReactNode; from: SurfaceSize } | null>(null);
@@ -68,22 +75,40 @@ export function RepositoryActionSurface({
     if (!positioner || !surface || !content || !trigger) return;
 
     const triggerRect = trigger.getBoundingClientRect();
+    setShellOverlay(resolveAppScrollRoot(trigger).element !== null);
     // 宽度只由 stage 与视口决定，先落到 DOM：确认框比菜单宽，换行位置不同、高度也不同，
     // 所以高度必须在最终宽度下量。
-    const width = Math.min(STAGE_WIDTH[stage], overlayMaxWidth(triggerRect, window.innerWidth));
+    const width = Math.min(STAGE_WIDTH[stage], contextPoint
+      ? Math.max(0, window.innerWidth - VIEWPORT_SAFE_GAP * 2) : overlayMaxWidth(triggerRect, window.innerWidth));
     positioner.style.setProperty('--overlay-width', `${width}px`);
 
     // 边框已经画在 surface 上，测量值要含进去才是外壳的目标高度
     const borderY = surface.offsetHeight - surface.clientHeight;
     const height = Math.round(content.getBoundingClientRect().height) + borderY;
 
-    const placement = chooseOverlayPlacement({
+    let contextLayout = contextPoint ? chooseContextPlacement(contextPoint, width, height, window.innerWidth, window.innerHeight) : undefined;
+    if (contextLayout && stage === 'menu') contextMenuOriginRef.current = {
+      x: window.innerWidth - contextLayout.right - width,
+      y: contextLayout.placement === 'top'
+        ? window.innerHeight - contextLayout.edge - Math.min(height, contextLayout.maxHeight) : contextLayout.edge,
+    };
+    if (contextLayout && stage === 'confirm' && contextMenuOriginRef.current) {
+      // Desktop content swaps keep the menu's top-left origin; only viewport collisions may move it.
+      const left = Math.max(VIEWPORT_SAFE_GAP, Math.min(contextMenuOriginRef.current.x,
+        window.innerWidth - VIEWPORT_SAFE_GAP - width));
+      const top = Math.max(VIEWPORT_SAFE_GAP, Math.min(contextMenuOriginRef.current.y,
+        window.innerHeight - VIEWPORT_SAFE_GAP - Math.min(height, contextLayout.maxHeight)));
+      contextLayout = { ...contextLayout, placement: 'bottom', right: window.innerWidth - left - width, edge: top };
+    }
+    const placement = contextLayout ?? chooseOverlayPlacement({
       triggerRect,
       overlayHeight: height,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
     });
     const clamped = height > placement.maxHeight;
+    const right = contextLayout?.right ?? window.innerWidth - triggerRect.right;
+    const edge = contextLayout?.edge ?? (placement.placement === 'bottom' ? triggerRect.bottom + 8 : window.innerHeight - triggerRect.top + 8);
 
     // 值没变就不写 state：滚动与 resize 会高频触发这里
     setLayout((prev) =>
@@ -92,13 +117,15 @@ export function RepositoryActionSurface({
       prev.width === width &&
       prev.height === height &&
       prev.clamped === clamped &&
+      prev.right === right &&
+      prev.edge === edge &&
       prev.maxHeight === placement.maxHeight &&
       prev.maxWidth === placement.maxWidth
         ? prev
-        : { ...placement, width, height, clamped },
+        : { ...placement, width, height, clamped, right, edge },
     );
     previousSizeRef.current = { width, height };
-  }, [stage, measureKey, triggerRef]);
+  }, [stage, measureKey, triggerRef, contextPoint]);
 
   /** 给 resize / 滚动 / 内容变化用的重量：尺寸补间期间跳过，等它结束再补一次。 */
   const remeasure = useCallback((): void => {
@@ -128,6 +155,18 @@ export function RepositoryActionSurface({
     measure();
   }, [measure]);
 
+  // Top layer 保留 DOM 归属，现有 contains / Esc / 焦点逻辑仍可直接复用。
+  useLayoutEffect(() => {
+    const positioner = positionerRef.current;
+    if (!shellOverlay || !positioner || typeof positioner.showPopover !== 'function') return;
+    positioner.setAttribute('popover', 'manual');
+    positioner.showPopover();
+    return () => {
+      positioner.hidePopover();
+      positioner.removeAttribute('popover');
+    };
+  }, [shellOverlay]);
+
   // 换内容期间跳过的事件在这里补一次；顺便把"正在补间"的标志交给 remeasure
   useEffect(() => {
     swappingRef.current = swap !== null;
@@ -143,6 +182,65 @@ export function RepositoryActionSurface({
       window.removeEventListener('scroll', remeasure, { capture: true });
     };
   }, [remeasure]);
+
+  // Top layer follows transform-only springs and instant reduced-motion layout.
+  // Coordinates are written before paint; state alone can lag one frame behind the anchor.
+  const followAnchor = useCallback((): void => {
+    const trigger = triggerRef.current;
+    const positioner = positionerRef.current;
+    if (contextPoint || !shellOverlay || !layout || !trigger || !positioner) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const placement = chooseOverlayPlacement({
+      triggerRect, overlayHeight: layout.height,
+      viewportWidth: window.innerWidth, viewportHeight: window.innerHeight,
+    });
+    const right = window.innerWidth - triggerRect.right;
+    const edge = placement.placement === 'bottom'
+      ? triggerRect.bottom + 8 : window.innerHeight - triggerRect.top + 8;
+    positioner.style.setProperty('--overlay-right', `${right}px`);
+    positioner.style.setProperty('--overlay-top', placement.placement === 'bottom' ? `${edge}px` : 'auto');
+    positioner.style.setProperty('--overlay-bottom', placement.placement === 'top' ? `${edge}px` : 'auto');
+    positioner.style.setProperty('--overlay-max-height', `${placement.maxHeight}px`);
+    positioner.dataset.placement = placement.placement;
+    if (surfaceRef.current) {
+      surfaceRef.current.dataset.placement = placement.placement;
+      surfaceRef.current.dataset.clamped = layout.height > placement.maxHeight ? 'true' : 'false';
+    }
+  }, [shellOverlay, triggerRef, layout?.height, contextPoint]);
+
+  // A Watchlist commit can reposition the anchor between two animation frames.
+  useLayoutEffect(() => { followAnchor(); });
+
+  useEffect(() => {
+    if (!shellOverlay || contextPoint) return;
+    let frame = 0;
+    const followFrame = (): void => {
+      followAnchor();
+      frame = window.requestAnimationFrame(followFrame);
+    };
+    frame = window.requestAnimationFrame(followFrame);
+    // Parent Motion / toolbar commits can move the anchor after child layout effects.
+    // Observe only while open, and ignore our own position writes to avoid feedback.
+    const root = resolveAppScrollRoot(triggerRef.current).element;
+    const observer = root ? new MutationObserver((records) => {
+      if (records.some((record) => !positionerRef.current?.contains(record.target))) followAnchor();
+    }) : null;
+    if (root) observer?.observe(root, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['style', 'class', 'data-open'],
+    });
+    // Native layout can finish after RAF (e.g. the inline success message expands).
+    // ResizeObserver runs before paint and supplies that last position correction.
+    const content = root?.firstElementChild;
+    const resizeObserver = content && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(followAnchor) : null;
+    if (content) resizeObserver?.observe(content);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      resizeObserver?.disconnect();
+    };
+  }, [shellOverlay, followAnchor, triggerRef, contextPoint]);
 
   // 内容尺寸变化（错误提示出现、按钮进入 busy）也要跟着重量
   useEffect(() => {
@@ -181,6 +279,13 @@ export function RepositoryActionSurface({
   const height = layout?.height ?? null;
 
   const style = {
+    '--overlay-left': `${window.innerWidth - (layout?.right ?? 0) - width}px`,
+    '--overlay-y': `${placement === 'top'
+      ? window.innerHeight - (layout?.edge ?? 0) - Math.min(height ?? 0, layout?.maxHeight ?? 0)
+      : layout?.edge ?? 0}px`,
+    '--overlay-right': `${layout?.right ?? 0}px`,
+    '--overlay-top': placement === 'bottom' ? `${layout?.edge ?? 0}px` : 'auto',
+    '--overlay-bottom': placement === 'top' ? `${layout?.edge ?? 0}px` : 'auto',
     '--overlay-width': `${width}px`,
     '--overlay-height': height === null ? 'auto' : `${height}px`,
     '--overlay-max-width': `${layout?.maxWidth ?? window.innerWidth - VIEWPORT_SAFE_GAP * 2}px`,
@@ -195,6 +300,8 @@ export function RepositoryActionSurface({
     <div
       ref={positionerRef}
       className="repository-action-positioner"
+      data-shell-overlay={shellOverlay ? 'true' : undefined}
+      data-context-point={contextPoint ? 'true' : undefined}
       data-placement={placement}
       data-swapping={swap ? 'true' : undefined}
       style={style}

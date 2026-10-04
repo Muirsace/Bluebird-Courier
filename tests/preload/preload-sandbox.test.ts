@@ -32,6 +32,7 @@ const GATEWAY_METHODS = [
   'cancelTokenReplacement',
   'getSettings',
   'updateSettings',
+  'setThemePreference',
   'listRepositories',
   'addRepository',
   'inspectRepositoryInput',

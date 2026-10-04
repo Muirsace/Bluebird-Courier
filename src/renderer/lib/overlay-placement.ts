@@ -11,6 +11,25 @@ export const TRIGGER_GAP = 8;
 /** 浮层与视口边缘（上下左右同一条规则）的最小距离。 */
 export const VIEWPORT_SAFE_GAP = 12;
 
+export interface ContextPoint { x: number; y: number }
+
+/** Cursor menus expand left/up on collision, then clamp within every viewport edge. */
+export function chooseContextPlacement(point: ContextPoint, width: number, height: number,
+  viewportWidth: number, viewportHeight: number): OverlayPlacementResult & { right: number; edge: number } {
+  const gap = VIEWPORT_SAFE_GAP;
+  const maxWidth = Math.max(0, viewportWidth - gap * 2);
+  const maxHeight = Math.max(0, viewportHeight - gap * 2);
+  const actualWidth = Math.min(width, maxWidth);
+  const actualHeight = Math.min(height, maxHeight);
+  const placement = point.y + actualHeight > viewportHeight - gap ? 'top' : 'bottom';
+  const left = Math.max(gap, Math.min(point.x + actualWidth > viewportWidth - gap
+    ? point.x - actualWidth : point.x, viewportWidth - gap - actualWidth));
+  const top = Math.max(gap, Math.min(placement === 'top' ? point.y - actualHeight : point.y,
+    viewportHeight - gap - actualHeight));
+  return { placement, maxWidth, maxHeight, right: viewportWidth - left - actualWidth,
+    edge: placement === 'top' ? viewportHeight - top - actualHeight : top };
+}
+
 export interface OverlayTriggerRect {
   top: number;
   bottom: number;

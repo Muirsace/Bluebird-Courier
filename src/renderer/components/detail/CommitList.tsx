@@ -1,6 +1,7 @@
 import type { CommitItem } from '../../../shared/types';
 import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
+import { SectionMessage } from '../StateMessage';
 
 interface CommitListProps {
   commits: CommitItem[];
@@ -14,7 +15,7 @@ interface CommitListProps {
  */
 export function CommitList({ commits, owner, name }: CommitListProps) {
   if (commits.length === 0) {
-    return <p className="text-sm text-muted">无提交</p>;
+    return <SectionMessage>暂无提交</SectionMessage>;
   }
   return (
     <ul className="divide-y divide-subtle">

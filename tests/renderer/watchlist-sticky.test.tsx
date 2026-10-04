@@ -75,7 +75,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     const toolbar = document.querySelector('.watchlist-page-toolbar');
     const addForm = document.querySelector('.watchlist-add-form');
     const refresh = buttonByText('全部刷新');
-    expect(toolbar?.parentElement).toBe(page);
+    expect(toolbar?.closest('.watchlist-page')).toBe(page);
     expect(toolbar?.previousElementSibling?.querySelector('h1')?.textContent).toBe('监控清单');
     expect(toolbar?.contains(addForm)).toBe(true);
     expect(toolbar?.contains(refresh)).toBe(true);
@@ -235,13 +235,13 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     )?.[0] ?? '';
     const reducedTransform =
       css.match(/\.watchlist-add-field,\s*\.watchlist-add-action,\s*\.watchlist-inline-message\s*\{[^}]*\}/)?.[0] ?? '';
-    const app = readFileSync(resolve(process.cwd(), 'src/renderer/pages/App.tsx'), 'utf8');
+    const narrowShell = readFileSync(resolve(process.cwd(), 'src/renderer/components/shell/NarrowAppShell.tsx'), 'utf8');
     const header = readFileSync(
       resolve(process.cwd(), 'src/renderer/components/watchlist/WatchlistHeader.tsx'),
       'utf8',
     );
     const form = readFileSync(
-      resolve(process.cwd(), 'src/renderer/components/watchlist/AddRepositoryForm.tsx'),
+      resolve(process.cwd(), 'src/renderer/components/watchlist/RepositoryOmnibox.tsx'),
       'utf8',
     );
 
@@ -269,17 +269,17 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(toolbar).not.toContain('max-width');
     expect(toolbar).not.toContain('backdrop-filter');
     expect(message).toContain('display: grid');
-    expect(message).toContain('grid-template-rows: 0fr');
+    expect(message).toContain('grid-template-rows: minmax(0, 0fr)');
     expect(message).not.toContain('position: absolute');
     expect(reducedTransitions).toContain('transition: none !important');
     expect(reducedTransform).toContain('transform: none !important');
     expect(header).toContain('watchlist-toolbar flex w-full flex-wrap items-start gap-2');
     expect(form).toContain('watchlist-add-trigger inline-flex h-9');
     expect(form).toContain('className={`h-9 w-full');
-    expect(form).toContain('watchlist-add-action relative inline-flex h-9');
+    expect(form).toContain('watchlist-add-action relative inline-flex');
     expect(narrowAddForm).toContain('width: calc(100% - 7rem)');
     expect(narrowAddForm).toContain('min-width: min(16rem, 100%)');
-    expect(app).toContain('className="sticky top-0 z-10');
+    expect(narrowShell).toContain('app-global-header sticky top-0 z-10');
     expect(overlay).toContain('z-index: 20');
   });
 });

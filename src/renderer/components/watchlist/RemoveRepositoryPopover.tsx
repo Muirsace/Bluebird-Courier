@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Spinner } from '../Spinner';
+import { InlineFeedback } from '../StateMessage';
 
 interface RemoveRepositoryPopoverProps {
   id: string;
@@ -8,6 +9,8 @@ interface RemoveRepositoryPopoverProps {
   busy: boolean;
   /** 移除失败的原因；失败时 Popover 不关闭，用户可重试或取消。 */
   error: string | null;
+  /** Cursor surfaces must not scroll their source list when transferring focus. */
+  preventScroll?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -23,14 +26,15 @@ export function RemoveRepositoryPopover({
   fullName,
   busy,
   error,
+  preventScroll = false,
   onCancel,
   onConfirm,
 }: RemoveRepositoryPopoverProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    cancelRef.current?.focus();
-  }, []);
+    cancelRef.current?.focus({ preventScroll });
+  }, [preventScroll]);
 
   return (
     <div id={id} role="dialog" aria-label="从监控清单移除仓库" className="p-3">
@@ -40,9 +44,9 @@ export function RemoveRepositoryPopover({
         这不会删除 GitHub 仓库，只会停止在青鸟信使中监控。
       </p>
       {error ? (
-        <p role="alert" className="mt-2 text-xs text-danger">
+        <InlineFeedback announcement="alert" tone="danger" className="mt-2 text-xs">
           {error}
-        </p>
+        </InlineFeedback>
       ) : null}
       <div className="mt-3 flex justify-end gap-2">
         <button

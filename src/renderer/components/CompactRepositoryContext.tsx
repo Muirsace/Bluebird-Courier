@@ -1,4 +1,8 @@
+import type { LayoutMode } from '../lib/app-layout';
+
 interface CompactRepositoryContextProps {
+  /** The upstream host selects presentation; Narrow retains its original markup. */
+  presentation?: LayoutMode;
   /** 当前正在浏览的仓库全名（App 的 selected，进详情那一刻就确定）。 */
   fullName: string;
   /** Repository Header 已经滚出视口：由页面顶部接管当前仓库身份。 */
@@ -17,17 +21,25 @@ interface CompactRepositoryContextProps {
  *
  * 最大宽度按断点收窄（窄屏优先让给导航，名字进一步省略），不是靠动画宽度做的收放。
  */
-export function CompactRepositoryContext({ fullName, visible }: CompactRepositoryContextProps) {
+export function CompactRepositoryContext({ fullName, visible, presentation = 'narrow' }: CompactRepositoryContextProps) {
+  const [owner, name] = fullName.split('/');
   return (
     <div
-      className="compact-repo-context flex min-w-0 items-center gap-2 max-w-[9rem] sm:max-w-[15rem] lg:max-w-[22rem]"
+      className={`compact-repo-context flex min-w-0 items-center gap-2 max-w-[9rem] sm:max-w-[15rem] lg:max-w-[22rem]${presentation === 'desktop' ? ' desktop-compact-repo-context' : ''}`}
       data-visible={visible ? 'true' : 'false'}
       aria-hidden={visible ? undefined : 'true'}
     >
       <span aria-hidden="true" className="compact-repo-context-divider" />
-      <span className="min-w-0 truncate font-mono text-sm font-medium text-secondary" title={fullName}>
-        {fullName}
-      </span>
+      {presentation === 'desktop' ? (
+        <span className="desktop-compact-identity" title={fullName} aria-label={fullName}>
+          <span className="desktop-compact-name font-mono">{name}</span>
+          <span className="desktop-compact-owner" title={owner}>· {owner}</span>
+        </span>
+      ) : (
+        <span className="min-w-0 truncate font-mono text-sm font-medium text-secondary" title={fullName} aria-label={fullName}>
+          {name} <span className="text-muted">· {owner}</span>
+        </span>
+      )}
     </div>
   );
 }

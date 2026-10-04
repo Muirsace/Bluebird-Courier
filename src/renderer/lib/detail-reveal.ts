@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { prefersReducedMotion } from './motion';
 
 /**
@@ -17,8 +17,16 @@ export type DetailRevealPhase = 'loading' | 'revealing' | 'ready';
  * 所以重进同一个仓库、手动重新抓取、切 Tab、换主题都不会补播一次。
  * 数据到达时在 paint 前就切到 revealing，否则会先闪一帧最终态再回到起点。
  */
-export function useDetailReveal(hasDetail: boolean, revealMs: number): DetailRevealPhase {
+export function useDetailReveal(hasDetail: boolean, revealMs: number, layout?: boolean): DetailRevealPhase {
   const [phase, setPhase] = useState<DetailRevealPhase>(() => (hasDetail ? 'ready' : 'loading'));
+  const previousLayout = useRef(layout);
+
+  useLayoutEffect(() => {
+    const changed = previousLayout.current !== layout;
+    previousLayout.current = layout;
+    // 已经揭示过的数据不因宿主迁移再播一次；仍在抓取则保留原 loading 语义。
+    if (changed && phase === 'revealing') setPhase('ready');
+  }, [layout, phase]);
 
   useLayoutEffect(() => {
     if (!hasDetail || phase !== 'loading') return;

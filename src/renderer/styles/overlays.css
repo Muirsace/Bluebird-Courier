@@ -48,6 +48,14 @@
   margin-bottom: 8px;
 }
 
+/* Desktop cursor surfaces resize from their top-left; legacy button surfaces keep right anchoring. */
+.repository-action-positioner[data-context-point='true'][data-shell-overlay='true'] {
+  left: var(--overlay-left);
+  top: var(--overlay-y);
+  right: auto;
+  bottom: auto;
+}
+
 /* 换内容：外壳从旧尺寸连续长到新尺寸，中间不跳变。 */
 .repository-action-positioner[data-swapping='true'] {
   animation: repository-action-resize 170ms var(--motion-ease-out);

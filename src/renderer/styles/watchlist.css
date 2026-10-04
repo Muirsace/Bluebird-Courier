@@ -5,19 +5,24 @@
  * 都落在 .repo-row 上；主点击区只负责"我被按下了"这一个信号（data-row-activator），
  * 自己不再位移也不再变色，避免同一处出现两种反馈。
  */
-.repo-row {
+.repo-row,
+.repository-sidebar-press-surface {
   transition-property: translate, scale, background-color, border-color;
-  transition-duration: 130ms;
+  transition-duration: var(--repo-press-out);
   transition-timing-function: var(--motion-ease-out);
+}
+
+.repo-row:has([data-row-activator]:active),
+.repository-sidebar-row[data-pressed='true']:not(:has(.repository-action-positioner)) > .repository-sidebar-press-surface {
+  translate: 0 1px;
+  scale: 0.985;
+  transition-duration: var(--motion-press-in);
+  transition-timing-function: var(--motion-ease-in);
 }
 
 .repo-row:has([data-row-activator]:active) {
   background-color: rgb(var(--color-surface-active));
   border-color: rgb(var(--color-border-strong));
-  translate: 0 1px;
-  scale: 0.985;
-  transition-duration: 80ms;
-  transition-timing-function: var(--motion-ease-in);
 }
 
 /* Keep the row quiet while its own menu / confirmation surface is open. */
@@ -155,7 +160,7 @@
 }
 
 .watchlist-add-content[data-action-visible='true'] .watchlist-add-control-row {
-  grid-template-columns: minmax(0, 1fr) 6rem;
+  grid-template-columns: minmax(0, 1fr) 34px;
   column-gap: 0.5rem;
   transition:
     grid-template-columns 190ms var(--motion-ease-out),
@@ -214,9 +219,30 @@
   transition-delay: 0s;
 }
 
+.watchlist-add-form input[data-validation-state='normal'] {
+  --watchlist-input-focus-color: var(--color-focus-ring);
+}
+
+.watchlist-add-form input[data-validation-state='invalid'] {
+  --watchlist-input-focus-color: var(--color-warning);
+}
+
+.watchlist-add-form input[data-validation-state='error'] {
+  --watchlist-input-focus-color: var(--color-danger);
+}
+
+.watchlist-add-form input:focus-visible {
+  /* Use one state-colored ring for the shared entry and the persistent omnibox. */
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--watchlist-input-focus-color, var(--color-focus-ring)) / 0.3);
+}
+
 .watchlist-add-content .watchlist-add-action {
   min-width: 0;
-  width: 100%;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  margin-top: 1px;
   overflow: hidden;
   opacity: 0;
   transform: scale(.86);
@@ -267,30 +293,90 @@
 }
 
 .watchlist-add-spinner {
-  border-color: rgb(var(--color-accent-contrast));
+  border-color: currentColor;
   border-top-color: transparent;
 }
 
-/* The row height, not a transform on the repository list, moves following content. */
+/* One persistent glyph lets interrupted plus / clear transitions reverse in place. */
+.repository-omnibox-action-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: url('./assets/icons/plus.svg') center / contain no-repeat;
+  transform: rotate(0deg);
+  transition: transform var(--ui-selected-ms) var(--motion-ease-out);
+}
+
+.repository-omnibox-clear-icon {
+  transform: rotate(45deg);
+}
+
+/* Feedback lives on the label so its tiny shake cannot override the glyph rotation.
+ * CSS owns the finite visual cue; clearing/editing removes it immediately, and the
+ * actual error message and clear action do not depend on animation completion. */
+.watchlist-add-action-label[data-error='true'] {
+  animation:
+    omnibox-error-color 1200ms linear,
+    omnibox-error-shake 280ms var(--motion-ease-out);
+}
+
+@keyframes omnibox-error-color {
+  0%, 70% { color: rgb(var(--color-danger)); }
+  100% { color: rgb(var(--color-text-secondary)); }
+}
+
+@keyframes omnibox-error-shake {
+  0%, 100% { translate: 0; }
+  20% { translate: -2px 0; }
+  40% { translate: 2px 0; }
+  60% { translate: -1px 0; }
+  80% { translate: 1px 0; }
+}
+
+/* The stable track interpolates its row size while its keyed visual owns opacity. */
 .watchlist-inline-message {
   display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transform: translateY(-2px);
+  grid-template-rows: minmax(0, 0fr);
+  min-height: 0;
   pointer-events: none;
-  transition:
-    grid-template-rows 130ms cubic-bezier(0.4, 0, 1, 1),
-    opacity 130ms cubic-bezier(0.4, 0, 1, 1),
-    transform 130ms cubic-bezier(0.4, 0, 1, 1);
+  transition: grid-template-rows var(--ui-feedback-layout-ms) var(--motion-ease-in);
 }
 
 .watchlist-inline-message[data-open='true'] {
-  grid-template-rows: 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  pointer-events: auto;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+.watchlist-feedback-track {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.watchlist-feedback-visual {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(0);
+  transition: opacity var(--ui-feedback-exit-ms) var(--motion-ease-in);
+}
+
+.watchlist-inline-message[data-open='true'] .watchlist-feedback-visual {
   opacity: 1;
   transform: translateY(0);
-  pointer-events: auto;
-  transition-duration: 170ms;
-  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    opacity var(--ui-feedback-enter-ms) var(--motion-ease-out),
+    transform var(--ui-feedback-enter-ms) var(--motion-ease-out);
+}
+
+/* Newly mounted/re-entering messages need an actual before-change style.
+ * Only real content mounts a visual; the stable empty host paints nothing. */
+@starting-style {
+  .watchlist-inline-message[data-open='true'] .watchlist-feedback-visual {
+    opacity: 0;
+    transform: translateY(var(--ui-feedback-shift));
+  }
 }
 
 @media (max-width: 35rem) {
@@ -299,10 +385,8 @@
     width: calc(100% - 7rem);
     min-width: min(16rem, 100%);
   }
-}
 
-/* Cascade compatibility: narrow Settings rules stay after Watchlist, as in the original stylesheet. */
-@media (max-width: 35rem) {
+  /* Settings keeps this cascade position while sharing the same narrow control breakpoint. */
   .settings-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.5rem;
@@ -317,9 +401,239 @@
   }
 }
 
-/* Cascade compatibility: global focus stays at the end, as in the original stylesheet. */
-/* 输入框与按钮的统一聚焦轮廓（两种主题下都使用独立的焦点色） */
-*:focus-visible {
-  outline: 2px solid rgb(var(--color-focus-ring));
-  outline-offset: 1px;
+/* DesktopWatchlistView rows. NarrowWatchlistView uses .repo-row above. */
+.repository-sidebar-list {
+  gap: 0;
+}
+
+.repository-sidebar-row {
+  --repository-row-background: transparent;
+  position: relative;
+  height: 72px;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+/* Only the visual plane presses; row bounds, dividers and indicator stay fixed. */
+.repository-sidebar-press-surface {
+  position: relative;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--repository-row-background);
+  transition-duration: var(--repo-press-out), var(--repo-press-out), var(--ui-selected-ms), var(--ui-selected-ms);
+}
+
+.repository-sidebar-row:hover {
+  --repository-row-background: rgb(var(--color-surface-hover));
+}
+
+.repository-sidebar-row[data-selected='true'] {
+  --repository-row-background: rgb(var(--color-accent-soft));
+}
+
+.repository-sidebar-row::before {
+  content: '';
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background-color: rgb(var(--color-accent));
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity var(--ui-selected-ms) var(--motion-ease-out);
+}
+
+.repository-sidebar-row[data-selected='true']::before {
+  opacity: 1;
+}
+
+.repository-sidebar-row[data-pressed='true'] {
+  --repository-row-background: rgb(var(--color-surface-active));
+}
+
+.repository-sidebar-row[data-selected='true'][data-pressed='true'] {
+  --repository-row-background: rgb(var(--color-accent-soft));
+}
+
+.repository-sidebar-activator {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 9px 8px;
+  border-radius: inherit;
+  text-align: left;
+  color: rgb(var(--color-text));
+}
+
+.repository-sidebar-name,
+.repository-sidebar-owner,
+.repository-sidebar-release {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository-sidebar-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.repository-sidebar-metadata {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--color-text-muted));
+}
+
+.repository-sidebar-secondary {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  color: rgb(var(--color-text-secondary));
+}
+
+.repository-sidebar-owner,
+.repository-sidebar-release {
+  flex: 0 1 auto;
+}
+
+.repository-sidebar-activity {
+  flex: none;
+  white-space: nowrap;
+}
+
+.repository-sidebar-row:has(.repository-action-positioner[data-context-point='true']) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 70%, rgb(var(--color-app)));
+}
+
+.repository-sidebar-row:has(.repository-action-positioner[data-context-point='true']) > .repository-sidebar-press-surface {
+  transition-duration: var(--repo-press-out), var(--repo-press-out), var(--ui-context-surface-ms), var(--ui-context-surface-ms);
+}
+
+/* Selection owns the surface even while this row is the context target. */
+.repository-sidebar-row[data-selected='true']:has(.repository-action-positioner) {
+  --repository-row-background: rgb(var(--color-accent-soft));
+}
+
+.repository-sidebar-row[data-selected='true']:has(.repository-action-positioner) > .repository-sidebar-press-surface {
+  transition-duration: var(--repo-press-out), var(--repo-press-out), var(--ui-selected-ms), var(--ui-selected-ms);
+}
+
+.repository-sidebar-row[data-press-released='true']:not(:has(.repository-action-positioner)) > .repository-sidebar-press-surface {
+  transition-duration: var(--repo-press-out);
+}
+
+/* Absolute separators never contribute to the frozen 72px row geometry. */
+.repository-sidebar-list > .repo-row-slot:not(:last-child) .repository-sidebar-row::after {
+  content: '';
+  position: absolute;
+  inset: auto 12px -1px 20px;
+  height: 1px;
+  background: rgb(var(--color-border-subtle));
+  pointer-events: none;
+}
+
+.repository-sidebar-list > .repo-row-slot:not(:last-child) .repository-sidebar-row[data-selected='true']::after,
+.repository-sidebar-list > .repo-row-slot:has(+ .repo-row-slot .repository-sidebar-row[data-selected='true']) .repository-sidebar-row::after {
+  background: transparent;
+}
+
+/* Keep both primary and menu focus visible without clipping the row. */
+.repository-sidebar-activator:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Highlight returns to the current hover / selection surface, without changing geometry. */
+.repo-row-slot[data-highlight='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface {
+  animation: repository-sidebar-highlight 560ms cubic-bezier(0.4, 0, 1, 1) 240ms forwards;
+}
+
+.repo-row-slot[data-highlight-only='true'] > .repo-row-clip > .repository-sidebar-row > .repository-sidebar-press-surface {
+  animation: repository-sidebar-highlight 560ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes repository-sidebar-highlight {
+  from {
+    box-shadow: inset 0 0 0 1px rgb(var(--color-accent-border));
+    background-color: rgb(var(--color-accent-soft));
+  }
+  to {
+    box-shadow: inset 0 0 0 0 rgb(var(--color-accent-border));
+    background-color: var(--repository-row-background);
+  }
+}
+
+
+/* Desktop presentation and state precedence. Keep these scopes for hover / press / selection. */
+.desktop-watchlist-view .desktop-watchlist-heading {
+  min-height: 36px;
+  flex-wrap: nowrap;
+}
+
+.desktop-watchlist-view .sidebar-refresh {
+  color: rgb(var(--color-text-muted));
+}
+
+.desktop-watchlist-view .sidebar-refresh:hover:not(:disabled) {
+  color: rgb(var(--color-text));
+}
+
+.desktop-watchlist-view .desktop-repository-row {
+  height: 58px;
+  border-radius: 4px;
+}
+
+.desktop-watchlist-view .repository-sidebar-owner {
+  color: rgb(var(--color-text-muted));
+}
+
+.desktop-watchlist-view .repository-sidebar-activity {
+  font-size: 11px;
+}
+
+.desktop-watchlist-view .desktop-repository-row:hover {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 65%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .desktop-repository-row[data-pressed='true'] {
+  --repository-row-background: rgb(var(--color-surface-active));
+}
+
+.desktop-watchlist-view .desktop-repository-row:has(.repository-action-positioner[data-context-point='true']) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-surface-hover)) 70%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .desktop-repository-row[data-selected='true'],
+.desktop-watchlist-view .desktop-repository-row[data-selected='true'][data-pressed='true'],
+.desktop-watchlist-view .desktop-repository-row[data-selected='true']:has(.repository-action-positioner) {
+  --repository-row-background: color-mix(in srgb, rgb(var(--color-accent-soft)) 78%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .desktop-repository-row::before {
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+}
+
+.desktop-watchlist-view .repository-sidebar-list > .repo-row-slot:not(:last-child) .desktop-repository-row::after {
+  inset: auto 8px -1px 8px;
+  background: color-mix(in srgb, rgb(var(--color-border-subtle)) 35%, rgb(var(--color-app)));
+}
+
+.desktop-watchlist-view .repository-sidebar-list > .repo-row-slot:not(:last-child) .desktop-repository-row[data-selected='true']::after,
+.desktop-watchlist-view .repository-sidebar-list > .repo-row-slot:has(+ .repo-row-slot .desktop-repository-row[data-selected='true']) .desktop-repository-row::after {
+  background: transparent;
 }

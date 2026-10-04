@@ -1,6 +1,7 @@
 import type { BuildInfo, BuildStatus } from '../../../shared/types';
 import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
+import { SectionMessage } from '../StateMessage';
 
 export const BUILD_LABELS: Record<BuildStatus, string> = {
   success: '构建通过',
@@ -50,23 +51,33 @@ export function BuildStatusPanel({
   owner,
   name,
   showLink = false,
+  compact = false,
 }: {
   build: BuildInfo;
   owner: string;
   name: string;
   showLink?: boolean;
+  /** 概览将状态和工作流并排，省去嵌套卡片；完整构建页沿用三层布局。 */
+  compact?: boolean;
 }) {
-  return (
-    <div className={`min-w-0 rounded-r-md border-l-2 bg-surface-raised px-3 py-3 transition-colors duration-150 ease-out ${BUILD_EDGE[build.status]}`}>
+  if (build.status === 'none' && !build.workflowName && !build.finishedAt && !build.conclusion && !build.url) {
+    return <SectionMessage>暂无构建记录</SectionMessage>;
+  }
+  const identity = (
+    <>
       <BuildStatusBadge status={build.status} />
-
       {build.workflowName ? (
-        <p className="mt-2 min-w-0 truncate font-mono text-sm font-medium text-primary" title={build.workflowName}>
+        <p className={`${compact ? 'min-w-0 flex-1' : 'mt-2 min-w-0'} truncate font-mono text-sm font-medium text-primary`} title={build.workflowName}>
           {build.workflowName}
         </p>
       ) : null}
+    </>
+  );
+  return (
+    <div className={`min-w-0 border-l-2 transition-colors duration-150 ease-out ${BUILD_EDGE[build.status]} ${compact ? 'pl-3' : 'rounded-r-md bg-surface-raised px-3 py-3'}`}>
+      {compact ? <div className="flex min-w-0 items-center gap-3">{identity}</div> : identity}
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className={`${compact ? 'mt-1' : 'mt-2'} flex flex-wrap items-center justify-between gap-x-4 gap-y-2`}>
         <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">
           {build.finishedAt ? <span>{formatRelativeTime(build.finishedAt)}</span> : null}
           {build.finishedAt && build.conclusion ? <span aria-hidden="true" className="text-muted">·</span> : null}

@@ -2,6 +2,7 @@ import type { Detail, IssueItem, PullRequestItem } from '../../../shared/types';
 import { DETAIL_REVEAL_MOTION } from '../../lib/motion';
 import { GlanceFact } from '../GlanceFact';
 import { Section } from '../Section';
+import { SectionMessage } from '../StateMessage';
 import { BuildStatusPanel } from './BuildStatus';
 import { CommitList } from './CommitList';
 import { IssueEmptyState, NumberedItemRow } from './IssuesAndPulls';
@@ -39,7 +40,7 @@ function RecentList({
     <div>
       <h3 className="mb-1 text-xs font-medium text-secondary">{title}</h3>
       {items.length === 0 ? (
-        <p className="text-sm text-muted">无</p>
+        <SectionMessage>{kind === 'issue' ? '暂无议题' : '暂无合并请求'}</SectionMessage>
       ) : (
         <ul className="divide-y divide-subtle">
           {items.map((item, index) => (
@@ -75,7 +76,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
         shiftPx={DETAIL_REVEAL_MOTION.buildShiftPx}
       >
         <Section title="构建状态">
-          <BuildStatusPanel build={build} owner={owner} name={name} />
+          <BuildStatusPanel build={build} owner={owner} name={name} compact />
         </Section>
       </RevealItem>
 
@@ -85,7 +86,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
         durationMs={DETAIL_REVEAL_MOTION.sectionMs}
         shiftPx={DETAIL_REVEAL_MOTION.sectionShiftPx}
       >
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="detail-overview-updates grid gap-4 lg:grid-cols-2">
           <div className="min-w-0">
             <Section title="最新发版">
               <ReleaseList releases={releases.slice(0, SUMMARY_LIMIT)} owner={owner} name={name} />
@@ -130,7 +131,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
                   value={`开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
                 />
               </div>
-              <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+              <div className="detail-overview-issues grid gap-x-6 gap-y-3 md:grid-cols-2">
                 <RecentList
                   title="最近更新的议题"
                   kind="issue"

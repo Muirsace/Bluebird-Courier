@@ -1,3 +1,194 @@
+.trend-chart-viewport {
+  /* Canvas backing dimensions are integral. Fractional grid widths otherwise
+   * trigger a redundant first resize that finishes the native enter animation. */
+  width: round(down, 100%, 1px);
+  max-width: 100%;
+}
+
+/* Long technical text may wrap in either shell without changing Narrow's column rules. */
+.detail-content-responsive {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Only Desktop tab content is contained; Header and sticky Tabs stay outside. */
+.detail-page[data-workspace='true'] .detail-content-responsive {
+  container: detail-content / inline-size;
+}
+
+.detail-page[data-workspace='true'] .detail-overview-updates,
+.detail-page[data-workspace='true'] .detail-overview-issues,
+.detail-page[data-workspace='true'] .detail-trend-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.detail-page[data-workspace='true'] .detail-overview-updates > *,
+.detail-page[data-workspace='true'] .detail-overview-issues > *,
+.detail-page[data-workspace='true'] .detail-trend-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* At 720px content width, summary columns still have about 320px for their rows.
+ * Below that, give prose and chart axes a full column instead of shrinking type. */
+@container detail-content (max-width: 720px) {
+  .detail-page[data-workspace='true'] .detail-overview-updates,
+  .detail-page[data-workspace='true'] .detail-overview-issues,
+  .detail-page[data-workspace='true'] .detail-trend-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Narrow retains the original flat flex row and its natural reading order. */
+.detail-numbered-meta {
+  display: contents;
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-item {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-meta {
+  display: flex;
+  grid-column: 1 / -1;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-time {
+  flex: none;
+}
+
+.detail-page[data-workspace='true'] .detail-numbered-item > p {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* Desktop information stays below the Shell's existing native caption strip.
+ * Repository name, quiet metadata, tools, then a four-column scan row. */
+.detail-page .desktop-repository-header {
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--color-border-subtle));
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.detail-page .desktop-repository-header .repository-header-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: start;
+  gap: 24px;
+}
+
+.detail-page .desktop-repository-header .repository-header-identity {
+  min-width: 0;
+}
+
+.detail-page .desktop-repository-header .repository-header-name {
+  font-size: 20px;
+  line-height: 26px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-page .desktop-repository-header .repository-header-owner {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+.detail-page .desktop-repository-header .repository-header-fetched {
+  margin-top: 2px;
+  line-height: 16px;
+  /* Reserve the status line so refreshing never pushes Metrics or Tabs down. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-page .desktop-repository-header .repository-header-actions {
+  flex: none;
+  flex-wrap: nowrap;
+  padding-top: 0;
+}
+
+.detail-page .desktop-repository-header .repository-header-actions button {
+  height: 32px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
+.detail-page .desktop-repository-header .repository-header-actions button[aria-label] {
+  border-color: transparent;
+  color: rgb(var(--color-text-secondary));
+}
+
+.detail-page .desktop-repository-header .repository-header-actions button[aria-busy] {
+  /* Same width for idle and spinner states, without measuring text in JS. */
+  width: 104px;
+}
+
+.detail-page .desktop-repository-header .repository-header-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  margin-top: 8px;
+  gap: 8px 24px;
+}
+
+.detail-page .desktop-repository-header .repository-header-metrics > div:not(.repository-header-release),
+.detail-page .desktop-repository-header .repository-header-release > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* One restrained spacing rhythm for existing Workspace sections and cards. */
+.detail-page[data-workspace='true'] .detail-content-responsive section:not([data-metric]) {
+  padding: 16px;
+  border-color: rgb(var(--color-border-subtle) / 0.85);
+  border-radius: 8px;
+}
+
+.detail-page[data-workspace='true'] .detail-content-responsive section:not([data-metric]) > div:first-child:has(> h2) {
+  margin-bottom: 12px;
+  row-gap: 8px;
+}
+
+.detail-page[data-workspace='true'] .detail-content-responsive .state-section {
+  padding-block: 12px;
+}
+
+.detail-page .desktop-repository-header .repository-header-metrics > div,
+.detail-page .desktop-repository-header .repository-header-release {
+  max-width: 100%;
+}
+
+.detail-page .desktop-repository-header .repository-header-metrics > div > span:last-child,
+.detail-page .desktop-repository-header .repository-header-release > div > span:last-child {
+  @apply text-sm;
+}
+
+.detail-page .desktop-repository-header .repository-header-release > div > span:last-child,
+.detail-page .desktop-repository-header .repository-header-release .detail-fact-to {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Header 与 Tabs 连续排列；错误提示等独立信息仍沿用原来的段落间距。 */
+.detail-page[data-workspace='true'] > .repo-context-scope + .detail-reveal {
+  margin-top: 0;
+}
+
 /**
  * Detail Tabs 吸附。
  *
@@ -83,6 +274,39 @@
   width: 1px;
   height: 1rem;
   background-color: rgb(var(--color-border-strong));
+}
+
+/* Desktop identity only: the existing absolute host, wide hide, observers,
+ * sticky offsets and visibility transitions remain owned by their current rules. */
+.desktop-compact-repo-context .desktop-compact-identity {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.desktop-compact-repo-context .desktop-compact-name {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 600;
+  color: rgb(var(--color-text));
+}
+
+.desktop-compact-repo-context .desktop-compact-owner {
+  min-width: 0;
+  flex: 0 2 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  color: rgb(var(--color-text-secondary));
 }
 
 /**

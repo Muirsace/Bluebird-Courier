@@ -2,6 +2,7 @@ import type { IssueItem, PullRequestItem } from '../../../shared/types';
 import { formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
 import { GlanceFact } from '../GlanceFact';
+import { SectionMessage } from '../StateMessage';
 
 const STATE_STYLES = {
   open: 'border-success/40 bg-success-soft text-success',
@@ -35,13 +36,15 @@ function KindBadge({ kind }: { kind: ItemKind }) {
 /** 紧凑但稳定的空态，用同一表现覆盖概览和完整 Issue & PR 列表。 */
 export function IssueEmptyState() {
   return (
-    <div className="flex min-h-[88px] items-center gap-3 rounded-md bg-surface-raised px-4 py-3 text-sm text-secondary">
+    <SectionMessage>
+      <div className="flex items-center gap-2">
       <span aria-hidden="true" className="shrink-0 font-medium text-secondary">
         ✓
       </span>
       {' '}
       <p>当前没有开放的 Issue 或 Pull Request</p>
-    </div>
+      </div>
+    </SectionMessage>
   );
 }
 
@@ -56,7 +59,7 @@ interface NumberedItemRowProps {
 /** 议题与合并请求共用的一行：类型 → #编号（可点开 GitHub）→ 标题 → 状态 → 作者 → 更新时间。 */
 export function NumberedItemRow({ item, kind, owner, name, showBody = true }: NumberedItemRowProps) {
   return (
-    <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0">
+    <li className="detail-numbered-item flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2 first:pt-0 last:pb-0">
       <KindBadge kind={kind} />
       <ExternalLinkButton
         target={{ kind, owner, name, number: item.number }}
@@ -66,10 +69,12 @@ export function NumberedItemRow({ item, kind, owner, name, showBody = true }: Nu
       >
         #{item.number}
       </ExternalLinkButton>
-      <span className="min-w-0 flex-1 text-sm text-primary">{item.title}</span>
-      <StateBadge state={item.state} />
-      <span className="text-xs text-secondary">{item.authorName ?? '—'}</span>
-      <span className="text-xs text-muted">{formatRelativeTime(item.updatedAt)}</span>
+      <span className="detail-numbered-title min-w-0 flex-1 text-sm text-primary">{item.title}</span>
+      <div className="detail-numbered-meta">
+        <StateBadge state={item.state} />
+        <span className="text-xs text-secondary">{item.authorName ?? '—'}</span>
+        <span className="detail-numbered-time text-xs text-muted">{formatRelativeTime(item.updatedAt)}</span>
+      </div>
       {showBody && item.body?.trim() ? (
         <p
           className="basis-full mt-1 max-h-16 overflow-hidden whitespace-pre-line text-xs leading-5 text-secondary"
@@ -127,19 +132,17 @@ export function IssuesAndPulls({ issues, pullRequests, owner, name }: IssuesAndP
         <GlanceFact label="合并请求" value={`${pullRequests.length} 条`} />
       </div>
 
-      {issues.length > 0 ? (
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">议题</h3>
-          <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
+          {issues.length > 0 ? <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
+            : <SectionMessage>暂无议题</SectionMessage>}
         </div>
-      ) : null}
 
-      {pullRequests.length > 0 ? (
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">合并请求</h3>
-          <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
+          {pullRequests.length > 0 ? <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
+            : <SectionMessage>暂无合并请求</SectionMessage>}
         </div>
-      ) : null}
     </div>
   );
 }

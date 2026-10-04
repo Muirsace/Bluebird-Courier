@@ -17,14 +17,17 @@ import { ThemeProvider } from '../../src/renderer/lib/theme';
 
 let systemTheme: 'light' | 'dark' = 'light';
 let reducedMotion = false;
+let viewportWidth = 768;
+const desktopListeners = new Set<() => void>();
 const mediaListeners = new Set<() => void>();
 const reducedMotionListeners = new Set<() => void>();
 
 function installMatchMedia(): void {
   // 按查询串分别回答：主题读 prefers-color-scheme，动画降级读 prefers-reduced-motion。
   const matchMedia = (query: string): MediaQueryList => {
-    const listeners = query.includes('prefers-reduced-motion') ? reducedMotionListeners : mediaListeners;
+    const listeners = query === '(min-width: 900px)' ? desktopListeners : query.includes('prefers-reduced-motion') ? reducedMotionListeners : mediaListeners;
     const matchesNow = (): boolean => {
+      if (query === '(min-width: 900px)') return viewportWidth >= 900;
       if (query.includes('prefers-reduced-motion')) return reducedMotion;
       if (query.includes('prefers-color-scheme')) return systemTheme === 'dark';
       return false;
@@ -52,6 +55,11 @@ function installMatchMedia(): void {
     return list as unknown as MediaQueryList;
   };
   window.matchMedia = matchMedia as unknown as typeof window.matchMedia;
+}
+
+export function setViewportWidth(width: number): void {
+  viewportWidth = width;
+  for (const listener of desktopListeners) listener();
 }
 
 /** 模拟 Windows 切深色 / 浅色：改系统值并通知监听者，等价于 prefers-color-scheme 变化。 */
@@ -241,6 +249,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
       preferences = { ...preferences, ...patch };
       return { preferences: { ...preferences }, accessTokenConfigured: true };
     },
+    async setThemePreference() {},
     async listRepositories() {
       calls.listRepositories += 1;
       if (listGate) await listGate;
@@ -432,6 +441,18 @@ export async function click(element: Element | null | undefined): Promise<void> 
   });
 }
 
+/** Desktop 常驻输入；Narrow 通过原新增入口展开。 */
+export async function openAddInput(): Promise<HTMLInputElement> {
+  const input = document.querySelector<HTMLInputElement>('#add-repository-input');
+  if (!input) throw new Error('未找到添加仓库输入框');
+  if (input.disabled) await click(buttonByLabel('新增仓库'));
+  return input;
+}
+
+export function refreshAllButton(): HTMLButtonElement | null {
+  return buttonByLabel('全部刷新') ?? buttonByText('全部刷新') ?? buttonByText('刷新中…');
+}
+
 export async function pressEscape(): Promise<void> {
   await act(async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -530,6 +551,17 @@ export function repoActionsButton(fullName: string): HTMLButtonElement | null {
   return document.querySelector<HTMLButtonElement>(`button[aria-label="${fullName} 的仓库操作"]`);
 }
 
+/** Exercise the real entry point in each shell, without fabricating a desktop button. */
+export async function openRepositoryActions(fullName: string): Promise<void> {
+  const button = repoActionsButton(fullName);
+  if (button) { await click(button); return; }
+  const row = repoOpenButton(fullName);
+  if (!row) throw new Error('未找到仓库行');
+  await act(async () => {
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 260, clientY: 120 }));
+  });
+}
+
 /**
  * 只取"当前生效"的那个节点：菜单 → 确认换内容时，旧菜单会带着 aria-hidden + inert
  * 留在 out 层继续淡出，它不是用户此刻看到 / 能操作的菜单。
@@ -599,6 +631,10 @@ export function appliedTheme(): string | null {
 
 /** 顶部导航按钮（按文案取）。 */
 export function navButton(text: string): HTMLButtonElement | null {
+  if (text === '设置') {
+    const desktop = document.querySelector<HTMLButtonElement>('.desktop-sidebar-brand button[aria-label="设置"]');
+    if (desktop) return desktop;
+  }
   return (
     [...document.querySelectorAll<HTMLButtonElement>('header nav button')].find(
       (button) => button.textContent?.trim() === text,
