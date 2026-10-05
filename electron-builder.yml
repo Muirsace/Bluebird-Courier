@@ -10,8 +10,7 @@ files:
   - package.json
 win:
   icon: resources/icons/bluebird-app.ico
-  # Keep the installed executable path stable while the shortcut and installer use the new product name.
-  executableName: OCTO 仓库监控器
+  executableName: 青鸟信使
   target:
     - target: nsis
       arch:

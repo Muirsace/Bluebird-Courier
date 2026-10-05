@@ -19,16 +19,17 @@ import { createSnapshotTrend } from './features/snapshot-trend/implementation/cr
 import { createFacade } from './facade/facade';
 import { registerIpc } from './ipc';
 
-// 产品名变更后仍沿用旧版 Electron userData 目录，保持已有数据库、设置和密文可读。
-const LEGACY_USER_DATA_DIRECTORY = 'OCTO 仓库监控器';
-let legacyUserDataPath: string | null = null;
+app.setName('青鸟信使');
+
 let userDataPathError: unknown = null;
 try {
-  legacyUserDataPath = path.join(app.getPath('appData'), LEGACY_USER_DATA_DIRECTORY);
-  mkdirSync(legacyUserDataPath, { recursive: true });
-  app.setPath('userData', legacyUserDataPath);
+  // 开发和安装版本统一使用产品目录，浏览器状态与应用数据放在同一处。
+  const userDataPath = path.join(app.getPath('appData'), 'Bluebird-Courier');
+  mkdirSync(userDataPath, { recursive: true });
+  app.setPath('userData', userDataPath);
+  app.setPath('sessionData', userDataPath);
 } catch (error) {
-  // 兼容目录设置失败时不继续使用 Electron 按产品名生成的新目录。
+  // 目录初始化失败时终止启动，避免使用其他目录产生空白数据。
   userDataPathError = error;
 }
 
@@ -78,7 +79,7 @@ function reportStartupFailure(error: unknown): void {
   const detail = error instanceof Error ? error.message : String(error);
   let logHint = '';
   try {
-    const dataDirectory = legacyUserDataPath ?? app.getPath('userData');
+    const dataDirectory = app.getPath('userData');
     logHint = `\n\n日志目录：${path.join(dataDirectory, 'logs')}`;
   } catch {
     // userData 路径取不到时省略提示，不能因此再抛错
@@ -97,6 +98,7 @@ if (userDataPathError !== null) {
     const [existing] = BrowserWindow.getAllWindows();
     if (!existing) return;
     if (existing.isMinimized()) existing.restore();
+    existing.show();
     existing.focus();
   });
 

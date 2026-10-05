@@ -1,5 +1,7 @@
 # 青鸟信使 Bluebird Courier
 
+产品中文名为 **青鸟信使**，英文名为 **Bluebird Courier**。
+
 > 本地优先的 GitHub 仓库监控桌面应用：把关注的仓库放进监控清单，一眼看出"有没有新东西"，并让指标趋势随使用自然积累。
 
 数据全部留在本机，打开即用、关闭即停，不留后台进程。Windows 先行（Electron）。
@@ -177,7 +179,7 @@ npm run dist
 # 🔒 数据与隐私
 
 - 所有数据只在本机，**不上传任何服务器**；断网也能翻看已有内容。
-- 数据库：`<userData>/octo.db`（Electron 的应用数据目录，Windows 下位于 `%APPDATA%` 内；SQLite）。
+- 数据库：`<userData>/octo.db`（Windows 下的应用数据目录为 `%APPDATA%\Bluebird-Courier`；SQLite）。
 - 日志：`<userData>/logs/octo.log`（追加写入，写日志失败被静默吞掉，不影响业务）。
 - 访问令牌：存数据库 `setting` 表的 `access_token` 键，值为加密密文（`ss:` 前缀 + base64）。若系统安全存储不可用，**保存会直接失败并报明原因，绝不降级为明文**。
 - 各人各自安装、各用自己的令牌与清单，互不干扰。
@@ -357,9 +359,9 @@ npm run dist   # = build + electron-builder --win nsis
 
 配置见 `electron-builder.yml`：
 
-- `appId: com.octo.monitor`（升级身份保持不变），`productName: 青鸟信使`；Windows 可执行文件名与旧版保持一致，快捷方式显示名为“青鸟信使”。
+- `appId: com.octo.monitor`（升级身份保持不变），`productName: 青鸟信使`；Windows 可执行文件名为 `青鸟信使.exe`，安装器与快捷方式统一使用“青鸟信使”。
 - 固定应用图标（白底圆角方块 + 折纸蓝鸟）来自 `resources/icons/bluebird-app.svg` / `.ico`，运行时 PNG 随主进程资源打包；应用内 mark 位于 `src/renderer/assets/`，保持主题适配（浅色界面用深蓝 mark，深色界面用亮蓝 mark）。
-- 旧版 `productName` 对应的 `%APPDATA%\OCTO 仓库监控器` 数据目录继续使用，数据库与已加密访问令牌不会因改名切换目录。
+- 开发与安装版本统一使用 `%APPDATA%\Bluebird-Courier` 数据目录，应用不再读取旧产品目录；浏览器状态、数据库和已加密访问令牌都存于新目录。
 - 目标：Windows **NSIS x64**，输出到 `release/`
 - `oneClick: false` + `allowToChangeInstallationDirectory: true` → 走安装向导、可自选安装目录
 - 打包内容包含 `dist/**` + `package.json`，并通过 `extraResources` 放入主进程使用的应用 PNG 图标。
