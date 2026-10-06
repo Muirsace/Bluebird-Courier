@@ -76,7 +76,22 @@ function toIssue(item: RawIssue): IssueOrPullRequest {
 
 function toPull(item: RawPull): PullRequestItem & { kind: 'pull' } {
   const issue = toIssue(item);
-  return { ...issue, kind: 'pull' };
+  return { ...issue, kind: 'pull',
+    ...(typeof item.draft === 'boolean' ? { draft: item.draft } : {}),
+    ...(item.merged_at === null || typeof item.merged_at === 'string' ? { mergedAt: item.merged_at } : {}),
+    ...(typeof item.head?.ref === 'string' ? { headBranch: item.head.ref } : {}),
+    ...(typeof item.base?.ref === 'string' ? { baseBranch: item.base.ref } : {}),
+  };
+}
+
+function issueTuple(item: RawIssue): unknown[] {
+  const value = toIssue(item);
+  return [value.number, value.state, value.title, value.updatedAt, value.body, value.authorName];
+}
+
+function pullTuple(item: RawPull): unknown[] {
+  const value = toPull(item);
+  return [value.number, value.state, value.title, value.updatedAt, value.draft === true, value.mergedAt ?? null, value.headBranch ?? null, value.baseBranch ?? null, value.body, value.authorName];
 }
 
 function buildStatus(run: RawWorkflowRun): BuildInfo['status'] {
@@ -177,6 +192,18 @@ function pageOf(value: unknown, fallback = 1): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
+/** 窗口游标只保存摘要，避免把完整列表再次放入游标。 */
+async function windowDigest(items: readonly unknown[]): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(items));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** 概览内容字段的统一摘要；摘要指标与推送线索由 Summary 独立更新。 */
+function overviewRepoDigest(repo: RawRepo): string {
+  return JSON.stringify([repo.full_name, repo.default_branch, repo.description, repo.homepage, repo.license?.spdx_id ?? null]);
+}
+
 function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -221,6 +248,10 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
       if (!first || typeof first.name !== 'string') return null;
       return { name: first.name, commitSha: first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : null };
     });
+  }
+
+  function fetchReleasesPage(accessToken: string, fullName: string, perPage: number, page: number): Promise<ReleaseItem[]> {
+    return client.request(accessToken, `${repoPath(fullName)}/releases?per_page=${perPage}&page=${page}`, (json) => arrayOf<RawRelease>(json).map(toReleaseItem));
   }
 
   function fetchTagsPage(accessToken: string, fullName: string, perPage: number, page: number): Promise<Array<{ name: string; commitSha: string | null }>> {
@@ -270,7 +301,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           fetchTagRaw(accessToken, request.fullName),
           request.defaultBranch === null ? Promise.reject(new PortFailure('unknown', '默认分支未知')) : fetchHeadSha(accessToken, request.fullName, request.defaultBranch),
         ]);
-        const repoKey = JSON.stringify([repo.full_name, repo.stargazers_count, repo.forks_count, repo.open_issues_count, repo.pushed_at, repo.default_branch]);
+        const repoKey = overviewRepoDigest(repo);
         digest = JSON.stringify([repoKey, releaseFingerprint(release ?? { tagName: '', title: '', publishedAt: null }), tagFingerprint(tag), head]);
         version = {
           defaultBranch: request.defaultBranch,
@@ -279,8 +310,11 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           tagRevision: tagFingerprint(tag),
         };
       } else if (request.scope === 'releases') {
-        const [release, tag] = await Promise.all([fetchReleaseRaw(accessToken, request.fullName), fetchTagRaw(accessToken, request.fullName)]);
-        digest = JSON.stringify([release === null ? null : releaseFingerprint(release), tagFingerprint(tag)]);
+        const windowSize = effectiveLimit(pageOf(base?.perPage, 30));
+        const [releases, tags] = await Promise.all([fetchReleasesPage(accessToken, request.fullName, windowSize, 1), fetchTagsPage(accessToken, request.fullName, windowSize, 1)]);
+        digest = JSON.stringify([JSON.stringify(releases.map(releaseFingerprint)), JSON.stringify(tags.map(tagFingerprint))]);
+        const release = releases[0] ?? null;
+        const tag = tags[0] ?? null;
         version = { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: release === null ? null : releaseFingerprint(release), tagRevision: tagFingerprint(tag) };
       } else if (request.scope === 'readme') {
         if (request.defaultBranch === null) return incompleteVerification(request);
@@ -289,16 +323,20 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
         version = { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: null, tagRevision: null };
       } else {
         if (request.defaultBranch === null) return incompleteVerification(request);
+        let headRevision: string | null = null;
         if (request.scope === 'tree') {
           const sha = await fetchTreeSha(accessToken, request.fullName, request.defaultBranch);
           digest = JSON.stringify([sha]); // 树根 sha 覆盖整棵树
         } else {
           const head = await fetchHeadSha(accessToken, request.fullName, request.defaultBranch);
+          headRevision = head;
           digest = JSON.stringify([head]);
         }
-        version = { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: null, tagRevision: null };
+        version = { defaultBranch: request.defaultBranch, headRevision, releaseRevision: null, tagRevision: null };
       }
-      const fingerprint = fingerprintOf(digest);
+      const fingerprint = request.scope === 'releases'
+        ? JSON.stringify({ v: 1, perPage: effectiveLimit(pageOf(base?.perPage, 30)), d: digest })
+        : fingerprintOf(digest);
       if (prior === null) {
         // 采集初始基线：提供可持久化指纹，但 checkComplete=false，不冒充"已验证旧内容无变化"
         return { ...incompleteVerification(request), fingerprint, version };
@@ -319,7 +357,10 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     if (request.mode === 'probe') {
       const upTo = typeof base?.upTo === 'string' ? base.upTo : null;
       const win = Array.isArray(base?.win) ? base.win as Array<[unknown, unknown]> : null;
-      if (upTo === null || win === null) return incompleteVerification(request);
+      if (upTo === null || win === null) {
+        // 没有增量基线时先采集双来源窗口，仍不宣称验证了旧缓存。
+        return verifyIssuesAndPr(accessToken, { ...request, mode: 'reread', baselineFingerprint: null });
+      }
       const since = new Date(Date.parse(upTo) - PROBE_OVERLAP_MS).toISOString();
       const known = new Map(win.map(([number, updatedAt]) => [String(number), String(updatedAt)]));
       const seen: RawIssue[] = [];
@@ -349,24 +390,26 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
 
     // reread：窗口 = 前 maxPages 页；基线以相同预算建立才可比较，否则本次读取用于采集初始基线
     const prior = typeof base?.reread === 'object' && base.reread !== null ? base.reread as { pages?: unknown; digest?: unknown } : null;
-    const comparable = prior !== null && pageOf(prior.pages, -1) === request.maxPages && typeof prior.digest === 'string';
+    const sizedWindow = prior !== null && typeof (prior as { perPage?: unknown }).perPage === 'number';
+    const windowSize = sizedWindow ? effectiveLimit((prior as { perPage: number }).perPage) : PAGE_SIZE;
+    const windowPages = sizedWindow ? pageOf(prior.pages, request.maxPages) : request.maxPages;
+    const scanPages = Math.min(windowPages, request.maxPages);
+    const comparable = prior !== null && scanPages === windowPages && (sizedWindow || pageOf(prior.pages, -1) === request.maxPages) && typeof prior.digest === 'string';
     const issueTuples: unknown[][] = [];
     const pullTuples: unknown[][] = [];
     let issuesDone = false;
     let pullsDone = false;
     try {
-      for (let page = 1; page <= request.maxPages && !(issuesDone && pullsDone); page += 1) {
+      for (let page = 1; page <= scanPages && !(issuesDone && pullsDone); page += 1) {
         if (!issuesDone) {
-          const batch = await fetchIssuesRaw(accessToken, request.fullName, `state=all&sort=updated&direction=desc&per_page=${PAGE_SIZE}&page=${page}`);
-          for (const item of batch) issueTuples.push([item.number, item.state, item.title, item.updated_at]);
-          if (batch.length < PAGE_SIZE) issuesDone = true;
+          const batch = await fetchIssuesRaw(accessToken, request.fullName, `state=all&sort=updated&direction=desc&per_page=${windowSize}&page=${page}`);
+          for (const item of batch) issueTuples.push(issueTuple(item));
+          if (batch.length < windowSize) issuesDone = true;
         }
         if (!pullsDone) {
-          const batch = await fetchPullsRaw(accessToken, request.fullName, `state=all&sort=updated&direction=desc&per_page=${PAGE_SIZE}&page=${page}`);
-          for (const item of batch) {
-            pullTuples.push([item.number, item.state, item.title, item.updated_at, item.draft === true, item.merged_at ?? null, item.head?.ref ?? null, item.base?.ref ?? null]);
-          }
-          if (batch.length < PAGE_SIZE) pullsDone = true;
+          const batch = await fetchPullsRaw(accessToken, request.fullName, `state=all&sort=updated&direction=desc&per_page=${windowSize}&page=${page}`);
+          for (const item of batch) pullTuples.push(pullTuple(item));
+          if (batch.length < windowSize) pullsDone = true;
         }
       }
     } catch {
@@ -381,7 +424,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     const newWin = issueTuples
       .filter((tuple) => typeof tuple[3] === 'string' && Date.parse(tuple[3]) >= Date.parse(newUpTo) - PROBE_OVERLAP_MS)
       .map((tuple) => [tuple[0], tuple[3]]);
-    const fingerprint = JSON.stringify({ v: 1, upTo: newUpTo, win: newWin, reread: { pages: request.maxPages, digest } });
+    const fingerprint = JSON.stringify({ v: 1, upTo: newUpTo, win: newWin, reread: { pages: scanPages, perPage: windowSize, digest } });
     if (!comparable) {
       // 采集初始基线：指纹可用，但 checkComplete=false，不冒充"已验证旧内容无变化"
       return { ...incompleteVerification(request), fingerprint };
@@ -400,17 +443,21 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     const recentBaseline = Array.isArray(base?.recent) ? base.recent as unknown[][] : null;
     const trackedBaseline = Array.isArray(base?.tracked) ? base.tracked as unknown[][] : null;
 
-    const recentRuns = await fetchRunsPage(accessToken, request.fullName, 30, 1);
+    // 使用采集时的窗口大小，不能把扩大窗口后读到的旧运行当作新增。
+    const windowSize = typeof base?.windowSize === 'number' ? effectiveLimit(base.windowSize) : Math.max(30, Math.min(100, recentBaseline?.length ?? 30));
+    const recentRuns = await fetchRunsPage(accessToken, request.fullName, windowSize, 1);
     const recentTuples = recentRuns.map(runTuple);
 
     if (recentBaseline === null || trackedBaseline === null) {
       const tracked = recentTuples.filter((tuple) => tuple[2] !== 'completed');
-      return { ...incompleteVerification(request), fingerprint: JSON.stringify({ v: 1, recent: recentTuples, tracked }) };
+      return { ...incompleteVerification(request), fingerprint: JSON.stringify({ v: 1, windowSize, recent: recentTuples, tracked }) };
     }
 
     // 近期窗口按运行 ID 逐条比较：窗口大小不同也能发现新增运行、结束与重跑
     const baselineById = new Map(recentBaseline.map((tuple) => [String(tuple[0]), tuple]));
-    const changedByRecent = recentTuples.some((tuple) => {
+    const currentIds = new Set(recentTuples.map((tuple) => String(tuple[0])));
+    const removed = recentTuples.length < windowSize && recentBaseline.some((tuple) => !currentIds.has(String(tuple[0])));
+    const changedByRecent = removed || recentTuples.some((tuple) => {
       const previous = baselineById.get(String(tuple[0]));
       return previous === undefined || !sameJson(previous, tuple);
     });
@@ -439,7 +486,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
 
     const freshTracked = recentTuples.filter((tuple) => tuple[2] !== 'completed');
     const tracked = [...new Map([...freshTracked, ...currentTracked].map((tuple) => [String(tuple[0]), tuple])).values()];
-    return verification(request, false, JSON.stringify({ v: 1, recent: recentTuples, tracked }));
+    return verification(request, false, JSON.stringify({ v: 1, windowSize, recent: recentTuples, tracked }));
   }
 
   return {
@@ -510,6 +557,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     // —— 范围验证与范围抓取（步骤 4） ——
 
     async verifyScopes(accessToken: string, request: ScopeVerifyRequest): Promise<ScopeVerification> {
+      if (!Number.isSafeInteger(request.maxPages) || request.maxPages < 1) return incompleteVerification(request);
       switch (request.scope) {
         case 'issuesAndPr': return verifyIssuesAndPr(accessToken, request);
         case 'builds': return verifyBuilds(accessToken, request);
@@ -526,8 +574,12 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
 
     async fetchScope(accessToken: string, request: ScopeFetchRequest): Promise<ScopeFetchOutcome> {
       const { fullName, scope, limit, accessContextRevision, observedAt } = request;
-      const cursor = parseCursor(request.cursor);
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new PortFailure('unknown', '范围读取上限必须为正整数');
       const perPage = effectiveLimit(limit);
+      let cursor = parseCursor(request.cursor);
+      // 分页参数改变就是新查询；旧 offset / page 不得应用到另一个窗口。
+      if (cursor.v === 2 && (cursor.l !== undefined && cursor.l !== perPage || cursor.b !== undefined && cursor.b !== request.defaultBranch || cursor.a !== undefined && cursor.a !== accessContextRevision || cursor.n !== undefined && cursor.n !== fullName)) cursor = {};
+      const makeCursor = (value: Record<string, unknown>): string => JSON.stringify({ v: 2, l: perPage, b: request.defaultBranch, a: accessContextRevision, n: fullName, ...value });
       switch (scope) {
         case 'issuesAndPr': {
           const versioned = cursor.v === 2;
@@ -551,22 +603,30 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           const merged = new Map<number, IssueOrPullRequest>();
           for (const item of issues) if (Number.isSafeInteger(item.number)) merged.set(item.number as number, toIssue(item));
           for (const item of pulls) if (Number.isSafeInteger(item.number)) merged.set(item.number as number, toPull(item));
-          const ordered = [...merged.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+          const ordered = [...merged.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || b.number - a.number);
 
-          // 有界输出：单次最多 limit 条；窗口内剩余用 off 续读，不跳过任何条目
-          const windowItems = ordered.slice(offset, offset + Math.max(1, limit));
+          const partial = issuesError !== null || pullsError !== null;
+          const windowKey = await windowDigest(ordered);
+          if (!partial && offset > 0 && cursor.w !== windowKey) {
+            return { scope, items: [], hasMore: true, nextCursor: makeCursor({ i: issuePage, p: pullPage, off: 0, w: windowKey }), coverageComplete: false, windowRestarted: true, observedAt, accessContextRevision };
+          }
+          // 窗口内失败时不能把原 offset 应用于缩小后的单来源列表；重发成功来源并保留原窗口重试。
+          const retryWindow = partial && offset > 0;
+          const windowItems = ordered.slice(retryWindow ? 0 : offset, (retryWindow ? 0 : offset) + perPage);
           const consumed = offset + windowItems.length;
           const windowRemaining = consumed < ordered.length;
           const issuesMore = issuePage !== null && issuesError === null && issues.length === perPage;
           const pullsMore = pullPage !== null && pullsError === null && pulls.length === perPage;
           const nextIssues = issuePage === null ? null : issuesError !== null ? issuePage : issuesMore ? issuePage + 1 : null;
           const nextPulls = pullPage === null ? null : pullsError !== null ? pullPage : pullsMore ? pullPage + 1 : null;
-          const nextCursor = windowRemaining
-            ? JSON.stringify({ v: 2, i: issuePage, p: pullPage, off: consumed })
-            : nextIssues !== null || nextPulls !== null
-              ? JSON.stringify({ v: 2, i: nextIssues, p: nextPulls, off: 0 })
-              : null;
-          const partial = issuesError !== null || pullsError !== null;
+          const nextCursor = retryWindow
+            ? makeCursor({ i: issuePage, p: pullPage, off: offset, w: cursor.w })
+            : windowRemaining
+              ? makeCursor({ i: issuePage, p: pullPage, off: consumed, w: windowKey })
+              : nextIssues !== null || nextPulls !== null
+                ? makeCursor({ i: nextIssues, p: nextPulls, off: 0 })
+                : null;
+          const delivered = new Set(ordered.slice(0, consumed).map((item) => item.number));
 
           // 采集基线：只在窗口起点、两个来源都成功时提供（feature 原样保存，不代表"已验证无变化"）
           let fingerprint: string | undefined;
@@ -574,7 +634,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             let upTo = observedAt;
             for (const item of ordered) if (item.updatedAt > upTo) upTo = item.updatedAt;
             const win = ordered.filter((item) => Date.parse(item.updatedAt) >= Date.parse(upTo) - PROBE_OVERLAP_MS).map((item) => [item.number, item.updatedAt]);
-            fingerprint = JSON.stringify({ v: 1, upTo, win });
+            fingerprint = JSON.stringify({ v: 1, upTo, win, reread: { pages: 1, perPage, digest: JSON.stringify([issues.map(issueTuple), pulls.map(pullTuple)]) } });
           }
 
           return {
@@ -586,29 +646,31 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             parts: {
               issues: {
                 ok: issuesError === null,
+                coverageComplete: issuePage !== null && issuesError === null && !retryWindow && issues.every((item) => delivered.has(item.number as number)),
                 hasMore: issuesMore,
-                nextCursor: issuesError !== null ? String(issuePage) : issuesMore ? String(issuePage! + 1) : null,
+                nextCursor: retryWindow && issuePage !== null ? String(issuePage) : issuesError !== null ? String(issuePage) : issuesMore ? String(issuePage! + 1) : null,
               },
               pullRequests: {
                 ok: pullsError === null,
+                coverageComplete: pullPage !== null && pullsError === null && !retryWindow && pulls.every((item) => delivered.has(item.number as number)),
                 hasMore: pullsMore,
-                nextCursor: pullsError !== null ? String(pullPage) : pullsMore ? String(pullPage! + 1) : null,
+                nextCursor: retryWindow && pullPage !== null ? String(pullPage) : pullsError !== null ? String(pullPage) : pullsMore ? String(pullPage! + 1) : null,
               },
             },
           };
         }
         case 'builds': {
-          const page = pageOf(cursor.p);
+          const page = pageOf(cursor.p, pageOf(cursor.page));
           const runs = await fetchRunsPage(accessToken, fullName, perPage, page);
           const items: BuildItem[] = runs.map((run) => ({ ...toBuildInfo(run), id: typeof run.id === 'number' || typeof run.id === 'string' ? String(run.id) : null }));
           const tuples = runs.map(runTuple);
           const hasMore = runs.length === perPage;
           return {
             scope, items, hasMore,
-            nextCursor: hasMore ? JSON.stringify({ v: 2, p: page + 1 }) : null,
+            nextCursor: hasMore ? makeCursor({ p: page + 1 }) : null,
             coverageComplete: true, observedAt, accessContextRevision,
             // 首页采集即基线：保留 attempt / status / conclusion 源字段，feature 原样保存
-            fingerprint: page === 1 ? JSON.stringify({ v: 1, recent: tuples, tracked: tuples.filter((tuple) => tuple[2] !== 'completed') }) : undefined,
+            fingerprint: page === 1 ? JSON.stringify({ v: 1, windowSize: perPage, recent: tuples, tracked: tuples.filter((tuple) => tuple[2] !== 'completed') }) : undefined,
           };
         }
         case 'commits': {
@@ -620,7 +682,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           const hasMore = items.length === perPage;
           return {
             scope, items, hasMore,
-            nextCursor: hasMore ? JSON.stringify({ v: 2, p: page + 1, b: branch }) : null,
+            nextCursor: hasMore ? makeCursor({ p: page + 1, b: branch }) : null,
             coverageComplete: true, observedAt, accessContextRevision,
             version: page === 1 ? { defaultBranch: branch, headRevision: items[0]?.sha ?? null, releaseRevision: null, tagRevision: null } : undefined,
             fingerprint: page === 1 ? JSON.stringify({ v: 1, d: JSON.stringify([items[0]?.sha ?? null]) }) : undefined,
@@ -628,12 +690,13 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
         }
         case 'releases': {
           const versioned = cursor.v === 2;
-          const releasePage = versioned && cursor.r === null ? null : pageOf(cursor.r);
-          const tagPage = versioned && cursor.t === null ? null : pageOf(cursor.t);
+          const releasePage = versioned && cursor.r === null ? null : pageOf(cursor.r, pageOf(cursor.page));
+          const tagPage = versioned && cursor.t === null ? null : pageOf(cursor.t, pageOf(cursor.page));
+          const offset = pageOf(cursor.off, 0);
           let releases: ReleaseItem[] = [];
           let releasesError: unknown = null;
           if (releasePage !== null) {
-            try { releases = await client.request(accessToken, `${repoPath(fullName)}/releases?per_page=${perPage}&page=${releasePage}`, (json) => arrayOf<RawRelease>(json).map(toReleaseItem)); } catch (error) { releasesError = error; }
+            try { releases = await fetchReleasesPage(accessToken, fullName, perPage, releasePage); } catch (error) { releasesError = error; }
           }
           let tags: Array<{ name: string; commitSha: string | null }> = [];
           let tagsError: unknown = null;
@@ -657,20 +720,36 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           const partial = releasesError !== null || tagsError !== null;
           const releaseFp = releases[0] ? releaseFingerprint(releases[0]) : null;
           const tagFp = tags[0] ? JSON.stringify([tags[0].name, tags[0].commitSha]) : null;
+          const windowKey = await windowDigest(items);
+          if (!partial && offset > 0 && cursor.w !== windowKey) {
+            return { scope, items: [], hasMore: true, nextCursor: makeCursor({ r: releasePage, t: tagPage, off: 0, w: windowKey }), coverageComplete: false, windowRestarted: true, observedAt, accessContextRevision };
+          }
+          const retryWindow = partial && offset > 0;
+          const windowItems = items.slice(retryWindow ? 0 : offset, (retryWindow ? 0 : offset) + perPage);
+          const consumed = offset + windowItems.length;
+          const windowRemaining = consumed < items.length;
+          const releasesCovered = releasePage !== null && releasesError === null && !retryWindow && consumed >= releases.length;
+          const tagsCovered = tagPage !== null && tagsError === null && !retryWindow && !windowRemaining;
+          const releaseWindowFp = JSON.stringify(releases.map(releaseFingerprint));
+          const tagWindowFp = JSON.stringify(tags.map(tagFingerprint));
           return {
-            scope, items,
-            hasMore: releasesMore || tagsMore || partial,
-            nextCursor: nextReleasePage !== null || nextTagPage !== null
-              ? JSON.stringify({ v: 2, r: nextReleasePage, t: nextTagPage })
-              : null,
-            coverageComplete: !partial, observedAt, accessContextRevision,
+            scope, items: windowItems,
+            hasMore: windowRemaining || releasesMore || tagsMore || partial,
+            nextCursor: retryWindow
+              ? makeCursor({ r: releasePage, t: tagPage, off: offset, w: cursor.w })
+              : windowRemaining
+                ? makeCursor({ r: releasePage, t: tagPage, off: consumed, w: windowKey })
+                : nextReleasePage !== null || nextTagPage !== null
+                  ? makeCursor({ r: nextReleasePage, t: nextTagPage, off: 0 })
+                  : null,
+            coverageComplete: !partial && !windowRemaining, observedAt, accessContextRevision,
             version: fresh
               ? { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: releaseFp, tagRevision: tagFp }
               : undefined,
-            fingerprint: fresh && !partial ? JSON.stringify({ v: 1, d: JSON.stringify([releaseFp, tagFp]) }) : undefined,
+            fingerprint: fresh && !partial ? JSON.stringify({ v: 1, perPage, d: JSON.stringify([releaseWindowFp, tagWindowFp]) }) : undefined,
             parts: {
-              releases: { ok: releasesError === null, hasMore: releasesMore, nextCursor: nextReleasePage !== null && releasesError !== null ? String(nextReleasePage) : releasesMore ? String(releasePage! + 1) : null, fingerprint: fresh && releasesError === null ? releaseFp ?? undefined : undefined },
-              tags: { ok: tagsError === null, hasMore: tagsMore, nextCursor: nextTagPage !== null && tagsError !== null ? String(nextTagPage) : tagsMore ? String(tagPage! + 1) : null, fingerprint: fresh && tagsError === null ? tagFp ?? undefined : undefined },
+              releases: { ok: releasesError === null, coverageComplete: releasesCovered, hasMore: releasesMore, nextCursor: retryWindow && releasePage !== null ? String(releasePage) : nextReleasePage !== null && releasesError !== null ? String(nextReleasePage) : releasesMore ? String(releasePage! + 1) : null, fingerprint: fresh && releasesCovered ? releaseWindowFp : undefined },
+              tags: { ok: tagsError === null, coverageComplete: tagsCovered, hasMore: tagsMore, nextCursor: retryWindow && tagPage !== null ? String(tagPage) : nextTagPage !== null && tagsError !== null ? String(nextTagPage) : tagsMore ? String(tagPage! + 1) : null, fingerprint: fresh && tagsCovered ? tagWindowFp : undefined },
             },
           };
         }
@@ -678,13 +757,15 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           const branchQuery = request.defaultBranch ? `?ref=${encodeURIComponent(request.defaultBranch)}` : '';
           const entries = await client.request(accessToken, `${repoPath(fullName)}/contents${branchQuery}`, readmeEntries);
           const offset = pageOf(cursor.off, 0);
+          const windowKey = await windowDigest(entries);
+          if (offset > 0 && cursor.w !== windowKey) return { scope, items: [], hasMore: true, nextCursor: makeCursor({ off: 0, w: windowKey }), coverageComplete: false, windowRestarted: true, observedAt, accessContextRevision };
           const items = entries.slice(offset, offset + perPage).map(toReadmeDocument);
           const consumed = offset + items.length;
           const hasMore = consumed < entries.length;
           return {
             scope, items, hasMore,
-            nextCursor: hasMore ? JSON.stringify({ v: 2, off: consumed }) : null,
-            coverageComplete: true, observedAt, accessContextRevision,
+            nextCursor: hasMore ? makeCursor({ off: consumed, w: windowKey }) : null,
+            coverageComplete: !hasMore, observedAt, accessContextRevision,
             fingerprint: offset === 0 ? JSON.stringify({ v: 1, d: readmeScopeDigest(entries) }) : undefined,
           };
         }
@@ -696,12 +777,14 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             truncated: typeof json === 'object' && json !== null && (json as { truncated?: unknown }).truncated === true,
           }));
           const offset = pageOf(cursor.off, 0);
+          const windowKey = await windowDigest([result.sha, result.entries]);
+          if (offset > 0 && cursor.w !== windowKey) return { scope, items: [], hasMore: true, nextCursor: makeCursor({ off: 0, w: windowKey }), coverageComplete: false, windowRestarted: true, observedAt, accessContextRevision };
           const items = result.entries.slice(offset, offset + perPage);
           const consumed = offset + items.length;
           const hasMore = result.truncated || consumed < result.entries.length;
           return {
             scope, items, hasMore,
-            nextCursor: hasMore ? JSON.stringify({ v: 2, off: consumed }) : null,
+            nextCursor: consumed < result.entries.length ? makeCursor({ off: consumed, w: windowKey }) : null,
             coverageComplete: !result.truncated && consumed >= result.entries.length,
             observedAt, accessContextRevision,
             fingerprint: offset === 0 && !result.truncated && result.sha !== null ? JSON.stringify({ v: 1, d: JSON.stringify([result.sha]) }) : undefined,
@@ -740,7 +823,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             releaseRevision: release === null ? null : releaseFingerprint(release),
             tagRevision: tagFingerprint(tag),
           };
-          const repoKey = JSON.stringify([repo.full_name, repo.stargazers_count, repo.forks_count, repo.open_issues_count, repo.pushed_at, repo.default_branch]);
+          const repoKey = overviewRepoDigest(repo);
           const digest = JSON.stringify([repoKey, releaseFingerprint(release ?? { tagName: '', title: '', publishedAt: null }), tagFingerprint(tag), head]);
           const items: OverviewContent[] = [{ values, metadata }];
           return {

@@ -195,6 +195,8 @@ export interface ScopeFetchOutcome<T = unknown> {
    * 指纹的存在不代表"已验证旧内容无变化"；只表示"从这里开始可以比较"。
    */
   fingerprint?: string;
+  /** 续读窗口发生变化；调用方应丢弃该窗口的暂存片段并按 nextCursor 重启。 */
+  windowRestarted?: boolean;
   /** 范围内多来源（releases/tags、issues/pullRequests）各自的成功与分页状态。 */
   parts?: Partial<Record<ScopePartName, ScopePartResult>>;
 }
@@ -203,6 +205,8 @@ export type ScopePartName = 'releases' | 'tags' | 'issues' | 'pullRequests';
 
 export interface ScopePartResult {
   ok: boolean;
+  /** 该来源的当前窗口已全部交付；仅请求成功不足以推进来源基线。 */
+  coverageComplete: boolean;
   hasMore: boolean;
   nextCursor: PaginationCursor;
   /** 该来源本次覆盖窗口的不透明指纹；失败或未在窗口起点读取时不提供。 */

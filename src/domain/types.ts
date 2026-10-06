@@ -65,7 +65,7 @@ export interface ReleaseItem { tagName: string; title: string; publishedAt: stri
 export interface TagItem { name: string; committedAt?: string | null; }
 export interface CommitItem { sha: string; message: string; authorName: string | null; committedAt: string; }
 export interface IssueItem { number: number; title: string; body: string | null; state: 'open' | 'closed'; authorName: string | null; updatedAt: string; }
-export interface PullRequestItem { number: number; title: string; body: string | null; state: 'open' | 'closed'; authorName: string | null; updatedAt: string; }
+export interface PullRequestItem { number: number; title: string; body: string | null; state: 'open' | 'closed'; authorName: string | null; updatedAt: string; draft?: boolean; mergedAt?: string | null; headBranch?: string | null; baseBranch?: string | null; }
 
 export type BuildStatus = 'success' | 'failure' | 'pending' | 'neutral' | 'none';
 export interface BuildInfo {

@@ -300,7 +300,7 @@ describe('Issue / PR 列表验证（verifyScopes）', () => {
     });
     const baselineDigest = JSON.stringify([
       [],
-      [[57, 'open', 'pr', '2026-10-05T01:00:00.000Z', false, null, 'feature', 'main']],
+      [[57, 'open', 'pr', '2026-10-05T01:00:00.000Z', false, null, 'feature', 'main', null, null]],
     ]);
     const baseline = JSON.stringify({ v: 1, upTo, win: [], reread: { pages: 1, digest: baselineDigest } });
 
@@ -452,6 +452,7 @@ describe('适配器审查回归', () => {
     const route = routeFetch((path) => {
       const url = new URL('https://api.github.com' + path);
       const page = Number(url.searchParams.get('page'));
+      if (url.pathname.endsWith('/tags')) return [];
       if (scope === 'commits') return [{ sha: 'sha-' + page, commit: { message: '提交 ' + page } }];
       if (scope === 'releases') return [{ tag_name: 'v' + page, name: '发版 ' + page }];
       return { workflow_runs: [{ id: page, name: 'ci', status: 'completed', conclusion: 'success' }] };
@@ -573,6 +574,7 @@ describe('步骤 4 补齐（R3）', () => {
     const first = await compose(collect.fetchImpl).verifyScopes('ghp', verifyRequest('commits', { baselineFingerprint: null }));
     expect(first.changed).toBe(false);
     expect(first.checkComplete).toBe(false); // 采集不是验证结论
+    expect(first.version?.headRevision).toBe('sha-1');
     expect(typeof first.fingerprint).toBe('string');
 
     const stable = await compose(collect.fetchImpl).verifyScopes('ghp', verifyRequest('commits', { baselineFingerprint: first.fingerprint ?? null }));
@@ -783,5 +785,233 @@ describe('步骤 4 补齐（R3）', () => {
 
     const failed = await observe(new TypeError('fetch failed'));
     expect(failed.activity.collaboration).toEqual({ kind: 'issue', at: null, verified: false }); // 失败不提供候选，保留策略在调用方
+  });
+});
+
+
+describe('适配器窗口一致性审查（R4）', () => {
+  const request = (scope: ScopeVerifyRequest['scope'], limit = 2) => ({ fullName: 'octo/demo', scope, defaultBranch: 'main', cursor: null as string | null, limit, accessContextRevision: 5, observedAt: '2026-10-05T03:00:00.000Z' });
+  const issue = (number: number) => ({ number, title: '条目 ' + number, state: 'open', updated_at: '2026-10-05T0' + (5 - number) + ':00:00.000Z' });
+  const release = (number: number) => ({ tag_name: 'v' + number, name: '发版 ' + number, published_at: null });
+  const tag = (number: number) => ({ name: 't' + number, commit: { sha: 'sha-' + number } });
+  const keys = (items: unknown[]) => items.map((item) => { const row = item as { number?: number; kind?: string; tagName?: string; name?: string }; return row.number ?? row.tagName ?? row.name; });
+
+  it('Release/Tag 合并窗口按 limit 交付，未交付的来源不能确认覆盖', async () => {
+    const route = routeFetch((path) => {
+      const page = Number(new URL('https://api.github.com' + path).searchParams.get('page'));
+      return page === 1 ? path.includes('/releases?') ? [release(2), release(1)] : [tag(2), tag(1)] : [];
+    });
+    const github = compose(route.fetchImpl);
+    const first = await github.fetchScope('ghp', request('releases'));
+    expect(keys(first.items)).toEqual(['v2', 'v1']);
+    expect(first.coverageComplete).toBe(false);
+    expect(first.parts?.releases?.coverageComplete).toBe(true);
+    expect(first.parts?.tags?.coverageComplete).toBe(false);
+    expect(first.parts?.tags?.fingerprint).toBeUndefined();
+    const second = await github.fetchScope('ghp', { ...request('releases'), cursor: first.nextCursor });
+    expect(keys(second.items)).toEqual(['t2', 't1']);
+    expect(second.coverageComplete).toBe(true);
+    expect(second.parts?.tags?.coverageComplete).toBe(true);
+  });
+
+  it.each(['issuesAndPr', 'releases'] as const)('%s 窗口内续读失败后保留原窗口，恢复时不漏项', async (scope) => {
+    let failFirstSource = false;
+    const route = routeFetch((path) => {
+      const url = new URL('https://api.github.com' + path);
+      if (Number(url.searchParams.get('page')) !== 1) return [];
+      const firstSource = scope === 'issuesAndPr' ? path.includes('/issues?') : path.includes('/releases?');
+      if (firstSource && failFirstSource) return new TypeError('暂时不可用');
+      return scope === 'issuesAndPr' ? firstSource ? [issue(1), issue(2)] : [issue(3), issue(4)] : firstSource ? [release(2), release(1)] : [tag(2), tag(1)];
+    });
+    const github = compose(route.fetchImpl);
+    const first = await github.fetchScope('ghp', request(scope));
+    failFirstSource = true;
+    const partial = await github.fetchScope('ghp', { ...request(scope), cursor: first.nextCursor });
+    expect(partial.items).toHaveLength(2);
+    expect(partial.coverageComplete).toBe(false);
+    expect(partial.fingerprint).toBeUndefined();
+    expect(partial.nextCursor).toBe(first.nextCursor);
+    failFirstSource = false;
+    const recovered = await github.fetchScope('ghp', { ...request(scope), cursor: partial.nextCursor });
+    expect(keys(recovered.items)).toEqual(scope === 'issuesAndPr' ? [3, 4] : ['t2', 't1']);
+    expect(recovered.coverageComplete).toBe(true);
+    expect(new Set(keys([...first.items, ...recovered.items])).size).toBe(4);
+  });
+
+  it('首次 probe 采集双来源指纹，但不冒充验证旧缓存', async () => {
+    const route = routeFetch((path) => path.includes('since=') || path.includes('/pulls?') ? [] : [issue(1)]);
+    const github = compose(route.fetchImpl);
+    const first = await github.verifyScopes('ghp', verifyRequest('issuesAndPr', { mode: 'probe', maxPages: 1 }));
+    expect(first.checkComplete).toBe(false);
+    expect(first.changed).toBe(false);
+    expect(typeof first.fingerprint).toBe('string');
+    expect(route.calls).toHaveLength(2);
+  });
+
+  it('构建窗口删除已完成记录时报告变化，不静默遗忘旧基线', async () => {
+    let removed = false;
+    const route = routeFetch(() => ({ workflow_runs: removed ? [] : [{ id: 1, run_attempt: 1, status: 'completed', conclusion: 'success' }] }));
+    const github = compose(route.fetchImpl);
+    const fetched = await github.fetchScope('ghp', request('builds'));
+    removed = true;
+    const result = await github.verifyScopes('ghp', verifyRequest('builds', { baselineFingerprint: fetched.fingerprint ?? null }));
+    expect(result.changed).toBe(true);
+    expect(result.checkComplete).toBe(true);
+  });
+
+  it('构建验证使用采集窗口大小，不把扩窗后的旧运行当作新增', async () => {
+    const route = routeFetch((path) => {
+      const size = Number(new URL('https://api.github.com' + path).searchParams.get('per_page'));
+      return { workflow_runs: Array.from({ length: size }, (_value, index) => ({ id: index + 1, run_attempt: 1, status: 'completed', conclusion: 'success' })) };
+    });
+    const github = compose(route.fetchImpl);
+    const fetched = await github.fetchScope('ghp', request('builds'));
+    const result = await github.verifyScopes('ghp', verifyRequest('builds', { baselineFingerprint: fetched.fingerprint ?? null }));
+    expect(result.changed).toBe(false);
+    expect(result.checkComplete).toBe(true);
+    expect(route.calls.at(-1)).toContain('per_page=2');
+  });
+
+  it.each(['commits', 'builds', 'releases'] as const)('%s 的分页大小改变后按新查询从首页开始', async (scope) => {
+    const route = routeFetch((path) => {
+      if (path.includes('/tags?')) return [];
+      const url = new URL('https://api.github.com' + path);
+      const size = Number(url.searchParams.get('per_page'));
+      const page = Number(url.searchParams.get('page'));
+      const numbers = Array.from({ length: size }, (_value, index) => (page - 1) * size + index + 1);
+      if (scope === 'commits') return numbers.map((number) => ({ sha: 'sha-' + number, commit: { message: '提交 ' + number } }));
+      if (scope === 'builds') return { workflow_runs: numbers.map((number) => ({ id: number, status: 'completed', conclusion: 'success' })) };
+      return numbers.map(release);
+    });
+    const github = compose(route.fetchImpl);
+    const first = await github.fetchScope('ghp', request(scope, 2));
+    const resized = await github.fetchScope('ghp', { ...request(scope, 3), cursor: first.nextCursor });
+    expect(resized.items).toHaveLength(3);
+    expect(route.calls.at(-1)).toContain('page=1');
+    expect(route.calls.at(-1)).toContain('per_page=3');
+  });
+
+  it.each(['builds', 'releases'] as const)('%s 仍接受旧数字字符串游标', async (scope) => {
+    const route = routeFetch((path) => {
+      if (path.includes('/tags?')) return [];
+      const page = Number(new URL('https://api.github.com' + path).searchParams.get('page'));
+      return scope === 'builds' ? { workflow_runs: [{ id: page, status: 'completed', conclusion: 'success' }] } : [release(page)];
+    });
+    const result = await compose(route.fetchImpl).fetchScope('ghp', { ...request(scope), cursor: '2' });
+    expect(result.items).toHaveLength(1);
+    expect(route.calls.every((path) => path.includes('page=2'))).toBe(true);
+  });
+
+  it('概览元数据编辑会改变指纹，单独摘要指标与推送线索不会', async () => {
+    for (const patch of [{ description: '修改说明' }, { homepage: 'https://new.example' }, { license: { spdx_id: 'Apache-2.0' } }]) {
+      let repo = { ...REPO_BODY, description: '说明', homepage: 'https://old.example', license: { spdx_id: 'MIT' } };
+      const route = routeFetch((path) => path === '/repos/octo/demo' ? repo : observationRoutes()(path));
+      const github = compose(route.fetchImpl);
+      const fetched = await github.fetchScope('ghp', request('overview', 30));
+      repo = { ...repo, ...patch };
+      const result = await github.verifyScopes('ghp', verifyRequest('overview', { baselineFingerprint: fetched.fingerprint ?? null }));
+      expect(result.changed).toBe(true);
+    }
+    let repo = { ...REPO_BODY };
+    const route = routeFetch((path) => path === '/repos/octo/demo' ? repo : observationRoutes()(path));
+    const github = compose(route.fetchImpl);
+    const fetched = await github.fetchScope('ghp', request('overview', 30));
+    repo = { ...repo, stargazers_count: 99, forks_count: 88, pushed_at: '2026-10-05T02:00:00.000Z' };
+    const result = await github.verifyScopes('ghp', verifyRequest('overview', { baselineFingerprint: fetched.fingerprint ?? null }));
+    expect(result.changed).toBe(false);
+  });
+
+  it.each(['release-edit', 'release-delete', 'tag-delete'])('发版窗口检测 %s，最新条目保持不变', async (mode) => {
+    let edited = false;
+    const route = routeFetch((path) => {
+      if (path.includes('/releases?')) return [release(2), ...(edited && mode === 'release-delete' ? [] : [{ ...release(1), name: edited && mode === 'release-edit' ? '改名' : '发版 1' }])];
+      if (path.includes('/tags?')) return [tag(2), ...(edited && mode === 'tag-delete' ? [] : [tag(1)])];
+      return httpStatus(404);
+    });
+    const github = compose(route.fetchImpl);
+    const fetched = await github.fetchScope('ghp', request('releases', 10));
+    const stable = await github.verifyScopes('ghp', verifyRequest('releases', { baselineFingerprint: fetched.fingerprint ?? null }));
+    expect(stable.changed).toBe(false);
+    edited = true;
+    const result = await github.verifyScopes('ghp', verifyRequest('releases', { baselineFingerprint: stable.fingerprint ?? null }));
+    expect(result.changed).toBe(true);
+    expect(result.checkComplete).toBe(true);
+    expect(route.calls.at(-1)).toContain('per_page=10');
+  });
+
+  it('README 未交付完不确认覆盖，截断树的末尾不生成重复游标', async () => {
+    const route = routeFetch((path) => path.includes('/contents')
+      ? [1, 2].map((number) => ({ name: 'README.' + number, path: 'README.' + number, type: 'file', sha: 'sha-' + number }))
+      : { sha: 'tree', truncated: true, tree: [{ path: 'file', type: 'blob' }] });
+    const github = compose(route.fetchImpl);
+    const readme = await github.fetchScope('ghp', request('readme', 1));
+    expect(readme.coverageComplete).toBe(false);
+    const tail = await github.fetchScope('ghp', { ...request('readme', 1), cursor: readme.nextCursor });
+    expect(tail.coverageComplete).toBe(true);
+    const tree = await github.fetchScope('ghp', request('tree', 1));
+    expect(tree.coverageComplete).toBe(false);
+    expect(tree.hasMore).toBe(true);
+    expect(tree.nextCursor).toBeNull();
+  });
+});
+
+
+describe('续读窗口变化与采集验证闭环', () => {
+  const request = (scope: ScopeVerifyRequest['scope']) => ({ fullName: 'octo/demo', scope, defaultBranch: 'main', cursor: null as string | null, limit: 2, accessContextRevision: 5, observedAt: '2026-10-05T03:00:00.000Z' });
+
+  it.each(['issuesAndPr', 'releases', 'readme', 'tree'] as const)('%s 窗口中删除条目后明确重启，不能沿旧 offset 漏项', async (scope) => {
+    let removed = false;
+    const route = routeFetch((path) => {
+      const url = new URL('https://api.github.com' + path);
+      if (url.searchParams.has('page') && url.searchParams.get('page') !== '1') return [];
+      if (scope === 'issuesAndPr') {
+        const numbers = path.includes('/issues?') ? removed ? [2] : [1, 2] : [3, 4];
+        return numbers.map((number) => ({ number, title: '条目 ' + number, state: 'open', updated_at: '2026-10-05T0' + (5 - number) + ':00:00.000Z' }));
+      }
+      if (scope === 'releases') return path.includes('/releases?')
+        ? (removed ? [2] : [2, 1]).map((number) => ({ tag_name: 'v' + number, name: '发版 ' + number }))
+        : [2, 1].map((number) => ({ name: 't' + number, commit: { sha: 'sha-' + number } }));
+      if (scope === 'readme') return (removed ? [2, 3] : [1, 2, 3]).map((number) => ({ name: 'README.' + number, path: 'README.' + number, type: 'file', sha: 'sha-' + number }));
+      return { sha: removed ? 'tree-B' : 'tree-A', truncated: false, tree: (removed ? [2, 3] : [1, 2, 3]).map((number) => ({ path: 'file-' + number, type: 'blob' })) };
+    });
+    const github = compose(route.fetchImpl);
+    const first = await github.fetchScope('ghp', request(scope));
+    expect(first.nextCursor).not.toBeNull();
+    removed = true;
+    const restarted = await github.fetchScope('ghp', { ...request(scope), cursor: first.nextCursor });
+    expect(restarted.windowRestarted).toBe(true);
+    expect(restarted.coverageComplete).toBe(false);
+    expect(restarted.items).toEqual([]);
+    expect(restarted.fingerprint).toBeUndefined();
+    let cursor = restarted.nextCursor;
+    const assembled: unknown[] = [];
+    for (let read = 0; read < 3; read += 1) {
+      const next = await github.fetchScope('ghp', { ...request(scope), cursor });
+      assembled.push(...next.items);
+      if (next.coverageComplete) break;
+      cursor = next.nextCursor;
+    }
+    const keys = assembled.map((item) => { const value = item as { number?: number; tagName?: string; name?: string; content?: string; path?: string }; return value.number ?? value.tagName ?? value.name ?? value.content ?? value.path; });
+    expect(keys).toEqual(scope === 'issuesAndPr' ? [2, 3, 4] : scope === 'releases' ? ['v2', 't2', 't1'] : scope === 'readme' ? ['README.2', 'README.3'] : ['file-2', 'file-3']);
+  });
+
+  it.each(['issue-body', 'pull-fields'])('实际抓取指纹可直接验证同窗口，并检测同秒的 %s 变化', async (mode) => {
+    let edited = false;
+    const route = routeFetch((path) => {
+      const pull = { number: 2, title: 'PR', body: 'PR 内容', state: 'open', user: { login: 'author' }, updated_at: '2026-10-05T02:00:00.000Z', draft: edited && mode === 'pull-fields', merged_at: null, head: { ref: edited && mode === 'pull-fields' ? 'changed' : 'feature' }, base: { ref: 'main' } };
+      return path.includes('/issues?')
+        ? [{ number: 1, title: 'Issue', body: edited && mode === 'issue-body' ? '更新内容' : '旧内容', state: 'open', user: { login: 'author' }, updated_at: '2026-10-05T02:00:00.000Z' }, { ...pull, pull_request: { url: 'pull' } }]
+        : [pull];
+    });
+    const github = compose(route.fetchImpl);
+    const fetched = await github.fetchScope('ghp', request('issuesAndPr'));
+    expect(fetched.coverageComplete).toBe(true);
+    expect(fetched.items[0]).toMatchObject({ kind: 'pull', draft: false, headBranch: 'feature', baseBranch: 'main' });
+    const stable = await github.verifyScopes('ghp', verifyRequest('issuesAndPr', { mode: 'reread', maxPages: 3, baselineFingerprint: fetched.fingerprint ?? null }));
+    expect(stable).toMatchObject({ changed: false, checkComplete: true });
+    expect(route.calls.at(-1)).toContain('per_page=2');
+    edited = true;
+    const changed = await github.verifyScopes('ghp', verifyRequest('issuesAndPr', { mode: 'reread', maxPages: 3, baselineFingerprint: stable.fingerprint ?? null }));
+    expect(changed).toMatchObject({ changed: true, checkComplete: true });
   });
 });
