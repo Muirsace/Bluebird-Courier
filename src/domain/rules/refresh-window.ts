@@ -11,3 +11,15 @@ export function isRefreshDue(lastRefreshAt: string | Date | null | undefined, no
 }
 export const shouldRefresh = isRefreshDue;
 export const shouldSkipRefresh = (lastRefreshAt: string | Date | null | undefined, now: string | Date): boolean => !isRefreshDue(lastRefreshAt, now);
+
+/**
+ * 验证有效期是否已过：null 或无效时间视为需要验证；
+ * 时间点晚于 now（时钟回拨等异常）也按需要验证处理。now 由调用方传入。
+ */
+export function isVerificationExpired(lastCheckedAt: string | Date | null | undefined, now: string | Date, ttlMs: number): boolean {
+  if (lastCheckedAt == null) return true;
+  const checked = time(lastCheckedAt);
+  if (!Number.isFinite(checked)) return true;
+  const elapsed = time(now) - checked;
+  return elapsed < 0 || elapsed >= ttlMs;
+}

@@ -40,6 +40,8 @@ const GATEWAY_METHODS = [
   'refreshGlance',
   'refreshRepository',
   'fetchDetail',
+  'readLocalDetail',
+  'acknowledgeRepositoryViewed',
   'loadHistory',
   'trend',
   'openGitHubExternal',

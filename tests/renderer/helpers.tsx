@@ -94,6 +94,8 @@ export interface StubCalls {
   listRepositories: number;
   refreshGlance: number;
   fetchDetail: number;
+  readLocalDetail: number;
+  acknowledgeRepositoryViewed: number;
   addRepository: number;
   inspectRepositoryInput: number;
   removeRepository: number;
@@ -217,6 +219,8 @@ export function createStub(options: StubOptions = {}): StubHandle {
     listRepositories: 0,
     refreshGlance: 0,
     fetchDetail: 0,
+    readLocalDetail: 0,
+    acknowledgeRepositoryViewed: 0,
     addRepository: 0,
     inspectRepositoryInput: 0,
     removeRepository: 0,
@@ -295,6 +299,24 @@ export function createStub(options: StubOptions = {}): StubHandle {
       const repository = repositories.find((item) => item.id === repositoryId);
       if (!repository) return { detail: null, error: null };
       return { detail: makeDetail(repository, options.detail), error: null };
+    },
+    async readLocalDetail(repositoryId) {
+      calls.readLocalDetail += 1;
+      const repository = repositories.find((item) => item.id === repositoryId);
+      return {
+        repositoryId,
+        viewVersion: 1,
+        accessContextRevision: 1,
+        detail: repository ? makeDetail(repository, options.detail) : null,
+        syncState: {},
+        task: null,
+        truncated: false,
+        error: null,
+      };
+    },
+    async acknowledgeRepositoryViewed() {
+      calls.acknowledgeRepositoryViewed += 1;
+      return { ok: true, seenRevision: 0 };
     },
     async openGitHubExternal(target) {
       calls.openGitHubExternal += 1;

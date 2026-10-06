@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { BluebirdCourierBridge } from '../shared/types';
+import type { BluebirdCourierBridge, DisplayAcknowledgment, LocalReadRequest } from '../shared/types';
 import type { IpcChannelMap } from '../shared/ipc';
 
 /**
@@ -23,6 +23,8 @@ const CHANNELS: IpcChannelMap = {
   refreshGlance: 'octo:refreshGlance',
   refreshRepository: 'octo:refreshRepository',
   fetchDetail: 'octo:fetchDetail',
+  readLocalDetail: 'octo:readLocalDetail',
+  acknowledgeRepositoryViewed: 'octo:acknowledgeRepositoryViewed',
   loadHistory: 'octo:loadHistory',
   trend: 'octo:trend',
   openGitHubExternal: 'octo:openGitHubExternal',
@@ -45,6 +47,8 @@ const bridge = {
   refreshGlance: () => ipcRenderer.invoke(CHANNELS.refreshGlance),
   refreshRepository: (repositoryId: number, force?: boolean) => ipcRenderer.invoke(CHANNELS.refreshRepository, repositoryId, force),
   fetchDetail: (repositoryId: number) => ipcRenderer.invoke(CHANNELS.fetchDetail, repositoryId),
+  readLocalDetail: (repositoryId: number, request?: LocalReadRequest) => ipcRenderer.invoke(CHANNELS.readLocalDetail, repositoryId, request),
+  acknowledgeRepositoryViewed: (repositoryId: number, acknowledgment: DisplayAcknowledgment) => ipcRenderer.invoke(CHANNELS.acknowledgeRepositoryViewed, repositoryId, acknowledgment),
   loadHistory: (repositoryId: number, kind: 'commits' | 'issues' | 'pullRequests', cursor?: string) => ipcRenderer.invoke(CHANNELS.loadHistory, repositoryId, kind, cursor),
   trend: (repositoryId: number) => ipcRenderer.invoke(CHANNELS.trend, repositoryId),
   openGitHubExternal: (target: Parameters<BluebirdCourierBridge['openGitHubExternal']>[0]) => ipcRenderer.invoke(CHANNELS.openGitHubExternal, target),

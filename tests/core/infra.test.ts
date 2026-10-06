@@ -39,13 +39,16 @@ describe('主进程基础设施公开行为', () => {
     await expect(lock.runExclusive('repo:1', () => '恢复')).resolves.toBe('恢复');
   });
 
-  it('数据库迁移补齐详情缓存、栏目状态、批次游标和锁表', () => {
+  it('数据库迁移补齐详情缓存、栏目状态、批次游标、锁表与同步记账存储', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-core-'));
     const database = openDatabase(path.join(directory, 'app.db'));
     try {
       const tables = (database.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map((row) => row.name);
-      expect(tables).toEqual(expect.arrayContaining(['detail_cache', 'detail_column', 'refresh_batch', 'operation_lock']));
-      expect(database.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(2);
+      expect(tables).toEqual(expect.arrayContaining([
+        'detail_cache', 'detail_column', 'refresh_batch', 'operation_lock',
+        'access_context', 'detail_scope_state', 'observation_handoff', 'sync_task_target', 'cache_query_page',
+      ]));
+      expect(database.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(3);
     } finally {
       database.close();
       fs.rmSync(directory, { recursive: true, force: true });

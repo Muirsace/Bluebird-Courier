@@ -109,26 +109,94 @@ function migrationV2(database: MigrationDatabase): void {
   `);
 }
 
+function migrationV3(database: MigrationDatabase): void {
+  // 同步记账存储：只追加，不改写 V1/V2；旧缓存内容保留，缺少源基线的范围由默认值从 unknown 起步。
+  ensureColumns(database, 'repository', {
+    view_version: 'INTEGER NOT NULL DEFAULT 0',
+  });
+  ensureColumns(database, 'detail_cache', {
+    schema_version: 'INTEGER NOT NULL DEFAULT 1',
+    access_context_revision: 'INTEGER NOT NULL DEFAULT 0',
+  });
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS access_context (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT
+    );
+    INSERT OR IGNORE INTO access_context (id, revision, updated_at) VALUES (1, 0, NULL);
+
+    CREATE TABLE IF NOT EXISTS detail_scope_state (
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL,
+      cache_status TEXT NOT NULL DEFAULT 'missing',
+      freshness TEXT NOT NULL DEFAULT 'unknown',
+      check_status TEXT NOT NULL DEFAULT 'idle',
+      sync_status TEXT NOT NULL DEFAULT 'idle',
+      detected_revision INTEGER NOT NULL DEFAULT 0,
+      synced_revision INTEGER NOT NULL DEFAULT 0,
+      important_revision INTEGER NOT NULL DEFAULT 0,
+      viewed_revision INTEGER NOT NULL DEFAULT 0,
+      dirty_reasons TEXT NOT NULL DEFAULT '[]',
+      observed_fingerprint TEXT,
+      synced_fingerprint TEXT,
+      last_checked_at TEXT,
+      last_synced_at TEXT,
+      last_check_error TEXT,
+      last_sync_error TEXT,
+      PRIMARY KEY (repository_id, scope)
+    );
+
+    CREATE TABLE IF NOT EXISTS observation_handoff (
+      observation_id TEXT PRIMARY KEY,
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      detected_at TEXT NOT NULL,
+      access_context_revision INTEGER NOT NULL,
+      change_set TEXT NOT NULL,
+      applied_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_task_target (
+      task_id TEXT NOT NULL,
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      target_revision INTEGER NOT NULL,
+      baseline_fingerprint TEXT,
+      access_context_revision INTEGER NOT NULL,
+      task_version INTEGER NOT NULL,
+      started_at TEXT NOT NULL,
+      PRIMARY KEY (task_id, scope)
+    );
+
+    CREATE TABLE IF NOT EXISTS cache_query_page (
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL,
+      query_key TEXT NOT NULL,
+      access_context_revision INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      cursor TEXT,
+      next_cursor TEXT,
+      has_more INTEGER NOT NULL DEFAULT 0,
+      saved_at TEXT NOT NULL,
+      PRIMARY KEY (repository_id, scope, query_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_observation_handoff_pending ON observation_handoff(applied_at);
+    CREATE INDEX IF NOT EXISTS idx_sync_task_recovery ON sync_task_target(status);
+    CREATE INDEX IF NOT EXISTS idx_cache_query_page_saved ON cache_query_page(saved_at);
+  `);
+}
+
 /** 按版本递增，保持旧数据库可重复打开。 */
-export const MIGRATIONS = [migrationV1, migrationV2] as const;
+export const MIGRATIONS = [migrationV1, migrationV2, migrationV3] as const;
 export const migrationRunner = createMigrationRunner(MIGRATIONS);
 
+/** 生产唯一入口：委托给迁移执行器，内容与 user_version 的原子提交由 runner 保证。 */
 export function runMigrations(database: MigrationDatabase): void {
-  const current = Number(database.pragma('user_version', { simple: true }) ?? 0);
-  for (let version = current; version < MIGRATIONS.length; version += 1) {
-    const migration = MIGRATIONS[version];
-    if (!migration) continue;
-    if ('transaction' in database && typeof (database as { transaction?: unknown }).transaction === 'function') {
-      const connection = database as MigrationDatabase & { transaction<T>(work: () => T): () => T };
-      connection.transaction(() => {
-        migration(connection);
-        connection.pragma(`user_version = ${version + 1}`);
-      })();
-    } else {
-      migration(database);
-      database.pragma(`user_version = ${version + 1}`);
-    }
-  }
+  migrationRunner.run(database);
 }
 
 export function openDatabase(pathname: string): LocalDatabase {

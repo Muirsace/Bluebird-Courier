@@ -16,6 +16,8 @@ export const IPC_CHANNELS = {
   refreshGlance: 'octo:refreshGlance',
   refreshRepository: 'octo:refreshRepository',
   fetchDetail: 'octo:fetchDetail',
+  readLocalDetail: 'octo:readLocalDetail',
+  acknowledgeRepositoryViewed: 'octo:acknowledgeRepositoryViewed',
   loadHistory: 'octo:loadHistory',
   trend: 'octo:trend',
   openGitHubExternal: 'octo:openGitHubExternal',

@@ -2,15 +2,19 @@ import type {
   BuildInfo,
   BuildItem,
   CommitItem,
+  ContentVersion,
+  DetailScope,
   ErrorKind,
   Glance,
   GlanceValues,
   IssueItem,
+  PaginationCursor,
   PullRequestItem,
   ReadmeDocument,
   ReleaseItem,
   RepositoryMetadata,
   Snapshot,
+  SummaryObservation,
   TagItem,
   TreeEntry,
 } from './types';
@@ -102,3 +106,77 @@ export interface GlancePort { fetch(accessToken: string, fullName: string): Prom
 export interface DetailPort { fetch(accessToken: string, fullName: string): Promise<unknown>; }
 /** 摘要快照端口。 */
 export interface SnapshotPort { record(repositoryId: number, snapshot: Snapshot): Promise<void> | void; trend(repositoryId: number): Promise<Snapshot[]> | Snapshot[]; }
+
+// —— 仓库同步端口：归一化观察、范围验证与范围抓取（实现于后续步骤） ——
+
+/** 详情 feature 需要的仓库窄引用；不暴露清单存储。 */
+export interface RepositoryRef {
+  id: number;
+  fullName: string;
+  defaultBranch: string | null;
+}
+
+export interface RepositoryRefPort {
+  findById(repositoryId: number): RepositoryRef | null;
+}
+
+/**
+ * 轻量摘要观察端口：归一化摘要值、内容信号与活动候选。
+ * 观察时间由调用方传入（纯规则的时间来源不被适配器接管）。
+ */
+export interface SummaryObservationPort {
+  observeSummary(accessToken: string, fullName: string, observedAt: string): Promise<SummaryObservation>;
+}
+
+export interface ScopeVerifyRequest {
+  fullName: string;
+  scope: DetailScope;
+  /** 上次成功同步的指纹；null 表示没有可用基线，只能按完整检查判定。 */
+  baselineFingerprint: string | null;
+}
+
+/** 范围验证结果：checkComplete=false 表示检查区间未完成，不得宣布无变化。 */
+export interface ScopeVerification {
+  scope: DetailScope;
+  checkedAt: string;
+  /** 检查区间是否完整；预算耗尽、失败或分页未完成时为 false。 */
+  checkComplete: boolean;
+  changed: boolean;
+  fingerprint?: string;
+  version?: ContentVersion;
+}
+
+export interface ScopeFetchRequest {
+  fullName: string;
+  scope: DetailScope;
+  defaultBranch: string | null;
+  cursor: PaginationCursor;
+  /** 单次调用最多返回的条目数（有界读取由调用方给上限）。 */
+  limit: number;
+}
+
+/**
+ * 有界范围抓取结果。
+ * hasMore 表示还有更早的历史分页可继续读取（展示增量）；
+ * coverageComplete 表示目标范围是否被完整覆盖（可推进同步基线）。
+ * 两者是不同的事实：历史还有更多不代表本次覆盖完整，反之亦然。
+ */
+export interface ScopeFetchOutcome<T = unknown> {
+  scope: DetailScope;
+  items: T[];
+  /** 是否还有更早的历史分页可继续读取。 */
+  hasMore: boolean;
+  nextCursor: PaginationCursor;
+  /** 目标范围是否完整覆盖；未完成时不得推进同步基线，也不能宣布区间已验证。 */
+  coverageComplete: boolean;
+  observedAt: string;
+  version?: ContentVersion;
+}
+
+export interface ScopeVerificationPort {
+  verifyScopes(accessToken: string, request: ScopeVerifyRequest): Promise<ScopeVerification>;
+}
+
+export interface ScopeFetchPort {
+  fetchScope<T = unknown>(accessToken: string, request: ScopeFetchRequest): Promise<ScopeFetchOutcome<T>>;
+}

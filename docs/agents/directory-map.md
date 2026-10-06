@@ -110,33 +110,36 @@ src/  # 应用源代码
 │  └─ index.ts  # 暴露 BluebirdCourierBridge
 │
 └─ renderer/  # 页面、组件和展示映射
-   ├─ index.tsx  # 渲染进程入口
-   ├─ app.tsx  # 页面路由和界面级状态
+   ├─ index.html  # 渲染进程入口页面（vite root）
+   ├─ styles.css  # 样式总入口（内联 styles/ 分域文件）
+   ├─ assets/  # 品牌标记与图标资源
    ├─ pages/  # 页面级展示和路由入口
-   │  ├─ onboarding-page.tsx  # 首次 Token 设置和空清单
-   │  ├─ repository-list-page.tsx  # 清单、搜索、刷新和排序
-   │  ├─ repository-detail-page.tsx  # 仓库详情和分页
-   │  └─ settings-page.tsx  # Token 更换入口
+   │  ├─ App.tsx  # 页面路由、导航和界面级状态
+   │  ├─ WatchlistPage.tsx  # 清单、搜索、刷新和排序
+   │  ├─ DetailPage.tsx  # 仓库详情、Tab 与滚动协调
+   │  └─ SettingsPage.tsx  # Token 设置入口
    ├─ components/  # 可复用界面组件
-   │  ├─ token-form.tsx  # Token 输入和验证
-   │  ├─ token-replace-dialog.tsx  # 清空资料二次确认
-   │  ├─ repository-card.tsx  # 仓库摘要卡片
-   │  ├─ repository-list.tsx  # 清单布局
-   │  ├─ refresh-toolbar.tsx  # 刷新和重试操作
-   │  ├─ detail-header.tsx  # 详情头部和 GitHub 出口
-   │  ├─ detail-section.tsx  # 单个详情栏目
-   │  ├─ detail-section-state.tsx  # 栏目状态展示
-   │  ├─ history-loader.tsx  # 历史分页加载
-   │  ├─ trend-chart.tsx  # Star/Fork 趋势图
-   │  ├─ failure-banner.tsx  # 失败信息提示
-   │  ├─ empty-state.tsx  # 空状态展示
-   │  └─ loading-state.tsx  # 加载状态展示
+   │  ├─ detail/  # 详情表头、Tab 与各栏目组件
+   │  ├─ watchlist/  # 清单行、新增表单和操作浮层
+   │  ├─ shell/  # 桌面 / 单栏外壳与页面宿主
+   │  └─ *.tsx  # 通用组件（加载、空态、错误条等）
    └─ lib/  # 桥接调用、格式化和展示辅助
-      ├─ bridge.ts  # 调用 BluebirdCourierBridge
-      ├─ display-mappers.ts  # shared 结果展示映射
-      ├─ formatters.ts  # 时间、数量和状态格式化
-      ├─ chart-config.ts  # 趋势图配置
-      └─ app-state.ts  # 界面状态管理
+      ├─ main.tsx  # 渲染进程挂载入口
+      ├─ api.ts  # 调用 BluebirdCourierBridge 的唯一数据入口
+      ├─ theme.tsx  # 主题 Provider 与偏好保存
+      ├─ format.ts  # 时间、数量和状态格式化
+      ├─ time.ts  # 相对时间与共享低频时钟
+      ├─ errors.ts  # 错误文案映射
+      ├─ app-layout.ts  # 布局模式判定
+      ├─ app-scroll-root.ts  # 滚动归属解析
+      ├─ motion.ts  # 动画预算常量
+      ├─ detail-reveal.ts  # 详情揭示状态
+      ├─ overlay-placement.ts  # 浮层定位
+      ├─ trend.ts / release.ts  # 趋势与发版展示映射
+      ├─ chart-theme.ts  # 图表主题
+      ├─ external-link.ts  # 外链调用辅助
+      ├─ repo-input.ts  # 新增输入展示辅助
+      └─ window-chrome.ts  # 窗口控制覆盖层辅助
 
 ```
 
@@ -268,35 +271,32 @@ src/  # 应用源代码
 - `main/index.ts`：唯一组合根。创建基础设施、GitHub adapters、feature implementation、facade，并完成依赖注入。每个 feature 的 `implementation/create.ts` 必须由这里通过静态 named import 或 default import 获取可调用创建入口，并直接以函数调用表达式调用；其他文件不得创建 feature 实例。
 - `main/ipc.ts`：只注册通道、转发参数、返回 facade 结果。
 - `preload/index.ts`：只通过 `contextBridge` 暴露受限的 `window.bluebirdCourier`。
-- `renderer/index.tsx`：渲染进程入口。
-- `renderer/app.tsx`：页面路由和界面级状态。
+- `renderer/index.html` 与 `renderer/lib/main.tsx`：渲染进程入口页面与挂载。
+- `renderer/pages/App.tsx`：页面路由和界面级状态。
 
 `renderer` 通过 preload 桥接访问主进程，只依赖 `shared` 和允许的展示库。它不 import `main`、`domain`、Electron 主进程模块或 Node 后端模块。
 
 ## `renderer`
 
-- `pages/onboarding-page.tsx`：首次 Token 设置和空清单。
-- `pages/repository-list-page.tsx`：清单、搜索、刷新、排序和失败状态。
-- `pages/repository-detail-page.tsx`：详情栏目、缓存提示、分页和 GitHub 网页出口。
-- `pages/settings-page.tsx`：Token 更换入口。
-- `components/token-form.tsx`：Token 输入和验证。
-- `components/token-replace-dialog.tsx`：清空本地资料的二次确认。
-- `components/repository-card.tsx`：单仓库摘要卡片。
-- `components/repository-list.tsx`：清单布局。
-- `components/refresh-toolbar.tsx`：启动刷新、全部刷新和重试按钮。
-- `components/detail-header.tsx`：仓库身份、更新时间和原始页面入口。
-- `components/detail-section.tsx`：单个详情栏目。
-- `components/detail-section-state.tsx`：加载中、成功、无内容、无权、失败和暂不支持状态。
-- `components/history-loader.tsx`：加载更早的 Commit、Issue、PR。
-- `components/trend-chart.tsx`：Star/Fork 趋势图。
-- `components/failure-banner.tsx`：失败原因、来源和上次成功时间。
-- `components/empty-state.tsx`：空清单和无旧资料状态。
-- `components/loading-state.tsx`：批次、单仓库和详情加载状态。
-- `lib/bridge.ts`：调用 `window.bluebirdCourier`。
-- `lib/display-mappers.ts`：把 shared 结果映射成组件展示模型。
-- `lib/formatters.ts`：格式化时间、数量、错误和状态文案。
-- `lib/chart-config.ts`：趋势图配置。
-- `lib/app-state.ts`：管理界面状态，不实现业务规则。
+- `pages/App.tsx`：页面路由、导航方向与界面级状态（无 Router，视图状态内聚）。
+- `pages/WatchlistPage.tsx`：清单、搜索、刷新、排序、新增与删除交互。
+- `pages/DetailPage.tsx`：详情栏目、缓存提示、Tab 切换与滚动协调。
+- `pages/SettingsPage.tsx`：Token 配置入口与主题设置区。
+- `components/detail/`：详情表头（桌面 / 单栏）、Tab、概览与各栏目组件（含趋势）。
+- `components/watchlist/`：清单行、侧栏行、新增表单、操作浮层与 Motion 包装。
+- `components/shell/`：桌面 / 单栏外壳、页面宿主与侧栏头部。
+- `components/*.tsx`：通用组件（加载、空态、错误条、主题选择器、过渡等）。
+- `lib/main.tsx`：渲染进程挂载入口。
+- `lib/api.ts`：读取 `window.bluebirdCourier` 的唯一数据入口。
+- `lib/theme.tsx`：主题 Provider 与偏好保存。
+- `lib/format.ts`、`lib/time.ts`：时间、数量、状态格式化与相对时间。
+- `lib/errors.ts`：错误展示文案映射。
+- `lib/app-layout.ts`、`lib/app-scroll-root.ts`：布局模式判定与滚动归属解析。
+- `lib/detail-reveal.ts`、`lib/motion.ts`：详情揭示状态与动画预算常量。
+- `lib/overlay-placement.ts`、`lib/repo-input.ts`、`lib/release.ts`：浮层定位、输入与发版展示辅助。
+- `lib/trend.ts`、`lib/chart-theme.ts`：趋势数据映射与图表主题。
+- `lib/external-link.ts`、`lib/window-chrome.ts`：外链调用与窗口控制覆盖层辅助。
+- `styles/`、`styles.css`、`assets/`：分域样式、样式总入口与品牌资源。
 
 ## 实现顺序
 

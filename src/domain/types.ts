@@ -41,6 +41,8 @@ export interface Glance {
   latestTag?: string | null;
   collaborationAt?: string | null;
   activityAt?: string | null;
+  /** 主进程聚合的活动类型；显示与悬停说明只依据该结果。 */
+  activityKind?: ActivityKind | null;
   status?: RepositoryStatus;
   failure?: NormalizedError | null;
   lastSucceededAt?: string | null;
@@ -161,3 +163,149 @@ export type GitHubExternalTarget =
   | { kind: 'build'; owner: string; name: string; url: string };
 export interface OpenExternalResult { ok: boolean; reason: 'invalid_target' | 'open_failed' | null; }
 export interface ExternalLinkBridge { openGitHubExternal(target: GitHubExternalTarget): Promise<OpenExternalResult>; }
+
+// —— 仓库同步：已检查信号、范围状态、变化、观察与任务 ——
+
+/** 活动类型；同一时间多个来源时按固定优先级选择悬停说明。 */
+export type ActivityKind = 'code' | 'release' | 'pull-request' | 'issue';
+
+/** 归一化活动候选：是否重要与时间有效性由调用方给出，聚合规则只做纯选择。 */
+export interface ActivityCandidate {
+  kind: ActivityKind;
+  at: string | null;
+  important: boolean;
+}
+
+/** 主进程聚合后的统一活动结果；卡片显示、悬停说明与清单排序使用同一结果。 */
+export interface RepoActivity {
+  at: string | null;
+  kind: ActivityKind | null;
+}
+
+/**
+ * 已检查信号：known 表示成功确认（value 可为 null，即"确认没有"）；
+ * unknown 表示未检查或检查失败。两者不能混为同一个 null。
+ */
+export type CheckedSignal<T> =
+  | { state: 'known'; value: T | null; checkedAt: string }
+  | { state: 'unknown'; error?: string };
+
+/** 观察到的内容版本信号（已确认值）；未确认为 null 且由信号状态另行表达。 */
+export interface ContentVersion {
+  defaultBranch: string | null;
+  headRevision: string | null;
+  releaseRevision: string | null;
+  tagRevision: string | null;
+}
+
+/** 同步记账范围；趋势是本地快照视图，不产生远端请求。 */
+export type DetailScope = 'overview' | 'releases' | 'commits' | 'issuesAndPr' | 'builds' | 'readme' | 'tree' | 'trends';
+
+export type CacheStatus = 'missing' | 'valid' | 'invalid';
+export type Freshness = 'fresh' | 'stale' | 'unknown';
+export type RequestStatus = 'idle' | 'queued' | 'running' | 'error';
+
+/** 单个范围的持久化同步状态；缓存状态、新鲜度与请求状态各自独立。 */
+export interface ScopeSyncState {
+  cacheStatus: CacheStatus;
+  freshness: Freshness;
+  checkStatus: RequestStatus;
+  syncStatus: RequestStatus;
+  detectedRevision: number;
+  syncedRevision: number;
+  importantRevision: number;
+  viewedRevision: number;
+  dirtyReasons: string[];
+  observedFingerprint?: string;
+  syncedFingerprint?: string;
+  lastCheckedAt?: string;
+  lastSyncedAt?: string;
+  lastCheckError?: string;
+  lastSyncError?: string;
+}
+
+/** 单仓库同步汇总；重启后从持久化基线恢复，旧 running 不作为运行中任务。 */
+export interface RepoSyncState {
+  repoId: number;
+  summaryFetchedAt?: string;
+  detailFetchedAt?: string;
+  scopes: Partial<Record<DetailScope, ScopeSyncState>>;
+  lastImportantChangeAt?: string;
+  lastViewedAt?: string;
+  hasUnseenUpdates: boolean;
+}
+
+/** 一次观察与上次基线的差异；只描述变化与覆盖范围，不执行网络请求。 */
+export interface RepoChangeSet {
+  repoId: number;
+  starsChanged: boolean;
+  forksChanged: boolean;
+  headChanged: boolean;
+  releaseChanged: boolean;
+  tagChanged: boolean;
+  issuesChanged: boolean;
+  buildsChanged: boolean;
+  defaultBranchChanged: boolean;
+  previousHeadRevision: string | null;
+  currentHeadRevision: string | null;
+  /** 受影响范围；仅指标变化为空数组。 */
+  affectedScopes: DetailScope[];
+  detectedAt: string;
+}
+
+/** 归一化观察：摘要值 + 已检查信号 + 活动候选；不含平台原始字段。 */
+export interface RepositoryObservation {
+  repoId: number;
+  fullName: string;
+  observedAt: string;
+  accessContextRevision: number;
+  values: GlanceValues;
+  signals: {
+    defaultBranch: CheckedSignal<string>;
+    headRevision: CheckedSignal<string>;
+    releaseRevision: CheckedSignal<string>;
+    tagRevision: CheckedSignal<string>;
+  };
+  activity: {
+    code: ActivityCandidate;
+    release: ActivityCandidate;
+    collaboration: ActivityCandidate;
+  };
+}
+
+/** 端口返回的观察不含仓库 ID，由所属 feature 补齐后再持久化。 */
+export type SummaryObservation = Omit<RepositoryObservation, 'repoId'>;
+
+/** 清单到详情的持久化交接单元；按 observationId 幂等应用，重放不重复递增序号。 */
+export interface ObservationHandoff {
+  observationId: string;
+  repoId: number;
+  detectedAt: string;
+  accessContextRevision: number;
+  changeSet: RepoChangeSet;
+}
+
+/** 任务在单个范围上的目标：目标序号与启动时的覆盖基线。 */
+export interface TaskScopeTarget {
+  targetRevision: number;
+  /** 任务启动时该范围的已同步指纹；null 表示任务前无基线。 */
+  baselineFingerprint: string | null;
+}
+
+/** 同步任务上下文；写入前校验仓库存在、访问上下文一致且任务版本未被更新任务超越。 */
+export interface TaskContext {
+  taskId: string;
+  repoId: number;
+  kind: 'open' | 'check' | 'force' | 'scope';
+  /** 各范围的目标序号与覆盖基线；成功后只确认实际覆盖到的范围与版本。 */
+  targets: Partial<Record<DetailScope, TaskScopeTarget>>;
+  accessContextRevision: number;
+  taskVersion: number;
+  startedAt: string;
+}
+
+/** 部分确认输入：列出本次实际覆盖到的范围及其目标版本。 */
+export interface ScopeConfirmation {
+  syncedAt: string;
+  scopes: Array<{ scope: DetailScope; targetRevision: number }>;
+}
