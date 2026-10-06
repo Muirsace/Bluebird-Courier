@@ -169,11 +169,22 @@ export interface ExternalLinkBridge { openGitHubExternal(target: GitHubExternalT
 /** 活动类型；同一时间多个来源时按固定优先级选择悬停说明。 */
 export type ActivityKind = 'code' | 'release' | 'pull-request' | 'issue';
 
-/** 归一化活动候选：是否重要与时间有效性由调用方给出，聚合规则只做纯选择。 */
+/** 归一化活动候选：适配器只保留源信息与检查结果，重要性由 domain/feature 判定。 */
 export interface ActivityCandidate {
   kind: ActivityKind;
   at: string | null;
-  important: boolean;
+  /**
+   * 是否重要（影响聚合、显示与圆点）；缺省表示尚未判定。
+   * 适配器不设置该字段，由 domain/feature 按业务规则标记。
+   */
+  important?: boolean;
+  /**
+   * 源时间是否被直接读到：true = 成功读取源时间（发版时间 / 协作更新时间）；
+   * false = 辅助线索（如 pushedAt 未经默认分支验证）或本次未读到。
+   */
+  verified: boolean;
+  /** 协作来源的状态（仅 Issue / PR 候选提供），供重要性分类区分噪声。 */
+  state?: 'open' | 'closed';
 }
 
 /** 主进程聚合后的统一活动结果；卡片显示、悬停说明与清单排序使用同一结果。 */
@@ -267,8 +278,11 @@ export interface RepositoryObservation {
     tagRevision: CheckedSignal<string>;
   };
   activity: {
+    /** 代码候选：pushedAt 为推送线索（verified=false），默认分支 HEAD 的验证结果见 signals。 */
     code: ActivityCandidate;
+    /** 发版候选：发版实际发生时间（verified=true）。 */
     release: ActivityCandidate;
+    /** 协作候选：区分 Issue / PR（verified=true）；失败或确认无活动时 at 为 null。 */
     collaboration: ActivityCandidate;
   };
 }

@@ -21,7 +21,7 @@ interface RawRepo {
 interface RawRef { object?: { sha?: unknown } | null }
 interface RawRelease { tag_name?: unknown; name?: unknown; published_at?: unknown }
 interface RawTag { name?: unknown; commit?: { sha?: unknown } | null }
-interface RawIssue { updated_at?: unknown }
+interface RawIssue { updated_at?: unknown; state?: unknown; pull_request?: unknown }
 
 function repositoryPath(fullName: string): string {
   const pieces = fullName.split('/');
@@ -100,11 +100,12 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
     });
   }
 
-  function fetchCollaborationAt(accessToken: string, fullName: string): Promise<string | null> {
+  function fetchCollaborationProbe(accessToken: string, fullName: string): Promise<{ at: string; state: 'open' | 'closed'; pullRequest: boolean } | null> {
     return client.request(accessToken, `${repositoryPath(fullName)}/issues?state=all&sort=updated&direction=desc&per_page=1`, (json) => {
       if (!Array.isArray(json)) throw new TypeError('Issue 响应格式无效');
       const first = json[0] as RawIssue | undefined;
-      return first && typeof first.updated_at === 'string' ? first.updated_at : null;
+      if (!first || typeof first.updated_at !== 'string') return null; // 成功确认没有协作活动
+      return { at: first.updated_at, state: first.state === 'closed' ? 'closed' : 'open', pullRequest: first.pull_request !== undefined };
     });
   }
 
@@ -150,10 +151,11 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
         checked<{ tagName: string; title: string; publishedAt: string | null } | null>(() => fetchRelease(accessToken, fullName), observedAt),
         checked<{ name: string; commitSha: string | null } | null>(() => fetchLatestTag(accessToken, fullName), observedAt),
       ]);
-      const collaborationAt = await checked<string | null>(() => fetchCollaborationAt(accessToken, fullName), observedAt);
+      const collaboration = await checked<{ at: string; state: 'open' | 'closed'; pullRequest: boolean } | null>(() => fetchCollaborationProbe(accessToken, fullName), observedAt);
 
       const releaseValue = release.state === 'known' ? release.value : null;
       const tagValue = tag.state === 'known' ? tag.value : null;
+      const collaborationValue = collaboration.state === 'known' ? collaboration.value : null;
       const releaseRevision: CheckedSignal<string> = release.state === 'known'
         ? { state: 'known', value: releaseValue === null ? null : releaseFingerprint(releaseValue), checkedAt: observedAt }
         : release;
@@ -172,7 +174,7 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
           pushedAt: meta.pushedAt,
           latestReleaseTag: releaseValue?.tagName ?? tagValue?.name ?? null,
           latestTag: tagValue?.name ?? null,
-          collaborationAt: collaborationAt.state === 'known' ? collaborationAt.value : null,
+          collaborationAt: collaborationValue?.at ?? null,
           status: meta.status ?? 'active',
         },
         signals: {
@@ -182,9 +184,14 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
           tagRevision,
         },
         activity: {
-          code: { kind: 'code', at: meta.pushedAt, important: true },
-          release: { kind: 'release', at: releaseValue?.publishedAt ?? null, important: true },
-          collaboration: { kind: 'issue', at: collaborationAt.state === 'known' ? collaborationAt.value : null, important: true },
+          // 代码候选：pushedAt 只是推送线索；默认分支 HEAD 的检查结果在 signals.headRevision
+          code: { kind: 'code', at: meta.pushedAt, verified: false },
+          // 发版候选：发版实际发生时间，直接读到
+          release: { kind: 'release', at: releaseValue?.publishedAt ?? null, verified: true },
+          // 协作候选：区分 Issue / PR 并保留状态；失败或确认无活动时 at 为 null（失败的保留策略在调用方）
+          collaboration: collaborationValue === null
+            ? { kind: 'issue', at: null, verified: false }
+            : { kind: collaborationValue.pullRequest ? 'pull-request' : 'issue', at: collaborationValue.at, verified: true, state: collaborationValue.state },
         },
       };
     },

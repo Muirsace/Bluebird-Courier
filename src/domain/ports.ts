@@ -176,6 +176,8 @@ export interface ScopeFetchRequest {
  * hasMore 表示还有更早的历史分页可继续读取（展示增量）；
  * coverageComplete 表示目标范围是否被完整覆盖（可推进同步基线）。
  * 两者是不同的事实：历史还有更多不代表本次覆盖完整，反之亦然。
+ * 部分失败时仍返回可继续读取的 nextCursor（重试用）与各来源 parts，
+ * 但 coverageComplete=false，不得据此确认完整覆盖。
  */
 export interface ScopeFetchOutcome<T = unknown> {
   scope: DetailScope;
@@ -188,6 +190,23 @@ export interface ScopeFetchOutcome<T = unknown> {
   observedAt: string;
   version?: ContentVersion;
   accessContextRevision: number;
+  /**
+   * 适配器生成的不透明指纹：本次采集可作为后续验证基线（feature 原样保存）。
+   * 指纹的存在不代表"已验证旧内容无变化"；只表示"从这里开始可以比较"。
+   */
+  fingerprint?: string;
+  /** 范围内多来源（releases/tags、issues/pullRequests）各自的成功与分页状态。 */
+  parts?: Partial<Record<ScopePartName, ScopePartResult>>;
+}
+
+export type ScopePartName = 'releases' | 'tags' | 'issues' | 'pullRequests';
+
+export interface ScopePartResult {
+  ok: boolean;
+  hasMore: boolean;
+  nextCursor: PaginationCursor;
+  /** 该来源本次覆盖窗口的不透明指纹；失败或未在窗口起点读取时不提供。 */
+  fingerprint?: string;
 }
 
 /** overview 范围的归一化内容：摘要值与元数据；不含平台原始字段。 */

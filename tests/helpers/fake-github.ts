@@ -248,9 +248,10 @@ export class FakeGitHub implements GitHubPort {
         tagRevision: maybe('tag', tagName),
       },
       activity: {
-        code: { kind: 'code', at: data.meta.pushedAt, important: true },
-        release: { kind: 'release', at: data.latestRelease?.publishedAt ?? null, important: true },
-        collaboration: { kind: 'issue', at: null, important: true },
+        // 与真实适配器一致：只保留源信息与检查结果，重要性由 domain/feature 判定
+        code: { kind: 'code', at: data.meta.pushedAt, verified: false },
+        release: { kind: 'release', at: data.latestRelease?.publishedAt ?? null, verified: true },
+        collaboration: { kind: 'issue', at: null, verified: false },
       },
     };
   }

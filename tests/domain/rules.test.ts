@@ -82,9 +82,9 @@ function makeObservation(options: {
       tagRevision: options.tagState === 'unknown' ? { state: 'unknown' } : known(options.tag === undefined ? null : options.tag),
     },
     activity: {
-      code: { kind: 'code', at: null, important: true },
-      release: { kind: 'release', at: null, important: true },
-      collaboration: { kind: 'issue', at: null, important: true },
+      code: { kind: 'code', at: null, important: true, verified: true },
+      release: { kind: 'release', at: null, important: true, verified: true },
+      collaboration: { kind: 'issue', at: null, important: true, verified: true },
     },
   };
 }
@@ -351,24 +351,26 @@ describe('仓库同步规则（步骤 1）', () => {
   it('活动时间由候选聚合，显示与排序使用同一结果', () => {
     const now = '2026-10-06T12:00:00Z';
     const resolved = resolveActivity([
-      { kind: 'code', at: '2026-10-06T10:00:00Z', important: true },
-      { kind: 'issue', at: '2026-10-06T11:30:00Z', important: true },
-      { kind: 'release', at: '2026-10-06T09:00:00Z', important: true },
+      { kind: 'code', at: '2026-10-06T10:00:00Z', important: true, verified: true },
+      { kind: 'issue', at: '2026-10-06T11:30:00Z', important: true, verified: true },
+      { kind: 'release', at: '2026-10-06T09:00:00Z', important: true, verified: true },
     ], now);
     expect(resolved).toEqual({ at: '2026-10-06T11:30:00Z', kind: 'issue' });
 
     const tied = resolveActivity([
-      { kind: 'code', at: '2026-10-06T10:00:00Z', important: true },
-      { kind: 'release', at: '2026-10-06T10:00:00Z', important: true },
+      { kind: 'code', at: '2026-10-06T10:00:00Z', important: true, verified: true },
+      { kind: 'release', at: '2026-10-06T10:00:00Z', important: true, verified: true },
     ], now);
     expect(tied).toEqual({ at: '2026-10-06T10:00:00Z', kind: 'release' });
 
-    expect(resolveActivity([{ kind: 'code', at: '2026-10-06T10:00:00Z', important: false }], now)).toEqual({ at: null, kind: null });
-    expect(resolveActivity([{ kind: 'code', at: '不是时间', important: true }], now)).toEqual({ at: null, kind: null });
-    expect(resolveActivity([{ kind: 'code', at: '2026-10-07T00:00:00Z', important: true }], now)).toEqual({ at: null, kind: null });
+    expect(resolveActivity([{ kind: 'code', at: '2026-10-06T10:00:00Z', important: false, verified: true }], now)).toEqual({ at: null, kind: null });
+    // 未判定重要性（适配器缺省）不参与聚合，由 domain/feature 标记后才进入
+    expect(resolveActivity([{ kind: 'code', at: '2026-10-06T10:00:00Z', verified: false }], now)).toEqual({ at: null, kind: null });
+    expect(resolveActivity([{ kind: 'code', at: '不是时间', important: true, verified: true }], now)).toEqual({ at: null, kind: null });
+    expect(resolveActivity([{ kind: 'code', at: '2026-10-07T00:00:00Z', important: true, verified: true }], now)).toEqual({ at: null, kind: null });
     expect(resolveActivity([], now)).toEqual({ at: null, kind: null });
 
-    const older = resolveActivity([{ kind: 'code', at: '2026-10-06T08:00:00Z', important: true }], now);
+    const older = resolveActivity([{ kind: 'code', at: '2026-10-06T08:00:00Z', important: true, verified: true }], now);
     const none = resolveActivity([], now);
     expect(compareResolvedActivity(resolved, older)).toBeLessThan(0);
     expect(compareResolvedActivity(older, none)).toBeLessThan(0);
