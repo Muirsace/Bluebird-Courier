@@ -26,4 +26,21 @@ export function writePreferences(db: LocalDatabase, patch: Record<string, string
   transaction();
 }
 
+/** 当前访问上下文版本；旧库升级后首行为 0（初始上下文）。 */
+export function readAccessContextRevision(db: LocalDatabase): number {
+  const row = db.prepare('SELECT revision FROM access_context WHERE id = 1').get() as { revision: number } | undefined;
+  return row?.revision ?? 0;
+}
+
+/** 推进访问上下文版本（成功更换令牌后调用）；在事务内自增并返回新版本。 */
+export function advanceAccessContextRevision(db: LocalDatabase, updatedAt: string): number {
+  const advance = db.transaction(() => {
+    db.prepare(
+      'INSERT INTO access_context (id, revision, updated_at) VALUES (1, 1, ?) ON CONFLICT(id) DO UPDATE SET revision = revision + 1, updated_at = excluded.updated_at',
+    ).run(updatedAt);
+    return readAccessContextRevision(db);
+  });
+  return advance();
+}
+
 export { ACCESS_TOKEN_KEY };

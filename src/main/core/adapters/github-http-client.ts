@@ -4,6 +4,8 @@ const API_BASE = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 const USER_AGENT = 'bluebird-courier';
 const REQUEST_TIMEOUT_MS = 10_000;
+/** 统一并发上限：所有 GitHub adapter 共用一个 client 实例时共享该闸门。 */
+export const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 
 export class GitHubHttpError extends Error {
   constructor(readonly status: number, readonly headers: Record<string, string>) {
@@ -46,26 +48,59 @@ export function mapGitHubError(error: unknown, now: () => number = Date.now): Po
     if (error.status === 403 || error.status === 404) return new PortFailure('not_found', '仓库不存在或无权访问');
     return new PortFailure('unknown', `抓取失败（HTTP ${error.status}）`);
   }
-  if (isAbortFailure(error)) return new PortFailure('network', '网络请求超时，请检查网络后重试');
+  if (isAbortFailure(error)) return new PortFailure('network', '网络请求超时或已取消，请检查网络后重试');
   if (error instanceof TypeError) return new PortFailure('network', '网络失败，请检查网络后重试');
   return new PortFailure('unknown', '发生未知错误');
 }
 
-export interface GitHubHttpClient {
-  request<T>(accessToken: string, apiPath: string, map: (json: unknown) => T, onNotFound?: () => T): Promise<T>;
+export interface GitHubRequestOptions {
+  /** 调用方取消信号（如页面离开）；与超时信号合并，任一触发即中止。 */
+  signal?: AbortSignal;
 }
 
-/** GitHub REST 的传输封装：只处理认证、超时、HTTP 与失败归一。 */
+export interface GitHubHttpClient {
+  request<T>(accessToken: string, apiPath: string, map: (json: unknown) => T, onNotFound?: () => T, options?: GitHubRequestOptions): Promise<T>;
+}
+
+/**
+ * GitHub REST 的传输封装：只处理认证、并发闸门、超时、HTTP 与失败归一。
+ * 并发闸门按请求计数；中止、超时或异常都会释放名额，不会泄漏资源。
+ */
 export function createGitHubHttpClient(
   fetchImpl: typeof fetch = fetch,
   timeoutMs = REQUEST_TIMEOUT_MS,
   now: () => number = Date.now,
+  maxConcurrent = DEFAULT_MAX_CONCURRENT_REQUESTS,
 ): GitHubHttpClient {
+  let active = 0;
+  const waiters: Array<() => void> = [];
+
+  function acquire(): Promise<void> {
+    if (active < maxConcurrent) {
+      active += 1;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      waiters.push(() => {
+        active += 1;
+        resolve();
+      });
+    });
+  }
+
+  function release(): void {
+    active -= 1;
+    waiters.shift()?.();
+  }
+
   return {
-    async request<T>(accessToken: string, apiPath: string, map: (json: unknown) => T, onNotFound?: () => T): Promise<T> {
+    async request<T>(accessToken: string, apiPath: string, map: (json: unknown) => T, onNotFound?: () => T, options?: GitHubRequestOptions): Promise<T> {
+      await acquire();
       try {
+        const timeoutSignal = AbortSignal.timeout(timeoutMs);
+        const signal = options?.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal;
         const response = await fetchImpl(`${API_BASE}${apiPath}`, {
-          signal: AbortSignal.timeout(timeoutMs),
+          signal,
           headers: {
             Authorization: `Bearer ${accessToken}`,
             Accept: 'application/vnd.github+json',
@@ -82,8 +117,9 @@ export function createGitHubHttpClient(
         return map(await response.json());
       } catch (error) {
         throw mapGitHubError(error, now);
+      } finally {
+        release();
       }
     },
   };
 }
-

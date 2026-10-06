@@ -1,4 +1,4 @@
-import type { Glance, GlanceValues, RepoInputResult, NormalizedError, FetchedGlance } from '../../../../domain/types';
+import type { Glance, GlanceValues, RepoInputResult, NormalizedError, FetchedGlance, ObservationHandoff } from '../../../../domain/types';
 
 export interface AddRepositoryInput {
   fullName: string;
@@ -36,4 +36,14 @@ export interface RepositoryListService {
   add(values: FetchedGlance): Glance;
   remove(id: unknown): { removed: boolean; fullName?: string };
   clear(): void;
+  /**
+   * 读取待交接的清单观察（按检测时间升序，最多 limit 条）。
+   * 由清单 feature 事务保存、facade 取给详情应用；步骤 6 实现（当前为 undefined，不返回空成功）。
+   */
+  pendingObservations?(limit?: number): ObservationHandoff[];
+  /**
+   * 确认某条观察已由详情应用（幂等；重复确认或不存在返回 false）。
+   * 步骤 6 实现（当前为 undefined）。
+   */
+  confirmObservationHandoff?(observationId: string): boolean;
 }

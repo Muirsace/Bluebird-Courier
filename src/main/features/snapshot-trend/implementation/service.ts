@@ -19,6 +19,9 @@ export function createSnapshotTrendService({ db, clock }: SnapshotTrendDependenc
     });
     write();
   };
+  const recordObserved = (repositoryId: number, values: GlanceValues, observedAt: string | Date): void => {
+    record(repositoryId, values, observedAt instanceof Date ? observedAt : new Date(observedAt));
+  };
   const retain = (repositoryId?: number, now = clock.now()): void => retention.retain(repositoryId, now);
-  return { record, retain, trend: query.trend, listSnapshots: query.listSnapshots, remove: retention.remove, clear: retention.clear };
+  return { record, recordObserved, retain, trend: query.trend, listSnapshots: query.listSnapshots, remove: retention.remove, clear: retention.clear };
 }

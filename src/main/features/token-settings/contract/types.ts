@@ -18,4 +18,11 @@ export interface TokenSettingsService {
   cancelReplace(): TokenOperationResult;
   getSettings(): SettingsState;
   updateSettings(patch: unknown): SettingsState;
+  /** 当前访问上下文版本（0 = 初始上下文）；缓存身份与指纹按此版本隔离。 */
+  accessContextRevision(): number;
+  /**
+   * 成功更换令牌后推进访问上下文版本并返回新版本；时间由调用方提供。
+   * 具体清理编排由 facade 负责（步骤 9）。
+   */
+  advanceAccessContext(updatedAt: string): number;
 }

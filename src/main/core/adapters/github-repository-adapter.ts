@@ -1,5 +1,5 @@
 import type { RepoMeta } from '../../../domain/ports';
-import type { RepositoryMetadata } from '../../../domain/types';
+import type { CheckedSignal, ReleaseItem, RepositoryMetadata, SummaryObservation } from '../../../domain/types';
 import type { GitHubHttpClient } from './github-http-client';
 
 interface RawRepo {
@@ -18,6 +18,11 @@ interface RawRepo {
   default_branch?: string | null;
 }
 
+interface RawRef { object?: { sha?: unknown } | null }
+interface RawRelease { tag_name?: unknown; name?: unknown; published_at?: unknown }
+interface RawTag { name?: unknown; commit?: { sha?: unknown } | null }
+interface RawIssue { updated_at?: unknown }
+
 function repositoryPath(fullName: string): string {
   const pieces = fullName.split('/');
   if (pieces.length !== 2 || pieces.some((piece) => !/^[A-Za-z0-9._-]+$/.test(piece) || piece === '.' || piece === '..')) {
@@ -26,26 +31,85 @@ function repositoryPath(fullName: string): string {
   return `/repos/${pieces.map(encodeURIComponent).join('/')}`;
 }
 
+function encodedBranch(branch: string): string {
+  return branch.split('/').map(encodeURIComponent).join('/');
+}
+
+function releaseFingerprint(release: { tagName: string; title: string; publishedAt: string | null }): string {
+  // 覆盖页面关心的编辑字段：同一 Release 被编辑（标题 / 时间变化）也会产生新指纹。
+  return JSON.stringify([release.tagName, release.title, release.publishedAt]);
+}
+
+/** 单信号失败隔离：失败时记为 unknown，不拖垮整次观察，也不冒充"确认不存在"。 */
+async function checked<T>(work: () => Promise<T>, checkedAt: string): Promise<CheckedSignal<T>> {
+  try {
+    return { state: 'known', value: await work(), checkedAt };
+  } catch (error) {
+    return { state: 'unknown', error: error instanceof Error ? error.message : '检查失败' };
+  }
+}
+
 /** GitHub 仓库元数据与外部状态协议适配。 */
 export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
+  function fetchRepositoryMeta(accessToken: string, fullName: string): Promise<RepoMeta> {
+    return client.request(accessToken, repositoryPath(fullName), (json) => {
+      if (typeof json !== 'object' || json === null) throw new TypeError('仓库响应格式无效');
+      const repo = json as Partial<RawRepo>;
+      if (typeof repo.full_name !== 'string' || !Number.isFinite(repo.stargazers_count) ||
+          !Number.isFinite(repo.forks_count) || !Number.isFinite(repo.open_issues_count)) {
+        throw new TypeError('仓库响应缺少必要字段');
+      }
+      return {
+        fullName: repo.full_name,
+        stars: repo.stargazers_count as number,
+        forks: repo.forks_count as number,
+        openIssues: repo.open_issues_count as number,
+        pushedAt: typeof repo.pushed_at === 'string' ? repo.pushed_at : null,
+        defaultBranch: typeof repo.default_branch === 'string' ? repo.default_branch : null,
+        status: repo.archived === true ? 'archived' : repo.disabled === true ? 'deleted' : 'active',
+      };
+    });
+  }
+
+  function fetchRelease(accessToken: string, fullName: string): Promise<{ tagName: string; title: string; publishedAt: string | null } | null> {
+    return client.request(accessToken, `${repositoryPath(fullName)}/releases/latest`, (json) => {
+      const release = json as RawRelease;
+      if (typeof release.tag_name !== 'string') throw new TypeError('Release 响应格式无效');
+      return {
+        tagName: release.tag_name,
+        title: typeof release.name === 'string' && release.name.length > 0 ? release.name : release.tag_name,
+        publishedAt: typeof release.published_at === 'string' ? release.published_at : null,
+      };
+    }, () => null);
+  }
+
+  function fetchLatestTag(accessToken: string, fullName: string): Promise<{ name: string; commitSha: string | null } | null> {
+    return client.request(accessToken, `${repositoryPath(fullName)}/tags?per_page=1`, (json) => {
+      if (!Array.isArray(json)) throw new TypeError('Tag 响应格式无效');
+      const first = json[0] as RawTag | undefined;
+      if (!first || typeof first.name !== 'string') return null;
+      return { name: first.name, commitSha: first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : null };
+    });
+  }
+
+  function fetchHeadRevision(accessToken: string, fullName: string, branch: string): Promise<string> {
+    return client.request(accessToken, `${repositoryPath(fullName)}/git/ref/heads/${encodedBranch(branch)}`, (json) => {
+      const sha = (json as RawRef).object?.sha;
+      if (typeof sha !== 'string') throw new TypeError('默认分支引用格式无效');
+      return sha;
+    });
+  }
+
+  function fetchCollaborationAt(accessToken: string, fullName: string): Promise<string | null> {
+    return client.request(accessToken, `${repositoryPath(fullName)}/issues?state=all&sort=updated&direction=desc&per_page=1`, (json) => {
+      if (!Array.isArray(json)) throw new TypeError('Issue 响应格式无效');
+      const first = json[0] as RawIssue | undefined;
+      return first && typeof first.updated_at === 'string' ? first.updated_at : null;
+    });
+  }
+
   return {
-    getRepositoryMeta(accessToken: string, fullName: string): Promise<RepoMeta> {
-      return client.request(accessToken, repositoryPath(fullName), (json) => {
-        if (typeof json !== 'object' || json === null) throw new TypeError('仓库响应格式无效');
-        const repo = json as Partial<RawRepo>;
-        if (typeof repo.full_name !== 'string' || !Number.isFinite(repo.stargazers_count) ||
-            !Number.isFinite(repo.forks_count) || !Number.isFinite(repo.open_issues_count)) {
-          throw new TypeError('仓库响应缺少必要字段');
-        }
-        return {
-          fullName: repo.full_name,
-          stars: repo.stargazers_count as number,
-          forks: repo.forks_count as number,
-          openIssues: repo.open_issues_count as number,
-          pushedAt: typeof repo.pushed_at === 'string' ? repo.pushed_at : null,
-        };
-      });
-    },
+    getRepositoryMeta: fetchRepositoryMeta,
     getRepositoryStatus(accessToken: string, fullName: string): Promise<{ archived: boolean; disabled: boolean; updatedAt: string | null; url: string | null }> {
       return client.request(accessToken, repositoryPath(fullName), (json) => {
         const repo = json as Partial<RawRepo>;
@@ -68,5 +132,63 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
         };
       });
     },
+
+    /**
+     * 轻量观察：一次仓库元数据 + 三类信号探测（默认分支 HEAD / Release / Tag）+ 协作活动线索。
+     * 摘要本身失败（仓库不存在 / 令牌失效 / 网络失败）时抛出，由调用方保留旧摘要；
+     * 单个信号失败只把该信号记为 unknown，其余信号照常返回。
+     * 访问上下文版本由调用链传入并原样回显，adapter 不自行猜测。
+     */
+    async observeSummary(accessToken: string, fullName: string, observedAt: string, accessContextRevision: number): Promise<SummaryObservation> {
+      const meta = await fetchRepositoryMeta(accessToken, fullName);
+      const defaultBranch = meta.defaultBranch ?? null;
+      const [headRevision, release, tag] = await Promise.all([
+        checked<string>(() => {
+          if (defaultBranch === null) throw new Error('默认分支未知');
+          return fetchHeadRevision(accessToken, fullName, defaultBranch);
+        }, observedAt),
+        checked<{ tagName: string; title: string; publishedAt: string | null } | null>(() => fetchRelease(accessToken, fullName), observedAt),
+        checked<{ name: string; commitSha: string | null } | null>(() => fetchLatestTag(accessToken, fullName), observedAt),
+      ]);
+      const collaborationAt = await checked<string | null>(() => fetchCollaborationAt(accessToken, fullName), observedAt);
+
+      const releaseValue = release.state === 'known' ? release.value : null;
+      const tagValue = tag.state === 'known' ? tag.value : null;
+      const releaseRevision: CheckedSignal<string> = release.state === 'known'
+        ? { state: 'known', value: releaseValue === null ? null : releaseFingerprint(releaseValue), checkedAt: observedAt }
+        : release;
+      const tagRevision: CheckedSignal<string> = tag.state === 'known'
+        ? { state: 'known', value: tagValue === null ? null : JSON.stringify([tagValue.name, tagValue.commitSha]), checkedAt: observedAt }
+        : tag;
+
+      return {
+        fullName: meta.fullName,
+        observedAt,
+        accessContextRevision,
+        values: {
+          stars: meta.stars,
+          forks: meta.forks,
+          openIssues: meta.openIssues,
+          pushedAt: meta.pushedAt,
+          latestReleaseTag: releaseValue?.tagName ?? tagValue?.name ?? null,
+          latestTag: tagValue?.name ?? null,
+          collaborationAt: collaborationAt.state === 'known' ? collaborationAt.value : null,
+          status: meta.status ?? 'active',
+        },
+        signals: {
+          defaultBranch: { state: 'known', value: defaultBranch, checkedAt: observedAt },
+          headRevision,
+          releaseRevision,
+          tagRevision,
+        },
+        activity: {
+          code: { kind: 'code', at: meta.pushedAt, important: true },
+          release: { kind: 'release', at: releaseValue?.publishedAt ?? null, important: true },
+          collaboration: { kind: 'issue', at: collaborationAt.state === 'known' ? collaborationAt.value : null, important: true },
+        },
+      };
+    },
   };
 }
+
+export { releaseFingerprint, encodedBranch };

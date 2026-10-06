@@ -1,6 +1,14 @@
-import type { BuildInfo, CommitItem, ReleaseItem } from '../../src/domain/types';
+import type { BuildInfo, CheckedSignal, CommitItem, ReleaseItem, SummaryObservation } from '../../src/domain/types';
 import { PortFailure } from '../../src/domain/ports';
-import type { GitHubPort, IssueOrPullRequest, RepoMeta } from '../../src/domain/ports';
+import type {
+  GitHubPort,
+  IssueOrPullRequest,
+  RepoMeta,
+  ScopeFetchOutcome,
+  ScopeFetchRequest,
+  ScopeVerification,
+  ScopeVerifyRequest,
+} from '../../src/domain/ports';
 
 /** 录制形态的仓库数据（按抓取与 API 调用清单组织）。 */
 export interface FakeRepoData {
@@ -10,9 +18,20 @@ export interface FakeRepoData {
   commits: CommitItem[];
   issuesAndPullRequests: IssueOrPullRequest[];
   build: BuildInfo | null;
+  /** 归一化观察的信号配置；缺省 head 为 null、release/tag 为 null。 */
+  observation?: FakeObservationConfig;
 }
 
-export type FakeMethod = 'validateAccessToken' | keyof Omit<GitHubPort, 'validateAccessToken'>;
+export interface FakeObservationConfig {
+  defaultBranch?: string | null;
+  head?: string | null;
+  release?: string | null;
+  tag?: string | null;
+  /** 注入为 unknown 的信号；用于验证"未检查/失败"与"确认不存在"的区分。 */
+  unknown?: Array<'head' | 'release' | 'tag'>;
+}
+
+export type FakeMethod = 'validateAccessToken' | keyof Omit<GitHubPort, 'validateAccessToken'> | 'observeSummary' | 'verifyScopes' | 'fetchScope';
 
 /** 按 spec 的错误与降级场景构造的适配器错误。 */
 export const fixtures = {
@@ -91,6 +110,7 @@ export function makeRepoData(overrides: Partial<FakeRepoData> = {}): FakeRepoDat
 /**
  * 假 GitHub 适配器：以录制的 fixtures 应答，
  * 并可按仓库 + 方法注入限流 / 401 / 404 / 网络失败场景。
+ * 每个方法调用都计入 `calls`，供用例分别统计适配器调用（与 fake fetch 的 HTTP 计数区分）。
  */
 export class FakeGitHub implements GitHubPort {
   validAccessToken = 'ghp_valid_token';
@@ -101,6 +121,12 @@ export class FakeGitHub implements GitHubPort {
   repos = new Map<string, FakeRepoData>();
   /** 按 fullName（'*' 表示所有仓库）+ 方法注入的错误。 */
   failures = new Map<string, Partial<Record<FakeMethod, unknown>>>();
+  /** 适配器调用计数（按方法名）。 */
+  readonly calls: Record<string, number> = {};
+  /** 范围验证的预置结果；未配置时返回 checkComplete=false（未完成，不冒充无变化）。 */
+  scopeVerifications = new Map<string, ScopeVerification>();
+  /** 范围抓取的预置处理器；未配置即抛出（不返回空成功）。 */
+  scopeFetches = new Map<string, (request: ScopeFetchRequest) => Promise<ScopeFetchOutcome>>();
 
   addRepo(data: FakeRepoData): FakeRepoData {
     this.repos.set(data.meta.fullName, data);
@@ -111,6 +137,26 @@ export class FakeGitHub implements GitHubPort {
     const perRepo = this.failures.get(fullName) ?? {};
     perRepo[method] = error;
     this.failures.set(fullName, perRepo);
+  }
+
+  resetCalls(): void {
+    for (const key of Object.keys(this.calls)) delete this.calls[key];
+  }
+
+  count(method: string): number {
+    return this.calls[method] ?? 0;
+  }
+
+  setScopeVerification(fullName: string, scope: string, result: Omit<ScopeVerification, 'scope' | 'accessContextRevision'>): void {
+    this.scopeVerifications.set(`${fullName}|${scope}`, { scope: scope as ScopeVerification['scope'], accessContextRevision: 0, ...result });
+  }
+
+  setScopeFetch(fullName: string, scope: string, handler: (request: ScopeFetchRequest) => Promise<ScopeFetchOutcome>): void {
+    this.scopeFetches.set(`${fullName}|${scope}`, handler);
+  }
+
+  private record(method: string): void {
+    this.calls[method] = (this.calls[method] ?? 0) + 1;
   }
 
   private guard(fullName: string, method: FakeMethod): void {
@@ -129,37 +175,102 @@ export class FakeGitHub implements GitHubPort {
   }
 
   async validateAccessToken(accessToken: string): Promise<void> {
+    this.record('validateAccessToken');
     this.guard('*', 'validateAccessToken');
     if (accessToken !== this.validAccessToken) throw fixtures.unauthorized();
   }
 
   async getRepositoryMeta(_accessToken: string, fullName: string): Promise<RepoMeta> {
+    this.record('getRepositoryMeta');
     this.guard(fullName, 'getRepositoryMeta');
     return this.repo(fullName).meta;
   }
 
   async getLatestRelease(_accessToken: string, fullName: string): Promise<ReleaseItem | null> {
+    this.record('getLatestRelease');
     this.guard(fullName, 'getLatestRelease');
     return this.repo(fullName).latestRelease;
   }
 
   async listReleases(_accessToken: string, fullName: string): Promise<ReleaseItem[]> {
+    this.record('listReleases');
     this.guard(fullName, 'listReleases');
     return this.repo(fullName).releases;
   }
 
   async listCommits(_accessToken: string, fullName: string): Promise<CommitItem[]> {
+    this.record('listCommits');
     this.guard(fullName, 'listCommits');
     return this.repo(fullName).commits;
   }
 
   async listIssues(_accessToken: string, fullName: string): Promise<IssueOrPullRequest[]> {
+    this.record('listIssues');
     this.guard(fullName, 'listIssues');
     return this.repo(fullName).issuesAndPullRequests;
   }
 
   async getLatestBuild(_accessToken: string, fullName: string): Promise<BuildInfo | null> {
+    this.record('getLatestBuild');
     this.guard(fullName, 'getLatestBuild');
     return this.repo(fullName).build;
+  }
+
+  // —— 步骤 4 端口：归一化观察、范围验证与范围抓取 ——
+
+  async observeSummary(_accessToken: string, fullName: string, observedAt: string, accessContextRevision: number): Promise<SummaryObservation> {
+    this.record('observeSummary');
+    this.guard(fullName, 'observeSummary');
+    const data = this.repo(fullName);
+    const config = data.observation ?? {};
+    const known = <T>(value: T | null): CheckedSignal<T> => ({ state: 'known', value, checkedAt: observedAt });
+    const maybe = <T>(name: 'head' | 'release' | 'tag', value: T | null): CheckedSignal<T> =>
+      config.unknown?.includes(name) ? { state: 'unknown', error: `注入的 ${name} 检查失败` } : known(value);
+    const tagName = config.tag ?? null;
+    return {
+      fullName: data.meta.fullName,
+      observedAt,
+      accessContextRevision,
+      values: {
+        stars: data.meta.stars,
+        forks: data.meta.forks,
+        openIssues: data.meta.openIssues,
+        pushedAt: data.meta.pushedAt,
+        latestReleaseTag: data.latestRelease?.tagName ?? tagName,
+        latestTag: tagName,
+        collaborationAt: null,
+        status: data.meta.status ?? 'active',
+      },
+      signals: {
+        defaultBranch: known(config.defaultBranch === undefined ? 'main' : config.defaultBranch),
+        headRevision: maybe('head', config.head === undefined ? null : config.head),
+        releaseRevision: maybe('release', config.release === undefined ? null : config.release),
+        tagRevision: maybe('tag', tagName),
+      },
+      activity: {
+        code: { kind: 'code', at: data.meta.pushedAt, important: true },
+        release: { kind: 'release', at: data.latestRelease?.publishedAt ?? null, important: true },
+        collaboration: { kind: 'issue', at: null, important: true },
+      },
+    };
+  }
+
+  async verifyScopes(_accessToken: string, request: ScopeVerifyRequest): Promise<ScopeVerification> {
+    this.record('verifyScopes');
+    this.guard(request.fullName, 'verifyScopes');
+    const configured = this.scopeVerifications.get(`${request.fullName}|${request.scope}`);
+    if (!configured) {
+      // 未配置 = 检查未完成：不得被当成"已确认无变化"。
+      return { scope: request.scope, checkedAt: request.checkedAt, checkComplete: false, changed: false, accessContextRevision: request.accessContextRevision };
+    }
+    return { ...configured, accessContextRevision: request.accessContextRevision };
+  }
+
+  async fetchScope(_accessToken: string, request: ScopeFetchRequest): Promise<ScopeFetchOutcome> {
+    this.record('fetchScope');
+    this.guard(request.fullName, 'fetchScope');
+    const handler = this.scopeFetches.get(`${request.fullName}|${request.scope}`);
+    if (!handler) throw new Error(`FakeGitHub：fetchScope(${request.scope}) 未配置`);
+    return handler(request);
   }
 }

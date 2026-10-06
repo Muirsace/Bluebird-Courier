@@ -5,7 +5,7 @@ import type { LocalDatabase } from '../../../core/infra/database';
 import type { Logger } from '../../../core/infra/logger';
 import type { TokenChangeState, TokenOperationResult, TokenSettingsService } from '../contract';
 import { createReplaceTokenController } from './replace-token';
-import { readPreferences, readToken, writePreferences } from './token-store';
+import { advanceAccessContextRevision, readAccessContextRevision, readPreferences, readToken, writePreferences } from './token-store';
 import { createTokenVerifier } from './verify-token';
 
 export interface TokenSettingsDependencies { db: LocalDatabase; cipher: CipherBox; github: GitHubPort; logger?: Logger }
@@ -60,5 +60,7 @@ export function createTokenSettingsService({ db, cipher, github, logger }: Token
     cancelReplace,
     getSettings: () => ({ preferences: readPreferences(db), accessTokenConfigured: readToken(db, cipher) !== null }),
     updateSettings,
+    accessContextRevision: () => readAccessContextRevision(db),
+    advanceAccessContext: (updatedAt: string) => advanceAccessContextRevision(db, updatedAt),
   };
 }

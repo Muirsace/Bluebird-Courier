@@ -25,6 +25,8 @@ export interface RepoMeta {
   forks: number;
   openIssues: number;
   pushedAt: string | null;
+  /** 默认分支名；缺失为 null（后续 HEAD 信号记为 unknown）。 */
+  defaultBranch?: string | null;
   latestReleaseTag?: string | null;
   latestTag?: string | null;
   collaborationAt?: string | null;
@@ -122,15 +124,24 @@ export interface RepositoryRefPort {
 
 /**
  * 轻量摘要观察端口：归一化摘要值、内容信号与活动候选。
- * 观察时间由调用方传入（纯规则的时间来源不被适配器接管）。
+ * 观察时间与访问上下文版本均由调用链明确提供（adapter 不读时钟、不猜上下文）。
  */
 export interface SummaryObservationPort {
-  observeSummary(accessToken: string, fullName: string, observedAt: string): Promise<SummaryObservation>;
+  observeSummary(accessToken: string, fullName: string, observedAt: string, accessContextRevision: number): Promise<SummaryObservation>;
 }
 
 export interface ScopeVerifyRequest {
   fullName: string;
   scope: DetailScope;
+  defaultBranch: string | null;
+  /** 调用链明确提供的访问上下文版本；adapter 只回显，不自行猜测或固定为 0。 */
+  accessContextRevision: number;
+  /** 检查模式：probe 走更新时间增量探测（含重叠窗口），reread 重读页面对应范围。 */
+  mode: 'probe' | 'reread';
+  /** 本次检查允许读取的最大页数（feature 预算）；达到上限仍未完成时 checkComplete=false。 */
+  maxPages: number;
+  /** 检查开始时间；由调用链传入（adapter 不读时钟）。 */
+  checkedAt: string;
   /** 上次成功同步的指纹；null 表示没有可用基线，只能按完整检查判定。 */
   baselineFingerprint: string | null;
 }
@@ -139,11 +150,12 @@ export interface ScopeVerifyRequest {
 export interface ScopeVerification {
   scope: DetailScope;
   checkedAt: string;
-  /** 检查区间是否完整；预算耗尽、失败或分页未完成时为 false。 */
+  /** 检查区间是否完整；预算耗尽、失败、分页未完成或基线不可比时为 false。 */
   checkComplete: boolean;
   changed: boolean;
   fingerprint?: string;
   version?: ContentVersion;
+  accessContextRevision: number;
 }
 
 export interface ScopeFetchRequest {
@@ -153,6 +165,10 @@ export interface ScopeFetchRequest {
   cursor: PaginationCursor;
   /** 单次调用最多返回的条目数（有界读取由调用方给上限）。 */
   limit: number;
+  /** 调用链明确提供的访问上下文版本；adapter 只回显，不自行猜测。 */
+  accessContextRevision: number;
+  /** 本次抓取的观察时间；由调用链传入（adapter 不读时钟）。 */
+  observedAt: string;
 }
 
 /**
@@ -171,6 +187,13 @@ export interface ScopeFetchOutcome<T = unknown> {
   coverageComplete: boolean;
   observedAt: string;
   version?: ContentVersion;
+  accessContextRevision: number;
+}
+
+/** overview 范围的归一化内容：摘要值与元数据；不含平台原始字段。 */
+export interface OverviewContent {
+  values: GlanceValues;
+  metadata: RepositoryMetadata | null;
 }
 
 export interface ScopeVerificationPort {
@@ -178,5 +201,5 @@ export interface ScopeVerificationPort {
 }
 
 export interface ScopeFetchPort {
-  fetchScope<T = unknown>(accessToken: string, request: ScopeFetchRequest): Promise<ScopeFetchOutcome<T>>;
+  fetchScope(accessToken: string, request: ScopeFetchRequest): Promise<ScopeFetchOutcome>;
 }
