@@ -72,19 +72,30 @@ export function createGitHubHttpClient(
   now: () => number = Date.now,
   maxConcurrent = DEFAULT_MAX_CONCURRENT_REQUESTS,
 ): GitHubHttpClient {
+  if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1) throw new RangeError('请求并发上限必须为正整数');
   let active = 0;
   const waiters: Array<() => void> = [];
 
-  function acquire(): Promise<void> {
+  function acquire(signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.reject(signal.reason);
     if (active < maxConcurrent) {
       active += 1;
       return Promise.resolve();
     }
-    return new Promise<void>((resolve) => {
-      waiters.push(() => {
+    return new Promise<void>((resolve, reject) => {
+      const start = (): void => {
+        signal.removeEventListener('abort', abort);
         active += 1;
         resolve();
-      });
+      };
+      const abort = (): void => {
+        const index = waiters.indexOf(start);
+        if (index >= 0) waiters.splice(index, 1);
+        signal.removeEventListener('abort', abort);
+        reject(signal.reason);
+      };
+      waiters.push(start);
+      signal.addEventListener('abort', abort, { once: true });
     });
   }
 
@@ -95,10 +106,14 @@ export function createGitHubHttpClient(
 
   return {
     async request<T>(accessToken: string, apiPath: string, map: (json: unknown) => T, onNotFound?: () => T, options?: GitHubRequestOptions): Promise<T> {
-      await acquire();
+      let acquired = false;
       try {
+        // 排队也属于请求生命周期，取消或超时后不得再启动实际 HTTP。
         const timeoutSignal = AbortSignal.timeout(timeoutMs);
         const signal = options?.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal;
+        await acquire(signal);
+        acquired = true;
+        signal.throwIfAborted();
         const response = await fetchImpl(`${API_BASE}${apiPath}`, {
           signal,
           headers: {
@@ -118,7 +133,7 @@ export function createGitHubHttpClient(
       } catch (error) {
         throw mapGitHubError(error, now);
       } finally {
-        release();
+        if (acquired) release();
       }
     },
   };

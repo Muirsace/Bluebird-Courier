@@ -280,8 +280,8 @@ describe('Issue / PR 列表验证（verifyScopes）', () => {
   });
 
   it('probe：预算耗尽（分页未完成）不得宣布无变化', async () => {
-    const baseline = JSON.stringify({ v: 1, upTo, win: [] });
-    const fullPage = Array.from({ length: 100 }, (_item, index) => ({ number: index + 1, updated_at: '2026-10-05T01:00:00.000Z' }));
+    const fullPage = Array.from({ length: 100 }, (_item, index) => ({ number: index + 1, updated_at: '2026-10-05T01:59:30.000Z' }));
+    const baseline = JSON.stringify({ v: 1, upTo, win: fullPage.map((item) => [item.number, item.updated_at]) });
     const { fetchImpl, calls } = routeFetch(() => fullPage);
 
     const result = await compose(fetchImpl).verifyScopes('ghp', verifyRequest('issuesAndPr', { baselineFingerprint: baseline, maxPages: 1 }));
@@ -443,5 +443,120 @@ describe('HTTP 层并发、取消与资源释放', () => {
 
     hanging = false;
     await expect(client.request('ghp', '/user', () => 'ok')).resolves.toBe('ok');
+  });
+});
+
+
+describe('适配器审查回归', () => {
+  it.each(['commits', 'releases', 'builds'] as const)('范围 %s 的数字游标续读第二页', async (scope) => {
+    const route = routeFetch((path) => {
+      const url = new URL('https://api.github.com' + path);
+      const page = Number(url.searchParams.get('page'));
+      if (scope === 'commits') return [{ sha: 'sha-' + page, commit: { message: '提交 ' + page } }];
+      if (scope === 'releases') return [{ tag_name: 'v' + page, name: '发版 ' + page }];
+      return { workflow_runs: [{ id: page, name: 'ci', status: 'completed', conclusion: 'success' }] };
+    });
+    const github = compose(route.fetchImpl);
+    const request = { fullName: 'octo/demo', scope, defaultBranch: 'main', cursor: null, limit: 1, accessContextRevision: 5, observedAt: '2026-10-05T03:00:00.000Z' };
+    const first = await github.fetchScope('ghp', request);
+    expect(first.nextCursor).toBe('2');
+    const second = await github.fetchScope('ghp', { ...request, cursor: first.nextCursor });
+    expect(route.calls[1]).toContain('page=2');
+    expect(second.items).not.toEqual(first.items);
+  });
+
+  it('探测第一页已发现变化，即使分页预算耗尽也保留变化证据', async () => {
+    const upTo = '2026-10-05T02:00:00.000Z';
+    const baseline = JSON.stringify({ v: 1, upTo, win: [] });
+    const fullPage = Array.from({ length: 100 }, (_item, index) => ({ number: index + 1, updated_at: '2026-10-05T02:10:00.000Z' }));
+    const route = routeFetch(() => fullPage);
+    const result = await compose(route.fetchImpl).verifyScopes('ghp', verifyRequest('issuesAndPr', { baselineFingerprint: baseline, maxPages: 1 }));
+    expect(result.changed).toBe(true);
+    expect(result.checkComplete).toBe(false);
+    expect(result.fingerprint).toBeUndefined();
+    expect(route.calls).toHaveLength(1);
+  });
+
+  it('同一运行连续验证不重复累积追踪记录或耗尽预算', async () => {
+    const tuple = ['456', 1, 'in_progress', null];
+    const route = routeFetch((path) => path.includes('/actions/runs?')
+      ? { workflow_runs: [{ id: 456, run_attempt: 1, status: 'in_progress', conclusion: null }] }
+      : { id: 456, run_attempt: 1, status: 'in_progress', conclusion: null });
+    const github = compose(route.fetchImpl);
+    let baseline = JSON.stringify({ v: 1, recent: [tuple], tracked: [tuple, tuple] });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await github.verifyScopes('ghp', verifyRequest('builds', { baselineFingerprint: baseline, maxPages: 2 }));
+      expect(result.checkComplete).toBe(true);
+      expect(result.changed).toBe(false);
+      expect(JSON.parse(result.fingerprint ?? '{}').tracked).toEqual([tuple]);
+      baseline = result.fingerprint as string;
+    }
+    expect(route.calls).toHaveLength(6);
+  });
+
+  it('排队中的取消立即结束等待，并且不启动已取消的 HTTP 请求', async () => {
+    const calls: string[] = [];
+    let releaseFirst: () => void = () => { throw new Error('首个请求未启动'); };
+    const fetchImpl = (async (url: unknown) => {
+      calls.push(String(url));
+      if (calls.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve; });
+      return jsonResponse({});
+    }) as unknown as typeof fetch;
+    const client = createGitHubHttpClient(fetchImpl, 10_000, Date.now, 1);
+    const first = client.request('ghp', '/first', () => 'first');
+    await flush();
+    const controller = new AbortController();
+    const queued = client.request('ghp', '/cancelled', () => 'cancelled', undefined, { signal: controller.signal });
+    const rejected = expect(queued).rejects.toMatchObject({ kind: 'network' });
+    controller.abort();
+    try {
+      await rejected;
+      expect(calls).toEqual(['https://api.github.com/first']);
+    } finally { releaseFirst(); }
+    await expect(first).resolves.toBe('first');
+    await expect(client.request('ghp', '/next', () => 'next')).resolves.toBe('next');
+    expect(calls).toEqual(['https://api.github.com/first', 'https://api.github.com/next']);
+  });
+
+  it('已经取消的请求不进入 fetch', async () => {
+    const route = routeFetch(() => ({}));
+    const controller = new AbortController();
+    controller.abort();
+    const client = createGitHubHttpClient(route.fetchImpl);
+    await expect(client.request('ghp', '/user', () => 'ok', undefined, { signal: controller.signal })).rejects.toMatchObject({ kind: 'network' });
+    expect(route.calls).toEqual([]);
+  });
+
+  it('README 与树读取使用目标分支，远端截断的树不确认完整覆盖', async () => {
+    const route = routeFetch((path) => path.includes('/git/trees/')
+      ? { truncated: true, tree: [{ path: 'README.md', type: 'blob', size: 20 }] }
+      : [{ name: 'README.md', path: 'README.md', type: 'file' }]);
+    const github = compose(route.fetchImpl);
+    const request = { fullName: 'octo/demo', defaultBranch: 'feature/topic', cursor: null, limit: 30, accessContextRevision: 5, observedAt: '2026-10-05T03:00:00.000Z' };
+    await github.fetchScope('ghp', { ...request, scope: 'readme' });
+    const tree = await github.fetchScope('ghp', { ...request, scope: 'tree' });
+    expect(route.calls).toEqual(['/repos/octo/demo/contents?ref=feature%2Ftopic', '/repos/octo/demo/git/trees/feature%2Ftopic?recursive=1']);
+    expect(tree.coverageComplete).toBe(false);
+  });
+});
+
+
+describe('构建验证的部分覆盖', () => {
+  it('已有变化但其他运行未读或失败时不宣布检查完整', async () => {
+    const recent = [['900', 1, 'completed', 'success']];
+    const tracked = [['456', 1, 'in_progress', null], ['457', 1, 'in_progress', null]];
+    const baseline = JSON.stringify({ v: 1, recent, tracked });
+    for (const mode of ['recent-budget', 'tracked-budget', 'tracked-error']) {
+      const route = routeFetch((path) => {
+        if (path.includes('/actions/runs?')) return { workflow_runs: [{ id: 900, run_attempt: mode === 'recent-budget' ? 2 : 1, status: 'completed', conclusion: 'success' }] };
+        if (path.endsWith('/456')) return { id: 456, run_attempt: 1, status: 'completed', conclusion: 'failure' };
+        return new TypeError('运行读取失败');
+      });
+      const maxPages = mode === 'recent-budget' ? 1 : mode === 'tracked-budget' ? 2 : 3;
+      const result = await compose(route.fetchImpl).verifyScopes('ghp', verifyRequest('builds', { baselineFingerprint: baseline, maxPages }));
+      expect(result.changed).toBe(true);
+      expect(result.checkComplete).toBe(false);
+      expect(result.fingerprint).toBeUndefined();
+    }
   });
 });

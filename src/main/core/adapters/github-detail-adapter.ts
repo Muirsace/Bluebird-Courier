@@ -145,6 +145,8 @@ function parseCursor(cursor: string | null): Record<string, unknown> {
   if (cursor === null) return {};
   try {
     const value = JSON.parse(cursor) as unknown;
+    // 单列表输出数字字符串，Issue/PR 双源输出对象，两种游标均须可续读。
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return { page: value };
     return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
   } catch { return {}; }
 }
@@ -262,20 +264,21 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
       const win = Array.isArray(base?.win) ? base.win as Array<[unknown, unknown]> : null;
       if (upTo === null || win === null) return incompleteVerification(request);
       const since = new Date(Date.parse(upTo) - PROBE_OVERLAP_MS).toISOString();
+      const known = new Map(win.map(([number, updatedAt]) => [String(number), String(updatedAt)]));
       const seen: RawIssue[] = [];
       let complete = false;
       for (let page = 1; page <= request.maxPages; page += 1) {
         const batch = await fetchIssuesRaw(accessToken, request.fullName, `state=all&sort=updated&direction=desc&per_page=${PAGE_SIZE}&since=${encodeURIComponent(since)}&page=${page}`);
         seen.push(...batch);
+        // 已读到的变化不依赖整个区间扫完；但未完成分页仍不能推进检查游标。
+        const changed = batch.some((item) => {
+          const updatedAt = typeof item.updated_at === 'string' ? item.updated_at : '';
+          return updatedAt > upTo || known.get(String(item.number)) !== updatedAt;
+        });
+        if (changed) return { ...verification(request, true), checkComplete: batch.length < PAGE_SIZE };
         if (batch.length < PAGE_SIZE) { complete = true; break; }
       }
       if (!complete) return incompleteVerification(request); // 预算耗尽且可能还有更多页
-      const known = new Map(win.map(([number, updatedAt]) => [String(number), String(updatedAt)]));
-      for (const item of seen) {
-        const updatedAt = typeof item.updated_at === 'string' ? item.updated_at : '';
-        if (updatedAt > upTo) return verification(request, true); // 发现更新时间前进即可停止并标记
-        if (known.get(String(item.number)) !== updatedAt) return verification(request, true); // 重叠窗口内未记录或时间不同
-      }
       // 未发现变化：推进游标（无结果时用检查开始时间），保留可比的 reread 摘要
       let newUpTo = request.checkedAt;
       for (const item of seen) if (typeof item.updated_at === 'string' && item.updated_at > newUpTo) newUpTo = item.updated_at;
@@ -340,25 +343,30 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     const changedByRecent = !sameJson(recentTuples, recentBaseline);
 
     const budget = Math.max(0, request.maxPages - 1); // 近期页占 1
-    const toRead = trackedBaseline.slice(0, budget);
-    const unread = trackedBaseline.length - toRead.length;
+    // 兼容已经包含重复运行的旧指纹，每个运行只占一次追踪预算。
+    const uniqueTracked = [...new Map(trackedBaseline.map((tuple) => [String(tuple[0]), tuple])).values()];
+    const toRead = uniqueTracked.slice(0, budget);
+    const unread = uniqueTracked.length - toRead.length;
     const currentTracked: unknown[][] = [];
     let readError = false;
+    let changedByTracked = false;
     for (const tuple of toRead) {
       try {
         const run = await fetchRun(accessToken, request.fullName, String(tuple[0]));
         const current = runTuple(run);
-        if (!sameJson(current, tuple)) return verification(request, true); // 结束 / 重跑 / 状态变化
+        if (!sameJson(current, tuple)) changedByTracked = true; // 变化证据不能冒充所有运行已检查
         if (current[2] !== 'completed') currentTracked.push(current as unknown[]);
       } catch {
         readError = true;
       }
     }
-    if (changedByRecent) return verification(request, true);
-    if (unread > 0 || readError) return incompleteVerification(request); // 预算不足或重读失败：不宣布无变化
+    const changed = changedByRecent || changedByTracked;
+    if (unread > 0 || readError) return { ...incompleteVerification(request), changed };
+    if (changed) return verification(request, true);
 
     const freshTracked = recentTuples.filter((tuple) => tuple[2] !== 'completed');
-    return verification(request, false, JSON.stringify({ v: 1, recent: recentTuples, tracked: [...freshTracked, ...currentTracked] }));
+    const tracked = [...new Map([...freshTracked, ...currentTracked].map((tuple) => [String(tuple[0]), tuple])).values()];
+    return verification(request, false, JSON.stringify({ v: 1, recent: recentTuples, tracked }));
   }
 
   return {
@@ -497,12 +505,17 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           };
         }
         case 'readme': {
-          const items = await client.request(accessToken, `${repoPath(fullName)}/contents`, mapReadmes);
+          const branchQuery = request.defaultBranch ? `?ref=${encodeURIComponent(request.defaultBranch)}` : '';
+          const items = await client.request(accessToken, `${repoPath(fullName)}/contents${branchQuery}`, mapReadmes);
           return { scope, items, hasMore: false, nextCursor: null, coverageComplete: true, observedAt, accessContextRevision };
         }
         case 'tree': {
-          const items = await client.request(accessToken, `${repoPath(fullName)}/git/trees/HEAD?recursive=1`, mapTree);
-          return { scope, items, hasMore: false, nextCursor: null, coverageComplete: true, observedAt, accessContextRevision };
+          const branch = request.defaultBranch ?? 'HEAD';
+          const result = await client.request(accessToken, `${repoPath(fullName)}/git/trees/${encodeURIComponent(branch)}?recursive=1`, (json) => ({
+            items: mapTree(json),
+            truncated: typeof json === 'object' && json !== null && (json as { truncated?: unknown }).truncated === true,
+          }));
+          return { scope, items: result.items, hasMore: false, nextCursor: null, coverageComplete: !result.truncated, observedAt, accessContextRevision };
         }
         case 'overview': {
           const repo = await client.request(accessToken, repoPath(fullName), (json) => json as RawRepo);
