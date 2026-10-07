@@ -122,6 +122,11 @@ export interface RepositoryRefPort {
   findById(repositoryId: number): RepositoryRef | null;
 }
 
+/** 当前访问上下文；跨 feature 通过组合根注入，写入前读取实时版本。 */
+export interface AccessContextPort {
+  currentRevision(): number;
+}
+
 /**
  * 轻量摘要观察端口：归一化摘要值、内容信号与活动候选。
  * 观察时间与访问上下文版本均由调用链明确提供（adapter 不读时钟、不猜上下文）。

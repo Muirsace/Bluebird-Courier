@@ -26,7 +26,7 @@ export function registerIpc(facade: BluebirdCourierFacade, handlers: IpcHandlers
   ipcMain.handle(IPC_CHANNELS.listRepositories, () => facade.listRepositories());
   ipcMain.handle(IPC_CHANNELS.addRepository, (_event, fullName: unknown) => facade.addRepository(fullName as string));
   ipcMain.handle(IPC_CHANNELS.removeRepository, (_event, repositoryId: unknown) => facade.removeRepository(repositoryId as number));
-  ipcMain.handle(IPC_CHANNELS.refreshGlance, () => facade.refreshGlance());
+  ipcMain.handle(IPC_CHANNELS.refreshGlance, (_event, origin: unknown) => facade.refreshGlance(origin as 'startup' | 'manual' | undefined));
   ipcMain.handle(IPC_CHANNELS.refreshRepository, (_event, repositoryId: unknown, force: unknown) => facade.refreshRepository!(repositoryId as number, force as boolean | undefined));
   ipcMain.handle(IPC_CHANNELS.fetchDetail, (_event, repositoryId: unknown) => facade.fetchDetail(repositoryId as number));
   ipcMain.handle(IPC_CHANNELS.loadHistory, (_event, repositoryId: unknown, kind: unknown, cursor: unknown) => facade.loadHistory!(repositoryId as number, kind as 'commits' | 'issues' | 'pullRequests', cursor as string | undefined));

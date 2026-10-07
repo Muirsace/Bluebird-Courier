@@ -137,6 +137,29 @@ describe('同步记账存储与兼容升级（V3）', () => {
     expect(tableNames(db)).toEqual(expect.arrayContaining(['access_context', 'detail_scope_state']));
   });
 
+  it('V4 升级：追加清单观察列且保留旧行，新列默认空 / 0', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 3)).run(legacy);
+    seedRepository(legacy);
+    expect(legacy.pragma('user_version', { simple: true })).toBe(3);
+    legacy.close();
+
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    const columns = (db.pragma('table_info(repository)') as Array<{ name: string }>).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(['latest_tag', 'observation_json', 'activity_at', 'activity_kind', 'access_context_revision']));
+    expect(db.prepare('SELECT full_name, stars, latest_tag, observation_json, activity_at, activity_kind, access_context_revision FROM repository WHERE id = 1').get()).toEqual({
+      full_name: 'octo-demo/hello-world',
+      stars: 1284,
+      latest_tag: null,
+      observation_json: null,
+      activity_at: null,
+      activity_kind: null,
+      access_context_revision: 0,
+    });
+  });
+
   it('迁移中途失败：该版本已写入的内容与 user_version 一起回滚', () => {
     const pathname = tempDbPath();
     const db = new Database(pathname);

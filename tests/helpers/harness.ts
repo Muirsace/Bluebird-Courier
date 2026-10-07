@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
+import { createIdentifierGenerator } from '../../src/main/core/infra/identifier';
 import { openDatabase } from '../../src/main/core/infra/database';
 import type { CipherBox } from '../../src/main/core/infra/encryption';
 import { createFacade } from '../../src/main/facade/facade';
@@ -9,6 +10,8 @@ import { createRepositoryList } from '../../src/main/features/repository-list/im
 import { createRepositoryDetail } from '../../src/main/features/repository-detail/implementation/create';
 import { createTokenSettings } from '../../src/main/features/token-settings/implementation/create';
 import { createSnapshotTrend } from '../../src/main/features/snapshot-trend/implementation/create';
+import type { RepositoryListService } from '../../src/main/features/repository-list/contract';
+import type { TokenSettingsService } from '../../src/main/features/token-settings/contract';
 import type { BluebirdCourierFacade } from '../../src/shared/types';
 import { FakeGitHub } from './fake-github';
 import { FakeClock, FakeCipherBox } from './fakes';
@@ -19,6 +22,9 @@ export interface Harness {
   cipher: CipherBox;
   clock: FakeClock;
   facade: BluebirdCourierFacade;
+  /** feature 服务实例（facade 尚未暴露的用例用它们直接验证，如待交接读取与访问上下文推进）。 */
+  repositoryList: RepositoryListService;
+  tokenSettings: TokenSettingsService;
   /** 关闭并重新打开同一个数据库文件（模拟应用重启）。 */
   reopen(): Harness;
   destroy(): void;
@@ -37,9 +43,15 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
   const clock = new FakeClock(options.now ?? new Date(2026, 8, 26, 12, 0, 0));
 
   let db = openDatabase(dbPath);
-  const createTestFacade = (): BluebirdCourierFacade => {
-    const repositoryList = createRepositoryList({ db, clock });
-    return createFacade({
+  let repositoryList!: RepositoryListService;
+  let tokenSettings!: TokenSettingsService;
+  let facade!: BluebirdCourierFacade;
+  const build = (): void => {
+    tokenSettings = createTokenSettings({ db, cipher, github });
+    repositoryList = createRepositoryList({ db, clock, github,
+      accessContext: { currentRevision: () => tokenSettings.accessContextRevision() }, nextObservationId: createIdentifierGenerator(),
+    });
+    facade = createFacade({
       repositoryList,
       github,
       repositoryDetail: createRepositoryDetail({
@@ -48,11 +60,11 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
         clock,
         repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
       }),
-      tokenSettings: createTokenSettings({ db, cipher, github }),
+      tokenSettings,
       snapshotTrend: createSnapshotTrend({ db, clock }),
     });
   };
-  let facade = createTestFacade();
+  build();
 
   const harness: Harness = {
     get db() {
@@ -64,10 +76,16 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
     get facade() {
       return facade;
     },
+    get repositoryList() {
+      return repositoryList;
+    },
+    get tokenSettings() {
+      return tokenSettings;
+    },
     reopen(): Harness {
       db.close();
       db = openDatabase(dbPath);
-      facade = createTestFacade();
+      build();
       return harness;
     },
     destroy(): void {

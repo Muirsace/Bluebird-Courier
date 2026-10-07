@@ -190,8 +190,23 @@ function migrationV3(database: MigrationDatabase): void {
   `);
 }
 
+function migrationV4(database: MigrationDatabase): void {
+  // 清单观察存储：只追加，不改写 V1～V3；旧行 observation_json 为空、范围从下一次成功观察起步。
+  ensureColumns(database, 'repository', {
+    /** 无 Release 时的 Tag 兜底展示值（此前仅存在领域读取里，从未落列）。 */
+    latest_tag: 'TEXT',
+    /** 最近一次成功观察的完整快照（含 CheckedSignal 状态与活动候选）；失败不覆盖。 */
+    observation_json: 'TEXT',
+    /** 统一活动结果（显示与排序同源）。 */
+    activity_at: 'TEXT',
+    activity_kind: 'TEXT',
+    /** 该行观察所属的访问上下文版本；跨上下文的旧观察不参与比较或回填。 */
+    access_context_revision: 'INTEGER NOT NULL DEFAULT 0',
+  });
+}
+
 /** 按版本递增，保持旧数据库可重复打开。 */
-export const MIGRATIONS = [migrationV1, migrationV2, migrationV3] as const;
+export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4] as const;
 export const migrationRunner = createMigrationRunner(MIGRATIONS);
 
 /** 生产唯一入口：委托给迁移执行器，内容与 user_version 的原子提交由 runner 保证。 */

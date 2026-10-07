@@ -48,7 +48,7 @@ describe('主进程基础设施公开行为', () => {
         'detail_cache', 'detail_column', 'refresh_batch', 'operation_lock',
         'access_context', 'detail_scope_state', 'observation_handoff', 'sync_task_target', 'cache_query_page',
       ]));
-      expect(database.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(3);
+      expect(database.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(4);
     } finally {
       database.close();
       fs.rmSync(directory, { recursive: true, force: true });

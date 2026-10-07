@@ -1,6 +1,6 @@
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { Glance } from '../../../../domain/types';
-import { compareActivity } from '../../../../domain/rules/activity-sort';
+import { compareResolvedActivity } from '../../../../domain/rules/activity-sort';
 import { isPositiveId, readRow, readRowByFullName, rowToGlance } from './repository-list-store';
 
 export function listRepositories(db: LocalDatabase): Glance[] {
@@ -8,10 +8,11 @@ export function listRepositories(db: LocalDatabase): Glance[] {
   return rows
     .map(rowToGlance)
     .sort((a, b) =>
-      compareActivity(
-        // 无活动数据（如抓取失败的卡片）按加入时间参与排序，保持刚加入的可见性。
-        { code: a.activityAt ?? a.addedAt, collaboration: a.collaborationAt },
-        { code: b.activityAt ?? b.addedAt, collaboration: b.collaborationAt },
+      // 尚未成功取得摘要的新增卡片独立置顶；普通清单只按真实活动排序。
+      Number(b.lastSucceededAt === null) - Number(a.lastSucceededAt === null) ||
+      compareResolvedActivity(
+        { at: a.activityAt ?? null, kind: a.activityKind ?? null },
+        { at: b.activityAt ?? null, kind: b.activityKind ?? null },
       ) || b.id - a.id,
     );
 }

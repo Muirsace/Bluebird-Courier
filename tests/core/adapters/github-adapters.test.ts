@@ -775,19 +775,36 @@ describe('步骤 4 补齐（R3）', () => {
       .observeSummary('ghp', 'octo/demo', '2026-10-05T03:00:00.000Z', 5);
 
     const pr = await observe([{ number: 7, state: 'closed', updated_at: '2026-10-05T02:00:00.000Z', pull_request: { url: 'x' } }]);
-    expect(pr.activity.collaboration).toEqual({ kind: 'pull-request', at: '2026-10-05T02:00:00.000Z', verified: true, state: 'closed' });
+    expect(pr.activity.collaboration).toMatchObject({ kind: 'pull-request', at: '2026-10-05T02:00:00.000Z', verified: true, state: 'closed', sourceId: '7' });
     expect(pr.activity.collaboration.important).toBeUndefined(); // 重要性由 domain/feature 判定
     expect(pr.activity.code).toEqual({ kind: 'code', at: '2026-10-05T01:00:00.000Z', verified: false }); // pushedAt 只是线索
     expect(pr.activity.release).toEqual({ kind: 'release', at: '2026-10-01T00:00:00.000Z', verified: true });
 
     const issue = await observe([{ number: 8, state: 'open', updated_at: '2026-10-05T02:10:00.000Z' }]);
-    expect(issue.activity.collaboration).toEqual({ kind: 'issue', at: '2026-10-05T02:10:00.000Z', verified: true, state: 'open' });
+    expect(issue.activity.collaboration).toMatchObject({ kind: 'issue', at: '2026-10-05T02:10:00.000Z', verified: true, state: 'open', sourceId: '8' });
+
+    const source = { number: 8, title: '重要标题', body: '正文', state: 'open', created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-05T02:10:00.000Z' };
+    const first = await observe([source]);
+    const noise = await observe([{ ...source, updated_at: '2026-10-05T02:20:00.000Z' }]);
+    expect(first.activity.collaboration.contentRevision).toBe(noise.activity.collaboration.contentRevision);
+    expect(first.activity.collaboration.createdAt).toBe(source.created_at);
+    expect(first.activity.collaboration.important).toBeUndefined();
 
     const failed = await observe(new TypeError('fetch failed'));
     expect(failed.activity.collaboration).toEqual({ kind: 'issue', at: null, verified: false }); // 失败不提供候选，保留策略在调用方
   });
 });
 
+
+describe('子信号错误分类审查', () => {
+  it.each([[401, 'access_token_invalid'], [429, 'rate_limited']] as const)('Release %s 保留摘要与结构化失败', async (status, kind) => {
+    const github = compose(routeFetch(observationRoutes({ release: httpStatus(status) })).fetchImpl);
+    const result = await github.observeSummary('ghp', 'octo/demo', '2026-10-05T03:00:00.000Z', 5);
+    expect(result.values.stars).toBe(10);
+    expect(result.signals.releaseRevision.state).toBe('unknown');
+    expect(result.errors).toMatchObject([{ kind }]);
+  });
+});
 
 describe('适配器窗口一致性审查（R4）', () => {
   const request = (scope: ScopeVerifyRequest['scope'], limit = 2) => ({ fullName: 'octo/demo', scope, defaultBranch: 'main', cursor: null as string | null, limit, accessContextRevision: 5, observedAt: '2026-10-05T03:00:00.000Z' });

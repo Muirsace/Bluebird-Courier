@@ -12,6 +12,7 @@ import { createGitHubDetailAdapter } from './core/adapters/github-detail-adapter
 import { openGitHubExternal } from './core/adapters/shell-links';
 import { applyThemeSource } from './core/adapters/theme';
 import { refreshWindowsWindowChrome, syncWindowsWindowChrome, windowsWindowChromeOptions } from './core/adapters/window-chrome';
+import { createIdentifierGenerator } from './core/infra/identifier';
 import { createRepositoryList } from './features/repository-list/implementation/create';
 import { createRepositoryDetail } from './features/repository-detail/implementation/create';
 import { createTokenSettings } from './features/token-settings/implementation/create';
@@ -116,7 +117,10 @@ if (userDataPathError !== null) {
         ...createGitHubRepositoryAdapter(githubClient),
         ...createGitHubDetailAdapter(githubClient),
       };
-      const repositoryList = createRepositoryList({ db, clock: systemClock, logger });
+      const tokenSettings = createTokenSettings({ db, cipher, github, logger });
+      const repositoryList = createRepositoryList({ db, clock: systemClock, logger, github,
+        accessContext: { currentRevision: () => tokenSettings.accessContextRevision() }, nextObservationId: createIdentifierGenerator(),
+      });
       const facade = createFacade({
         repositoryList,
         github,
@@ -126,7 +130,7 @@ if (userDataPathError !== null) {
           clock: systemClock,
           repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
         }),
-        tokenSettings: createTokenSettings({ db, cipher, github, logger }),
+        tokenSettings,
         snapshotTrend: createSnapshotTrend({ db, clock: systemClock }),
         logger,
       });

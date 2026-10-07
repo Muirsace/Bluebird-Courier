@@ -84,23 +84,27 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
       const removed = deps.repositoryList.remove(repositoryId);
       if (removed.removed) { deps.repositoryDetail.remove(repositoryId); deps.snapshotTrend.remove(repositoryId); }
     },
-    async refreshGlance(): Promise<RefreshGlanceResult> {
+    async refreshGlance(origin: 'startup' | 'manual' = 'manual'): Promise<RefreshGlanceResult> {
+      if (origin !== 'startup' && origin !== 'manual') return { repositories: list(), errors: [{ kind: 'unknown', message: '检查意图无效' }] };
       const repositories = list(); if (repositories.length === 0) return { repositories: [], errors: [] };
       const accessToken = token(); if (!accessToken) return { repositories, errors: [tokenError()] };
-      const errors: NormalizedError[] = []; let stopped = false;
-      for (const repository of repositories) {
-        if (stopped) break;
+      // 轻量检查由清单 feature 组织（观察 / 比较 / 原子保存 / 待交接）；facade 只编排趋势采样。
+      const outcome = await deps.repositoryList.checkRepositories(accessToken, deps.tokenSettings.accessContextRevision(), origin);
+      for (const observed of outcome.observed) {
+        if (observed.accessContextRevision !== deps.tokenSettings.accessContextRevision() || !find(observed.repositoryId)) continue;
         try {
-          const values = await fetchGlance(accessToken, repository.fullName, deps.github);
-          deps.snapshotTrend.record(repository.id, values);
-          deps.repositoryList.applyGlance(repository.id, values);
+          // 真实观察时间采样；快照失败记录后继续，不回滚已成功保存的摘要（设计 14.2）。
+          deps.snapshotTrend.recordObserved(observed.repositoryId, observed.values, observed.observedAt);
         } catch (error) {
-          const normalized = normalizeError(error, repository.fullName); logger.error(`轻量信息抓取失败：${repository.fullName}`, error);
-          if (normalized.kind === 'access_token_invalid' || normalized.kind === 'rate_limited') stopped = true;
-          if (!errors.some((item) => item.kind === normalized.kind)) errors.push(normalized);
+          logger.error(`趋势快照写入失败：${observed.repositoryId}`, error);
         }
       }
-      return { repositories: list(), errors };
+      return {
+        repositories: outcome.repositories,
+        errors: outcome.errors,
+        ...(outcome.skipped ? { skipped: true } : {}),
+        ...(outcome.stopped ? { stopped: true, stopReason: outcome.stopReason } : {}),
+      };
     },
     async fetchDetail(repositoryId: unknown): Promise<DetailResult> {
       if (!validId(repositoryId)) return { detail: null, error: { kind: 'not_found', message: '监控仓库不存在' } };

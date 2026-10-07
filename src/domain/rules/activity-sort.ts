@@ -33,15 +33,22 @@ export function resolveActivity(
   candidates: readonly ActivityCandidate[],
   now: string | Date,
   futureToleranceMs = ACTIVITY_FUTURE_TOLERANCE_MS,
+  previous?: RepoActivity,
 ): RepoActivity {
   const ceiling = time(now) + futureToleranceMs;
   let best: { at: string; atMs: number; kind: ActivityKind } | null = null;
+  // 历史聚合结果单独保留；不重新作为某个原始来源参加重要性分类。
+  if (previous?.at && previous.kind) {
+    const atMs = Date.parse(previous.at);
+    if (Number.isFinite(atMs) && atMs <= ceiling) best = { at: previous.at, atMs, kind: previous.kind };
+  }
   for (const candidate of candidates) {
-    if (!candidate.important || !candidate.at) continue;
-    const atMs = Date.parse(candidate.at);
+    const at = candidate.importantAt === undefined ? candidate.at : candidate.importantAt;
+    if (!candidate.important || !at) continue;
+    const atMs = Date.parse(at);
     if (!Number.isFinite(atMs) || atMs > ceiling) continue;
     if (!best || atMs > best.atMs || (atMs === best.atMs && kindRank(candidate.kind) < kindRank(best.kind))) {
-      best = { at: candidate.at, atMs, kind: candidate.kind };
+      best = { at, atMs, kind: candidate.kind };
     }
   }
   return best ? { at: best.at, kind: best.kind } : { at: null, kind: null };

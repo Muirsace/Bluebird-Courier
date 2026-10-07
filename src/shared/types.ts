@@ -172,7 +172,7 @@ export interface BluebirdCourierFacade {
   addRepository(input: string): Promise<AddRepositoryResult>;
   inspectRepositoryInput(input: string): Promise<RepoInputResult>;
   removeRepository(repositoryId: number): Promise<void>;
-  refreshGlance(): Promise<RefreshGlanceResult>;
+  refreshGlance(origin?: 'startup' | 'manual'): Promise<RefreshGlanceResult>;
   /** 强制同步命令：renderer 的「重新抓取」复用该入口（force=true）。 */
   refreshRepository?(repositoryId: number, force?: boolean): Promise<DetailResult>;
   /** 打开用例：返回本地视图并按需安排后台任务；调用者不等待后台完整抓取。 */

@@ -81,7 +81,7 @@ describe('仓库清单 feature', () => {
     ];
 
     for (const [fullName, pushedAt] of pushes) {
-      h().github.addRepo({ ...base, meta: { ...base.meta, fullName, pushedAt } });
+      h().github.addRepo({ ...base, meta: { ...base.meta, fullName, pushedAt }, observation: { head: 'initial-sha' } });
       const result = await h().facade.addRepository(fullName);
       expect(result.ok).toBe(true);
     }
@@ -96,14 +96,19 @@ describe('仓库清单 feature', () => {
     expect(duplicate.ok).toBe(false);
     expect(await orderedNames()).toEqual(expected);
 
+    // 轻量检查后按统一聚合结果重排：发版时间（fixture 均为 2026-09-20T12:00）也是有效活动来源，
+    // 因此 first / third / tie-a / tie-b 并列为该时间，由 id 决胜（后加入在前）。
     await h().facade.refreshGlance();
-    expect(await orderedNames()).toEqual(expected);
+    const afterFirstRefresh = ['acme/second', 'acme/tie-b', 'acme/tie-a', 'acme/third', 'acme/first'];
+    expect(await orderedNames()).toEqual(afterFirstRefresh);
 
     // 活动时间变化后刷新按新活动重排：抓取时间（fetchedAt）不参与排序。
-    h().github.repos.get('acme/third')!.meta.pushedAt = '2026-09-27T00:00:00.000Z';
+    // 用有效的过去时间（本地正午 = 04:00Z；聚合规则拒绝显著未来时间）。
+    h().github.repos.get('acme/third')!.meta.pushedAt = '2026-09-26T03:00:00.000Z';
+    h().github.repos.get('acme/third')!.observation!.head = 'new-sha';
     h().clock.advanceMs(60_000);
     await h().facade.refreshGlance();
-    const updated = ['acme/third', 'acme/second', 'acme/first', 'acme/tie-b', 'acme/tie-a'];
+    const updated = ['acme/third', 'acme/second', 'acme/tie-b', 'acme/tie-a', 'acme/first'];
     expect(await orderedNames()).toEqual(updated);
 
     h().reopen();

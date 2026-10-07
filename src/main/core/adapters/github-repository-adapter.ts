@@ -1,6 +1,6 @@
 import type { RepoMeta } from '../../../domain/ports';
-import type { CheckedSignal, ReleaseItem, RepositoryMetadata, SummaryObservation } from '../../../domain/types';
-import type { GitHubHttpClient } from './github-http-client';
+import type { CheckedSignal, NormalizedError, ReleaseItem, RepositoryMetadata, SummaryObservation } from '../../../domain/types';
+import { mapGitHubError, type GitHubHttpClient } from './github-http-client';
 
 interface RawRepo {
   full_name: string;
@@ -21,7 +21,8 @@ interface RawRepo {
 interface RawRef { object?: { sha?: unknown } | null }
 interface RawRelease { tag_name?: unknown; name?: unknown; published_at?: unknown }
 interface RawTag { name?: unknown; commit?: { sha?: unknown } | null }
-interface RawIssue { updated_at?: unknown; state?: unknown; pull_request?: unknown }
+interface RawIssue { updated_at?: unknown; state?: unknown; pull_request?: unknown; number?: unknown; title?: unknown; body?: unknown; created_at?: unknown; closed_at?: unknown }
+interface CollaborationProbe { at: string; state: 'open' | 'closed'; pullRequest: boolean; sourceId?: string; contentRevision?: string; createdAt: string | null; closedAt: string | null }
 
 function repositoryPath(fullName: string): string {
   const pieces = fullName.split('/');
@@ -41,10 +42,11 @@ function releaseFingerprint(release: { tagName: string; title: string; published
 }
 
 /** 单信号失败隔离：失败时记为 unknown，不拖垮整次观察，也不冒充"确认不存在"。 */
-async function checked<T>(work: () => Promise<T>, checkedAt: string): Promise<CheckedSignal<T>> {
+async function checked<T>(work: () => Promise<T>, checkedAt: string, onFailure: (error: unknown) => void): Promise<CheckedSignal<T>> {
   try {
     return { state: 'known', value: await work(), checkedAt };
   } catch (error) {
+    onFailure(error);
     return { state: 'unknown', error: error instanceof Error ? error.message : '检查失败' };
   }
 }
@@ -100,12 +102,18 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
     });
   }
 
-  function fetchCollaborationProbe(accessToken: string, fullName: string): Promise<{ at: string; state: 'open' | 'closed'; pullRequest: boolean } | null> {
+  function fetchCollaborationProbe(accessToken: string, fullName: string): Promise<CollaborationProbe | null> {
     return client.request(accessToken, `${repositoryPath(fullName)}/issues?state=all&sort=updated&direction=desc&per_page=1`, (json) => {
       if (!Array.isArray(json)) throw new TypeError('Issue 响应格式无效');
       const first = json[0] as RawIssue | undefined;
       if (!first || typeof first.updated_at !== 'string') return null; // 成功确认没有协作活动
-      return { at: first.updated_at, state: first.state === 'closed' ? 'closed' : 'open', pullRequest: first.pull_request !== undefined };
+      return {
+        at: first.updated_at, state: first.state === 'closed' ? 'closed' : 'open', pullRequest: first.pull_request !== undefined,
+        ...(typeof first.number === 'number' ? { sourceId: String(first.number) } : {}),
+        ...(typeof first.title === 'string' ? { contentRevision: JSON.stringify([first.title, first.state, first.body ?? null]) } : {}),
+        createdAt: typeof first.created_at === 'string' ? first.created_at : null,
+        closedAt: typeof first.closed_at === 'string' ? first.closed_at : null,
+      };
     });
   }
 
@@ -143,15 +151,20 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
     async observeSummary(accessToken: string, fullName: string, observedAt: string, accessContextRevision: number): Promise<SummaryObservation> {
       const meta = await fetchRepositoryMeta(accessToken, fullName);
       const defaultBranch = meta.defaultBranch ?? null;
+      const errors: NormalizedError[] = [];
+      const onFailure = (error: unknown): void => {
+        const mapped = mapGitHubError(error);
+        errors.push({ kind: mapped.kind, message: mapped.message, fullName, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) });
+      };
       const [headRevision, release, tag] = await Promise.all([
         checked<string>(() => {
           if (defaultBranch === null) throw new Error('默认分支未知');
           return fetchHeadRevision(accessToken, fullName, defaultBranch);
-        }, observedAt),
-        checked<{ tagName: string; title: string; publishedAt: string | null } | null>(() => fetchRelease(accessToken, fullName), observedAt),
-        checked<{ name: string; commitSha: string | null } | null>(() => fetchLatestTag(accessToken, fullName), observedAt),
+        }, observedAt, onFailure),
+        checked<{ tagName: string; title: string; publishedAt: string | null } | null>(() => fetchRelease(accessToken, fullName), observedAt, onFailure),
+        checked<{ name: string; commitSha: string | null } | null>(() => fetchLatestTag(accessToken, fullName), observedAt, onFailure),
       ]);
-      const collaboration = await checked<{ at: string; state: 'open' | 'closed'; pullRequest: boolean } | null>(() => fetchCollaborationProbe(accessToken, fullName), observedAt);
+      const collaboration = await checked<CollaborationProbe | null>(() => fetchCollaborationProbe(accessToken, fullName), observedAt, onFailure);
 
       const releaseValue = release.state === 'known' ? release.value : null;
       const tagValue = tag.state === 'known' ? tag.value : null;
@@ -167,6 +180,7 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
         fullName: meta.fullName,
         observedAt,
         accessContextRevision,
+        ...(errors.length > 0 ? { errors } : {}),
         values: {
           stars: meta.stars,
           forks: meta.forks,
@@ -191,7 +205,9 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
           // 协作候选：区分 Issue / PR 并保留状态；失败或确认无活动时 at 为 null（失败的保留策略在调用方）
           collaboration: collaborationValue === null
             ? { kind: 'issue', at: null, verified: false }
-            : { kind: collaborationValue.pullRequest ? 'pull-request' : 'issue', at: collaborationValue.at, verified: true, state: collaborationValue.state },
+            : { kind: collaborationValue.pullRequest ? 'pull-request' : 'issue', at: collaborationValue.at, verified: true, state: collaborationValue.state,
+                sourceId: collaborationValue.sourceId, contentRevision: collaborationValue.contentRevision,
+                createdAt: collaborationValue.createdAt, closedAt: collaborationValue.closedAt },
         },
       };
     },

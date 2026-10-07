@@ -298,10 +298,10 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
   }, [displayed, pendingReveal, startReveal]);
 
   // 刷新全部轻量信息；完成后重读清单查询
-  async function runRefresh(): Promise<void> {
+  async function runRefresh(origin: 'startup' | 'manual' = 'manual'): Promise<void> {
     setRefreshing(true);
     try {
-      const result = await getApi().refreshGlance();
+      const result = await getApi().refreshGlance(origin);
       setRefreshErrors(dedupeErrors(result.errors));
       await queryClient.invalidateQueries({ queryKey: ['repositories'] });
     } catch {
@@ -315,7 +315,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
   useEffect(() => {
     if (startupRefreshed) return;
     startupRefreshed = true;
-    void runRefresh();
+    void runRefresh('startup');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

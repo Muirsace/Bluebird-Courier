@@ -178,6 +178,8 @@ export interface ActivityCandidate {
    * 适配器不设置该字段，由 domain/feature 按业务规则标记。
    */
   important?: boolean;
+  /** 重要源事件时间；与原始探测更新时间 at 分开，避免丢失观察线索。 */
+  importantAt?: string | null;
   /**
    * 源时间是否被直接读到：true = 成功读取源时间（发版时间 / 协作更新时间）；
    * false = 辅助线索（如 pushedAt 未经默认分支验证）或本次未读到。
@@ -185,6 +187,11 @@ export interface ActivityCandidate {
   verified: boolean;
   /** 协作来源的状态（仅 Issue / PR 候选提供），供重要性分类区分噪声。 */
   state?: 'open' | 'closed';
+  /** 归一化记录身份和重要展示字段指纹；更新时间本身不纳入指纹。 */
+  sourceId?: string;
+  contentRevision?: string;
+  createdAt?: string | null;
+  closedAt?: string | null;
 }
 
 /** 主进程聚合后的统一活动结果；卡片显示、悬停说明与清单排序使用同一结果。 */
@@ -271,6 +278,8 @@ export interface RepositoryObservation {
   observedAt: string;
   accessContextRevision: number;
   values: GlanceValues;
+  /** 单来源检查失败；摘要可成功，限流和认证失败仍须交给批次停止策略。 */
+  errors?: NormalizedError[];
   signals: {
     defaultBranch: CheckedSignal<string>;
     headRevision: CheckedSignal<string>;

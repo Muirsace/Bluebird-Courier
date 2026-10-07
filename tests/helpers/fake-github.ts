@@ -29,6 +29,15 @@ export interface FakeObservationConfig {
   tag?: string | null;
   /** 注入为 unknown 的信号；用于验证"未检查/失败"与"确认不存在"的区分。 */
   unknown?: Array<'head' | 'release' | 'tag'>;
+  /** 协作活动候选（直接读到的源时间）；缺省 = 确认无活动。 */
+  collaborationAt?: string | null;
+  collaborationKind?: 'issue' | 'pull-request';
+  collaborationState?: 'open' | 'closed';
+  collaborationSourceId?: string;
+  collaborationRevision?: string;
+  collaborationCreatedAt?: string | null;
+  collaborationClosedAt?: string | null;
+  errors?: SummaryObservation['errors'];
 }
 
 export type FakeMethod = 'validateAccessToken' | keyof Omit<GitHubPort, 'validateAccessToken'> | 'observeSummary' | 'verifyScopes' | 'fetchScope';
@@ -127,6 +136,19 @@ export class FakeGitHub implements GitHubPort {
   scopeVerifications = new Map<string, ScopeVerification>();
   /** 范围抓取的预置处理器；未配置即抛出（不返回空成功）。 */
   scopeFetches = new Map<string, (request: ScopeFetchRequest) => Promise<ScopeFetchOutcome>>();
+  /** observeSummary 的挂起闸门（测去重时让在途任务可见）。 */
+  observationGate: Promise<void> | null = null;
+
+  holdNextObservation(): () => void {
+    let release = (): void => {};
+    this.observationGate = new Promise<void>((resolve) => {
+      release = () => {
+        this.observationGate = null;
+        resolve();
+      };
+    });
+    return release;
+  }
 
   addRepo(data: FakeRepoData): FakeRepoData {
     this.repos.set(data.meta.fullName, data);
@@ -221,16 +243,19 @@ export class FakeGitHub implements GitHubPort {
   async observeSummary(_accessToken: string, fullName: string, observedAt: string, accessContextRevision: number): Promise<SummaryObservation> {
     this.record('observeSummary');
     this.guard(fullName, 'observeSummary');
+    if (this.observationGate) await this.observationGate;
     const data = this.repo(fullName);
     const config = data.observation ?? {};
     const known = <T>(value: T | null): CheckedSignal<T> => ({ state: 'known', value, checkedAt: observedAt });
     const maybe = <T>(name: 'head' | 'release' | 'tag', value: T | null): CheckedSignal<T> =>
       config.unknown?.includes(name) ? { state: 'unknown', error: `注入的 ${name} 检查失败` } : known(value);
     const tagName = config.tag ?? null;
+    const collaborationAt = config.collaborationAt ?? null;
     return {
       fullName: data.meta.fullName,
       observedAt,
       accessContextRevision,
+      ...(config.errors ? { errors: config.errors } : {}),
       values: {
         stars: data.meta.stars,
         forks: data.meta.forks,
@@ -238,7 +263,7 @@ export class FakeGitHub implements GitHubPort {
         pushedAt: data.meta.pushedAt,
         latestReleaseTag: data.latestRelease?.tagName ?? tagName,
         latestTag: tagName,
-        collaborationAt: null,
+        collaborationAt,
         status: data.meta.status ?? 'active',
       },
       signals: {
@@ -251,7 +276,12 @@ export class FakeGitHub implements GitHubPort {
         // 与真实适配器一致：只保留源信息与检查结果，重要性由 domain/feature 判定
         code: { kind: 'code', at: data.meta.pushedAt, verified: false },
         release: { kind: 'release', at: data.latestRelease?.publishedAt ?? null, verified: true },
-        collaboration: { kind: 'issue', at: null, verified: false },
+        collaboration: collaborationAt === null
+          ? { kind: 'issue', at: null, verified: false }
+          : { kind: config.collaborationKind ?? 'issue', at: collaborationAt, verified: true, state: config.collaborationState ?? 'open',
+              sourceId: config.collaborationSourceId ?? '1', contentRevision: config.collaborationRevision ?? 'initial',
+              createdAt: config.collaborationCreatedAt === undefined ? collaborationAt : config.collaborationCreatedAt,
+              closedAt: config.collaborationClosedAt ?? null },
       },
     };
   }
