@@ -31,15 +31,6 @@ export interface DetailCache {
   source: 'fresh' | 'cache';
 }
 
-export interface DetailResult {
-  repository: Glance;
-  values: DetailValues;
-  columns: Partial<Record<ColumnName, ColumnResult>>;
-  cached: boolean;
-  stale: boolean;
-  error: NormalizedError | null;
-}
-
 export interface HistoryPage<T> {
   items: T[];
   nextCursor: string | null;
@@ -91,6 +82,17 @@ export interface ObservationApplyOutcome {
   affectedScopes: DetailScope[];
 }
 
+/** 真实远端摘要观察；由 facade 协调清单写回与趋势采样。 */
+export interface DetailObservation { repositoryId: number; accessContextRevision: number; observedAt: string; values: import('../../../../domain/types').GlanceValues; }
+
+export interface DetailAccessResult {
+  view: LocalDetailView;
+  /** true = 本次调用等待的网络获取已提交内容；部分覆盖仍通过 error 与范围账本明示。 */
+  fetched: boolean;
+  /** 等待的获取失败时的原始错误；由 facade 归一化为跨进程错误。 */
+  error: unknown;
+}
+
 /** 范围同步请求（强制 / 计划执行的输入）。 */
 export interface ScopeSyncRequest {
   scopes: readonly DetailScope[];
@@ -103,8 +105,16 @@ export interface ScopeSyncOutcome {
 
 export interface RepositoryDetailService {
   getCached(repositoryId: number): DetailCache | null;
-  open(repositoryId: number, token: string, force?: boolean): Promise<DetailResult>;
-  refresh(repositoryId: number, token: string): Promise<DetailResult>;
+  /** 真正取得远端摘要后通知 facade；缓存读取和仅内容抓取不产生采样。 */
+  onObservation(listener: (observation: DetailObservation) => void): void;
+  /**
+   * 打开用例：先读本地视图；有可展示缓存立即返回并按需安排后台任务（不等待网络），
+   * 无有效缓存时等待必要的首次获取。token 为 null 时只读本地、不安排网络计划。
+   */
+  open(repositoryId: number, token: string | null): Promise<DetailAccessResult>;
+  /** 强制同步：按 domain.planSync 的 force 决策执行完整获取；失败保留旧内容与 dirty。 */
+  refresh(repositoryId: number, token: string): Promise<DetailAccessResult>;
+  /** 历史分页：只读已保存的本地内容，不在读取路径触发网络。 */
   loadHistory(repositoryId: number, token: string, kind: 'commits' | 'issues' | 'pullRequests', cursor?: string): Promise<HistoryPage<unknown>>;
   remove(repositoryId: number): void;
   clear(): void;
@@ -112,6 +122,7 @@ export interface RepositoryDetailService {
    * 只读本地视图 / 纯状态：无网络副作用，不启动抓取，不刷新抓取时间。
    * mode='status' 只读状态与版本，不解析详情 payload；无效/损坏缓存以 error 明示。
    * 内容读取按 scopes 选择范围、itemLimit 收口并支持按范围续读游标。
+   * task 字段为当前上下文内的真实在途任务快照；无任务为 null。
    */
   readLocal(repositoryId: number, request?: LocalReadRequest): LocalDetailView | null;
   /**
@@ -120,8 +131,9 @@ export interface RepositoryDetailService {
    */
   applyObservation(handoff: ObservationHandoff, appliedAt: string): ObservationApplyOutcome;
   /**
-   * 按范围执行同步（后台任务的实际执行入口）。
-   * 步骤 8 实现（当前为 undefined）。
+   * 按范围执行同步（显式范围入口）。
+   * 步骤 8 剩余能力：当前后台执行由打开 / 强制用例经 domain 计划驱动（构建范围已可执行）；
+   * 非构建范围的显式入口与 facade 接线随后续批次提供，当前为 undefined。
    */
   syncScopes?(repositoryId: number, request: ScopeSyncRequest): Promise<ScopeSyncOutcome>;
 }

@@ -108,6 +108,7 @@ describe('全量信息抓取（详情页）', () => {
       { tagName: 'v3.0.0', title: 'v3.0.0', publishedAt: '2026-09-27T09:00:00.000Z' },
       ...data.releases,
     ];
+    data.latestRelease = data.releases[0]!; // 发布列表与真实 latest 摘要保持一致
     h().clock.set(new Date(2026, 8, 27, 12, 0, 0));
     await h().facade.fetchDetail(id);
 
@@ -158,14 +159,15 @@ describe('全量信息抓取（详情页）', () => {
     const resetAt = new Date('2026-09-26T13:00:00.000Z');
     h().github.failures.clear();
     h().github.fail('octo-demo/hello-world', 'listCommits', fixtures.rateLimited(resetAt));
-    expect((await h().facade.fetchDetail(id)).error).toMatchObject({
+    // 首次部分结果可读；后续错误归一通过等待真实执行的强制入口验证。
+    expect((await h().facade.refreshRepository!(id, true)).error).toMatchObject({
       kind: 'rate_limited',
       resetAt: resetAt.toISOString(),
     });
 
     h().github.failures.clear();
     h().github.accessTokenInvalid = true;
-    expect((await h().facade.fetchDetail(id)).error).toMatchObject({ kind: 'access_token_invalid' });
+    expect((await h().facade.refreshRepository!(id, true)).error).toMatchObject({ kind: 'access_token_invalid' });
   });
 
   it('限流归一不依赖恢复时间头（无 reset/retry-after 也报限流）', async () => {
@@ -350,10 +352,16 @@ describe('本地读取与观察应用（步骤 7A）', () => {
     const rows = h().db.prepare(
       'SELECT scope, detected_revision, synced_revision, freshness, dirty_reasons, last_synced_at FROM detail_scope_state WHERE repository_id = ? ORDER BY scope',
     ).all(id) as Array<{ scope: string; detected_revision: number; synced_revision: number; freshness: string; dirty_reasons: string; last_synced_at: string | null }>;
-    expect(rows.map((row) => row.scope)).toEqual(['builds', 'commits', 'overview', 'readme', 'tree']);
-    for (const row of rows) {
-      expect(row).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale', last_synced_at: null }); // 不宣布 fresh、不写同步时间
+    // 首次凭开获取已同事务写入全部远端范围的覆盖基线；本次观察只影响 heads 变化映射的范围。
+    expect(rows.map((row) => row.scope)).toEqual(['builds', 'commits', 'issuesAndPr', 'overview', 'readme', 'releases', 'tree']);
+    const baselineSyncedAt = rows.find((row) => row.scope === 'commits')!.last_synced_at;
+    for (const row of rows.filter((entry) => ['overview', 'commits', 'builds', 'readme', 'tree'].includes(entry.scope))) {
+      expect(row).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale' }); // 不宣布 fresh
+      expect(row.last_synced_at).toBe(baselineSyncedAt); // 观察不刷新同步时间，也不清除既有基线
       expect(JSON.parse(row.dirty_reasons)).toContain('head');
+    }
+    for (const row of rows.filter((entry) => entry.scope === 'releases' || entry.scope === 'issuesAndPr')) {
+      expect(row).toMatchObject({ detected_revision: 0, synced_revision: 0 });
     }
 
     // 本地读取带出账本状态（只读，不启动任务）
@@ -368,12 +376,11 @@ describe('本地读取与观察应用（步骤 7A）', () => {
     expect(afterReplay.detected_revision).toBe(1);
     expect(h().repositoryList.pendingObservations()).toHaveLength(1); // 中断状态：仍未确认
 
-    // 重启重放：打开详情时消费 → 重放判重 → 确认
+    // 重启重放：打开详情时消费 → 重放判重 → 确认；本地缓存仍先于后台网络返回
     h().reopen();
-    h().github.resetCalls();
     const opened = await h().facade.fetchDetail(id);
     expect(opened.detail).not.toBeNull();
-    expect(h().github.calls).toEqual({}); // 缓存优先，无额外网络
+    expect(opened.cached).toBe(true);
     expect(h().repositoryList.pendingObservations()).toEqual([]);
   });
 
@@ -385,7 +392,9 @@ describe('本地读取与观察应用（步骤 7A）', () => {
 
     const outcome = h().repositoryDetail.applyObservation(handoff!, h().clock.now().toISOString());
     expect(outcome).toMatchObject({ applied: false, duplicate: false });
-    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state').get() as { n: number }).n).toBe(0);
+    // 当前上下文账本没有任何新增：首次获取写入的基线属于旧上下文，跨上下文观察不改动它，也不改当前账本。
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE access_context_revision = 1').get() as { n: number }).n).toBe(0);
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE access_context_revision = 0').get() as { n: number }).n).toBe(7);
     expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_observation_apply').get() as { n: number }).n).toBe(0);
 
     // facade 打开时不确认（应用无进展），待交接保留供后续重放
@@ -401,7 +410,10 @@ describe('本地读取与观察应用（步骤 7A）', () => {
     h().db.exec('DROP TABLE detail_observation_apply');
 
     expect(() => h().repositoryDetail.applyObservation(handoff!, h().clock.now().toISOString())).toThrow();
-    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state').get() as { n: number }).n).toBe(0); // 事务回滚
+    // 事务回滚：受影响的 commits 范围保持基线（没有部分递增）
+    expect(h().db.prepare("SELECT detected_revision, synced_revision FROM detail_scope_state WHERE repository_id = ? AND scope = 'commits'").get(id))
+      .toEqual({ detected_revision: 0, synced_revision: 0 });
+    expect((h().db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'detail_observation_apply'").get() as { n: number }).n).toBe(0);
 
     const opened = await h().facade.fetchDetail(id);
     expect(opened.detail).not.toBeNull();

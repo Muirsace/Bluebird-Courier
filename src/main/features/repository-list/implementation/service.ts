@@ -1,3 +1,4 @@
+import { writeRepositoryGlance } from './repository-status';
 import type { Clock } from '../../../core/infra/clock';
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { Logger } from '../../../core/infra/logger';
@@ -9,7 +10,7 @@ import { listRepositories, findRepositoryById, findRepositoryByFullName } from '
 import { applyRepositoryGlance, createObservationCheck } from './refresh-batch';
 import { markRepositoryFailure } from './retry-repository';
 import { deleteRepository, clearRepositories } from './delete-repository';
-import { confirmObservationHandoff, readPendingObservations } from './repository-list-store';
+import { confirmObservationHandoff, readPendingObservations, readRow, readStoredObservation, rowToGlance } from './repository-list-store';
 
 export interface RepositoryListDependencies {
   db: LocalDatabase;
@@ -31,6 +32,13 @@ export function createRepositoryListService({ db, clock, github, logger, accessC
     findByFullName: (fullName: string): Glance | null => findRepositoryByFullName(db, fullName),
     createPending: (fullName: string): Glance => createPendingRepository(db, clock, fullName),
     applyGlance: (id, values) => applyRepositoryGlance(db, clock, id, values),
+    applyObservedSummary: (id, values, observedAt, revision) => {
+      if (accessContext.currentRevision() !== revision) return null;
+      const row = readRow(db, id);
+      if (!row || !Number.isFinite(Date.parse(observedAt)) || (row.fetched_at && Date.parse(row.fetched_at) > Date.parse(observedAt))) return null;
+      writeRepositoryGlance(db, id, { ...values, collaborationAt: values.collaborationAt ?? row.collaboration_activity_at ?? null }, observedAt);
+      return rowToGlance(readRow(db, id)!);
+    },
     markFailure: (id, error) => markRepositoryFailure(db, clock, id, error),
     add: (values) => addFetchedRepository(db, clock, values),
     remove: (id) => deleteRepository(db, id),
@@ -39,5 +47,11 @@ export function createRepositoryListService({ db, clock, github, logger, accessC
     checkRepository: (repositoryId, accessToken, accessContextRevision) => check.checkRepository(repositoryId, accessToken, accessContextRevision),
     pendingObservations: (limit = 100, filter) => readPendingObservations(db, Number.isFinite(limit) ? Math.min(200, Math.max(1, Math.floor(limit))) : 100, filter),
     confirmObservationHandoff: (observationId) => confirmObservationHandoff(db, observationId, clock.now().toISOString()),
+    findReference: (repositoryId) => {
+      const row = readRow(db, repositoryId);
+      if (!row) return null;
+      const branch = readStoredObservation(row)?.signals.defaultBranch;
+      return { id: row.id, fullName: row.full_name, defaultBranch: branch && branch.state === 'known' ? branch.value : null };
+    },
   };
 }

@@ -9,10 +9,10 @@ export function writeRepositoryGlance(db: LocalDatabase, id: number, values: Gla
   db.prepare(
     `UPDATE repository
        SET owner = COALESCE(?, owner), name = COALESCE(?, name), full_name = COALESCE(?, full_name),
-           stars = ?, forks = ?, open_issues = ?, pushed_at = ?, latest_release_tag = ?, fetched_at = ?,
+           stars = ?, forks = ?, open_issues = ?, pushed_at = ?, latest_release_tag = ?, latest_tag = CASE WHEN ? THEN ? ELSE latest_tag END, fetched_at = ?,
            code_activity_at = ?, collaboration_activity_at = ?, repository_status = ?, last_success_at = ?, last_error_kind = NULL, last_error_message = NULL
      WHERE id = ?`,
-  ).run(owner, name, owner && name ? candidateFullName : null, values.stars, values.forks, values.openIssues, values.pushedAt, values.latestReleaseTag, fetchedAt, values.pushedAt, values.collaborationAt ?? null, values.status ?? 'active', fetchedAt, id);
+  ).run(owner, name, owner && name ? candidateFullName : null, values.stars, values.forks, values.openIssues, values.pushedAt, values.latestReleaseTag, values.latestTag !== undefined ? 1 : 0, values.latestTag ?? null, fetchedAt, values.pushedAt, values.collaborationAt ?? null, values.status ?? 'active', fetchedAt, id);
 }
 
 export interface ObservedGlanceWrite {

@@ -14,6 +14,7 @@ import type { RepositoryListService } from '../../src/main/features/repository-l
 import type { RepositoryDetailService } from '../../src/main/features/repository-detail/contract';
 import type { TokenSettingsService } from '../../src/main/features/token-settings/contract';
 import type { BluebirdCourierFacade } from '../../src/shared/types';
+import type { ScopeFetchPort, ScopeVerificationPort } from '../../src/domain/ports';
 import { FakeGitHub } from './fake-github';
 import { FakeClock, FakeCipherBox } from './fakes';
 
@@ -37,7 +38,7 @@ export interface Harness {
  * 默认时钟取本地正午，保证"本地日期"跨时区稳定（2026-09-26）。
  * 可用 `cipher` 注入真实加密盒以覆盖系统安全存储不可用的路径。
  */
-export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}): Harness {
+export function createHarness(options: { now?: Date; cipher?: CipherBox; scopePorts?: ScopeFetchPort & ScopeVerificationPort } = {}): Harness {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-facade-'));
   const dbPath = path.join(dir, 'octo.db');
   const github = new FakeGitHub();
@@ -59,7 +60,11 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
       github,
       clock,
       repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
+      repositoryRef: { findById: (repositoryId) => repositoryList.findReference(repositoryId) },
       accessContext: { currentRevision: () => tokenSettings.accessContextRevision() },
+      scopeVerify: options.scopePorts ?? github,
+      scopeFetch: options.scopePorts ?? github,
+      nextTaskId: createIdentifierGenerator(),
     });
     facade = createFacade({
       repositoryList,

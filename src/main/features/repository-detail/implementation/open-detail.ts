@@ -2,16 +2,9 @@ import type { DetailScope, DetailValues, Glance, NormalizedError, ScopeSyncState
 import { COLUMN_SCOPE, SCOPE_ORDER } from '../../../../domain/rules/detail-scope';
 import { emptyLocalBuild, localReadCursor, localReadLimit, localReadOffset, selectedLocalScopes } from '../../../../domain/rules/local-read';
 import { initialScopeState } from '../../../../domain/rules/observation-application';
-import type { DetailCache, DetailResult, LocalDetailView, LocalReadRequest } from '../contract';
+import type { LocalDetailView, LocalReadRequest, SyncTaskState } from '../contract';
 import { DETAIL_CACHE_SCHEMA_VERSION, type DetailCacheMeta } from './detail-store';
 import type { LocalScopePage } from './local-detail-store';
-
-export function openCachedDetail(repository: Glance, cached: DetailCache): DetailResult {
-  return { repository, values: cached.values, columns: cached.columns, cached: true, stale: false, error: null };
-}
-export function openStaleDetail(repository: Glance, cached: DetailCache, message: string): DetailResult {
-  return { repository, values: cached.values, columns: cached.columns, cached: true, stale: true, error: { kind: 'unknown', message, fullName: repository.fullName } };
-}
 
 export interface LocalViewInput {
   cacheMeta: DetailCacheMeta | null;
@@ -20,6 +13,8 @@ export interface LocalViewInput {
   scopeStates: Partial<Record<DetailScope, ScopeSyncState>>;
   viewVersion: number;
   columns: LocalDetailView['columns'];
+  /** 当前上下文内的在途任务快照；无任务为 null（不返回虚假 running / queued）。 */
+  task: SyncTaskState | null;
   readScope(scope: DetailScope, offset: number, limit: number): LocalScopePage;
 }
 
@@ -44,8 +39,15 @@ export function buildLocalView(repository: Glance, input: LocalViewInput, reques
     const base = input.scopeStates[scope] ?? initialScopeState(present ? 'valid' : 'missing');
     scopes[scope] = { ...base, cacheStatus: cacheStatus === 'valid' ? base.cacheStatus : cacheStatus };
   }
+  for (const scope of input.task?.targetScopes ?? []) {
+    scopes[scope] = { ...scopes[scope]!, ...(input.task?.kind === 'check' ? { checkStatus: input.task.status } : { syncStatus: input.task!.status }) };
+  }
+  for (const state of Object.values(scopes)) {
+    if (state?.syncStatus === 'error' && state.lastSyncError) error ??= state.lastSyncFailure ?? failure(state.lastSyncError);
+    if (state?.checkStatus === 'error' && state.lastCheckError) error ??= state.lastCheckFailure ?? failure(state.lastCheckError);
+  }
   const base = { repository, values: null, columns: {}, viewVersion: input.viewVersion,
-    accessContextRevision: input.currentAccessContextRevision, scopes, task: null, truncated: false, error };
+    accessContextRevision: input.currentAccessContextRevision, scopes, task: input.task, truncated: false, error };
   if (mode === 'status' || cacheStatus !== 'valid') return base;
 
   const identity = { repositoryId: repository.id, accessContextRevision: input.currentAccessContextRevision,

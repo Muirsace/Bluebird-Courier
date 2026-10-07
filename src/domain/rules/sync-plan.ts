@@ -21,6 +21,8 @@ export interface SyncPlanInput {
   dirtyScopes: readonly DetailScope[];
   /** 各范围未确认的变化原因；overview 缺少来源时不能假定仅由构建变化引起。 */
   dirtyReasonsByScope?: Partial<Record<DetailScope, readonly string[]>>;
+  /** 验证已到期但没有成功同步基线的范围；需实际重建，不把初采观察冒充旧缓存基线。 */
+  baselineMissingScopes?: readonly DetailScope[];
   /** 验证有效期已过的范围；由 isVerificationExpired 预先算好传入（规则不读时钟）。 */
   expiredScopes: readonly DetailScope[];
 }
@@ -58,10 +60,11 @@ function canSyncBuildDirtyScopes(input: SyncPlanInput): boolean {
  * 同步计划：综合新变化、旧 dirty 与过期范围，只返回应当发生的动作，不执行 I/O。
  *
  * 不变式：`check` 意图从不触发完整抓取（最多留下待同步标记或做范围验证）；
- * 完整抓取只在打开 / 强制意图下、缓存不可用或存在非构建范围的未同步工作时出现。
+ * 完整抓取只在打开 / 强制意图下、缓存不可用、缺少过期验证基线或存在非构建范围的未同步工作时出现。
  * 当所有未同步工作都明确属于构建变化时，走 `background-scope-fetch` 独立更新。
  */
 export function planSync(input: SyncPlanInput): SyncDecision {
+  if (input.intent === 'open' && (input.baselineMissingScopes?.length ?? 0) > 0) return 'background-full-fetch';
   if (input.intent === 'force') return 'force-full-fetch';
 
   const contentChanged = input.changeSet ? hasContentChanges(input.changeSet) : false;

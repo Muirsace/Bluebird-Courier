@@ -27,7 +27,8 @@ export const SCOPE_COLUMNS: Readonly<Partial<Record<DetailScope, readonly Column
 /** 范围展示顺序固定，比较与持久化结果不随插入顺序漂移。 */
 export const SCOPE_ORDER: readonly DetailScope[] = ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'readme', 'tree', 'trends'];
 
-const REMOTE_SCOPES: readonly DetailScope[] = ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'readme', 'tree'];
+/** 需要远端内容的范围（trends 是本地快照，不参与网络同步与确认）。 */
+export const REMOTE_SCOPES: readonly DetailScope[] = ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'readme', 'tree'];
 
 export function scopeOfColumn(column: ColumnName): DetailScope {
   return COLUMN_SCOPE[column];

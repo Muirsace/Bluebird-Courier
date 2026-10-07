@@ -89,3 +89,11 @@ export function readLocalColumns(db: LocalDatabase, id: number): Partial<Record<
     error: row.error_kind && row.error_message ? { kind: row.error_kind as NonNullable<ColumnResult['error']>['kind'], message: row.error_message } : null };
   return result;
 }
+
+/** 既有本地历史按栏目独立分页，不能先取默认30条视图再二次裁剪。 */
+export function readHistoryPage(db: LocalDatabase, id: number, kind: 'commits' | 'issues' | 'pullRequests', offset: number): { items: unknown[]; nextCursor: string | null; hasMore: boolean } {
+  if (!['commits', 'issues', 'pullRequests'].includes(kind) || !hasReadableDetail(db, id) || valueType(db, id, kind) !== 'array') return { items: [], nextCursor: null, hasMore: false };
+  const rows = db.prepare('SELECT j.value AS value, j.type AS kind FROM detail_cache AS c, json_each(c.payload, ?) AS j WHERE c.repository_id = ? ORDER BY CAST(j.key AS INTEGER) LIMIT 31 OFFSET ?').all('$.values.' + kind, id, offset) as Array<{ value: string; kind: string }>;
+  const items = rows.slice(0, 30).map(row => { const item: unknown = row.kind === 'object' ? JSON.parse(row.value) : null; if (!validItem(kind, item)) throw new Error('历史条目损坏'); return item; });
+  return { items, nextCursor: rows.length > 30 ? String(offset + items.length) : null, hasMore: rows.length > 30 };
+}

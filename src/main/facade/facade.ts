@@ -3,7 +3,7 @@ import { SCOPE_ORDER } from '../../domain/rules/detail-scope';
 import type { Clock, GitHubPort, Logger } from '../../domain/ports';
 import type { DetailScope, FetchedGlance, Glance, GlanceValues, NormalizedError, PaginationCursor, RepoInputResult } from '../../domain/types';
 import type { AccessTokenResult, AccessTokenState, AddRepositoryResult, BluebirdCourierFacade, DetailResult, LocalReadRequest, LocalReadResult, RefreshGlanceResult, SettingsView } from '../../shared/types';
-import type { RepositoryDetailService, LocalReadRequest as DetailLocalReadRequest } from '../features/repository-detail/contract';
+import type { DetailAccessResult, LocalDetailView, RepositoryDetailService, LocalReadRequest as DetailLocalReadRequest } from '../features/repository-detail/contract';
 import type { RepositoryListService } from '../features/repository-list/contract';
 import type { SnapshotTrendService } from '../features/snapshot-trend/contract';
 import type { TokenSettingsService } from '../features/token-settings/contract';
@@ -94,6 +94,44 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
     } catch (error) { logger.error('访问令牌校验失败', error); return { ok: false, error: normalizeError(error) }; }
   }
 
+  // 真实网络摘要经上下文和观察时间保护后更新清单，并按源观察时间采样；后台完成也走同一路径。
+  deps.repositoryDetail.onObservation(observation => {
+    if (observation.accessContextRevision !== deps.tokenSettings.accessContextRevision() || !find(observation.repositoryId)) return;
+    try {
+      const applied = deps.repositoryList.applyObservedSummary(observation.repositoryId, observation.values, observation.observedAt, observation.accessContextRevision);
+      if (applied) deps.snapshotTrend.recordObserved(observation.repositoryId, observation.values, observation.observedAt);
+    } catch (error) { logger.error('真实摘要观察保存或采样失败：' + observation.repositoryId, error); }
+  });
+
+  /** 打开 / 强制同步的失败优先级：等待的获取失败 > 无可展示内容（无令牌或缺失）> 本地视图错误。 */
+  function accessError(repository: Glance, access: DetailAccessResult): NormalizedError | null {
+    if (access.error !== null) return normalizeError(access.error, repository.fullName);
+    if (access.view.values === null) {
+      return token() === null
+        ? tokenError(repository.fullName)
+        : { kind: 'unknown', message: '本地没有可展示的详情缓存', fullName: repository.fullName };
+    }
+    return access.view.error;
+  }
+
+  function detailResultFrom(repository: Glance, access: DetailAccessResult, error: NormalizedError | null): DetailResult {
+    let view = access.view;
+    const current = deps.repositoryDetail.readLocal(repository.id, { mode: 'status' });
+    if (!current?.task && current && current.viewVersion !== view.viewVersion) view = deps.repositoryDetail.readLocal(repository.id) ?? view;
+    error = access.error !== null ? error : view.error ?? error;
+    const trend = deps.snapshotTrend.readLocalPage(repository.id, 0, localReadLimit()).points.map((point) => ({ capturedAt: point.capturedAt, stars: point.stars, forks: point.forks, openIssues: null, latestReleaseTag: null, pushedAt: null }));
+    return {
+      detail: view.values === null ? null : toWireDetail({ repository: view.repository, ...view.values, trend }),
+      error,
+      cached: !access.fetched && view.values !== null,
+      stale: view.values !== null && (error !== null || Object.values(view.scopes).some((state) => state?.freshness === 'stale')),
+      columns: view.columns,
+      viewVersion: view.viewVersion + deps.snapshotTrend.localCacheState(repository.id).viewVersion,
+      syncState: view.scopes,
+      task: deps.repositoryDetail.readLocal(repository.id, { mode: 'status' })?.task ?? null,
+    };
+  }
+
   const facade: Record<string, unknown> = {
     accessTokenState: async (): Promise<AccessTokenState> => ({ configured: deps.tokenSettings.accessTokenConfigured() }),
     validateAccessToken,
@@ -156,17 +194,12 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
       const repository = find(repositoryId); if (!repository) return { detail: null, error: { kind: 'not_found', message: '监控仓库不存在' } };
       // 本地打开前先消费待交接观察（幂等应用 → 确认）；失败保持待交接供重放。
       drainPendingObservations(repositoryId);
-      const accessToken = token(); if (!accessToken) return { detail: null, error: tokenError(repository.fullName) };
       try {
-        const loaded = await deps.repositoryDetail.open(repositoryId, accessToken);
-        const trend = deps.snapshotTrend.trend(repositoryId).map((point) => ({ capturedAt: point.capturedAt, stars: point.stars, forks: point.forks, openIssues: null, latestReleaseTag: null, pushedAt: null }));
-        const latestReleaseTag = loaded.values.releases[0]?.tagName ?? repository.latestReleaseTag ?? null;
-        const summary = detailGlanceValues(loaded.repository, latestReleaseTag);
-        deps.snapshotTrend.record(repositoryId, summary);
-        deps.repositoryList.applyGlance(repositoryId, summary);
-        const detail = toWireDetail({ repository: loaded.repository, ...loaded.values, trend });
-        return { detail, error: loaded.error, cached: loaded.cached, stale: loaded.stale, columns: loaded.columns };
-      } catch (error) { logger.error(`全量信息抓取失败：${repository.fullName}`, error); return { detail: null, error: normalizeError(error, repository.fullName) }; }
+        // 打开分流：有可展示缓存立即返回并按需安排后台任务（不等待网络）；无有效缓存等待首次获取。
+        const access = await deps.repositoryDetail.open(repositoryId, token());
+        if (!find(repositoryId) || access.view.accessContextRevision !== deps.tokenSettings.accessContextRevision()) return { detail: null, error: { kind: 'unknown', message: '仓库或访问上下文已变化，放弃旧响应' } };
+        return detailResultFrom(repository, access, accessError(repository, access));
+      } catch (error) { logger.error(`详情本地读取失败：${repository.fullName}`, error); return { detail: null, error: normalizeError(error, repository.fullName) }; }
     },
     async readLocalDetail(repositoryId: unknown, request?: unknown): Promise<LocalReadResult> {
       const current = deps.tokenSettings.accessContextRevision();
@@ -214,7 +247,7 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
         accessContextRevision: view.accessContextRevision,
         detail,
         syncState: view.scopes,
-        task: view.task, // 步骤 7B 才有后台任务；不返回虚假的 running / queued 状态
+        task: view.task, // 真实在途任务快照；无任务为 null，不返回虚假的 running / queued 状态
         ...(Object.keys(cursors).length > 0 ? { cursors } : {}),
         truncated,
         error,
@@ -223,20 +256,18 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
     async refreshRepository(repositoryId: number, force = true): Promise<DetailResult> {
       const repository = find(repositoryId); const accessToken = token();
       if (!repository || !accessToken) return { detail: null, error: !repository ? { kind: 'not_found', message: '监控仓库不存在' } : tokenError(repository.fullName) };
+      drainPendingObservations(repositoryId);
       try {
-        const loaded = force ? await deps.repositoryDetail.refresh(repositoryId, accessToken) : await deps.repositoryDetail.open(repositoryId, accessToken);
-        const trend = deps.snapshotTrend.trend(repositoryId).map((point) => ({ capturedAt: point.capturedAt, stars: point.stars, forks: point.forks, openIssues: null, latestReleaseTag: null, pushedAt: null }));
-        const latestReleaseTag = loaded.values.releases[0]?.tagName ?? repository.latestReleaseTag ?? null;
-        const summary = detailGlanceValues(loaded.repository, latestReleaseTag);
-        deps.snapshotTrend.record(repositoryId, summary);
-        deps.repositoryList.applyGlance(repositoryId, summary);
-        return { detail: toWireDetail({ repository: loaded.repository, ...loaded.values, trend }), error: loaded.error, cached: loaded.cached, stale: loaded.stale, columns: loaded.columns };
+        // 强制同步表达执行意图；失败时保留旧内容展示（view.values 为旧缓存）。
+        const access = force ? await deps.repositoryDetail.refresh(repositoryId, accessToken) : await deps.repositoryDetail.open(repositoryId, accessToken);
+        if (!find(repositoryId) || access.view.accessContextRevision !== deps.tokenSettings.accessContextRevision()) return { detail: null, error: { kind: 'unknown', message: '仓库或访问上下文已变化，放弃旧响应' } };
+        return detailResultFrom(repository, access, accessError(repository, access));
       } catch (error) { return { detail: null, error: normalizeError(error, repository.fullName) }; }
     },
     async loadHistory(repositoryId: number, kind: 'commits' | 'issues' | 'pullRequests', cursor?: string) {
       const repository = find(repositoryId); const accessToken = token();
-      if (!repository || !accessToken) return { items: [], nextCursor: null, hasMore: false };
-      return deps.repositoryDetail.loadHistory(repositoryId, accessToken, kind, cursor);
+      if (!repository) return { items: [], nextCursor: null, hasMore: false };
+      return deps.repositoryDetail.loadHistory(repositoryId, accessToken ?? '', kind, cursor);
     },
     async trend(repositoryId: number) {
       return { repositoryId, points: deps.snapshotTrend.trend(repositoryId) };

@@ -243,7 +243,9 @@ export interface ScopeSyncState {
   lastCheckedAt?: string;
   lastSyncedAt?: string;
   lastCheckError?: string;
+  lastCheckFailure?: NormalizedError;
   lastSyncError?: string;
+  lastSyncFailure?: NormalizedError;
 }
 
 /** 单仓库同步汇总；重启后从持久化基线恢复，旧 running 不作为运行中任务。 */

@@ -138,6 +138,8 @@ export class FakeGitHub implements GitHubPort {
   scopeFetches = new Map<string, (request: ScopeFetchRequest) => Promise<ScopeFetchOutcome>>();
   /** observeSummary 的挂起闸门（测去重时让在途任务可见）。 */
   observationGate: Promise<void> | null = null;
+  /** 按方法的调用闸门：命中后该方法的下一次调用等待释放（延迟网络测试用）。 */
+  private gates = new Map<string, Promise<void>>();
 
   holdNextObservation(): () => void {
     let release = (): void => {};
@@ -148,6 +150,25 @@ export class FakeGitHub implements GitHubPort {
       };
     });
     return release;
+  }
+
+  /** 挂起指定方法的下一次调用；返回释放函数（一次性）。 */
+  holdNext(method: FakeMethod): () => void {
+    let release = (): void => {};
+    this.gates.set(method, new Promise<void>((resolve) => {
+      release = () => {
+        this.gates.delete(method);
+        resolve();
+      };
+    }));
+    return release;
+  }
+
+  private async waitGate(method: string): Promise<void> {
+    const gate = this.gates.get(method);
+    if (!gate) return;
+    this.gates.delete(method);
+    await gate;
   }
 
   addRepo(data: FakeRepoData): FakeRepoData {
@@ -217,24 +238,28 @@ export class FakeGitHub implements GitHubPort {
   async listReleases(_accessToken: string, fullName: string): Promise<ReleaseItem[]> {
     this.record('listReleases');
     this.guard(fullName, 'listReleases');
+    await this.waitGate('listReleases');
     return this.repo(fullName).releases;
   }
 
   async listCommits(_accessToken: string, fullName: string): Promise<CommitItem[]> {
     this.record('listCommits');
     this.guard(fullName, 'listCommits');
+    await this.waitGate('listCommits');
     return this.repo(fullName).commits;
   }
 
   async listIssues(_accessToken: string, fullName: string): Promise<IssueOrPullRequest[]> {
     this.record('listIssues');
     this.guard(fullName, 'listIssues');
+    await this.waitGate('listIssues');
     return this.repo(fullName).issuesAndPullRequests;
   }
 
   async getLatestBuild(_accessToken: string, fullName: string): Promise<BuildInfo | null> {
     this.record('getLatestBuild');
     this.guard(fullName, 'getLatestBuild');
+    await this.waitGate('getLatestBuild');
     return this.repo(fullName).build;
   }
 
@@ -289,6 +314,7 @@ export class FakeGitHub implements GitHubPort {
   async verifyScopes(_accessToken: string, request: ScopeVerifyRequest): Promise<ScopeVerification> {
     this.record('verifyScopes');
     this.guard(request.fullName, 'verifyScopes');
+    await this.waitGate('verifyScopes');
     const configured = this.scopeVerifications.get(`${request.fullName}|${request.scope}`);
     if (!configured) {
       // 未配置 = 检查未完成：不得被当成"已确认无变化"。
@@ -300,8 +326,27 @@ export class FakeGitHub implements GitHubPort {
   async fetchScope(_accessToken: string, request: ScopeFetchRequest): Promise<ScopeFetchOutcome> {
     this.record('fetchScope');
     this.guard(request.fullName, 'fetchScope');
+    await this.waitGate('fetchScope');
     const handler = this.scopeFetches.get(`${request.fullName}|${request.scope}`);
-    if (!handler) throw new Error(`FakeGitHub：fetchScope(${request.scope}) 未配置`);
-    return handler(request);
+    if (handler) return handler(request);
+    const data = this.repo(request.fullName);
+    let items: unknown[];
+    switch (request.scope) {
+      case 'overview': items = [{ values: { ...data.meta, latestReleaseTag: data.latestRelease?.tagName ?? null, latestTag: data.observation?.tag ?? null, status: data.meta.status ?? 'active' }, metadata: { description: null, homepage: null, license: null, defaultBranch: data.observation?.defaultBranch ?? 'main' } }]; break;
+      case 'releases': items = [...(await this.listReleases(_accessToken, request.fullName)).map(item => ({ kind: 'release', ...item })), ...(data.observation?.tag ? [{ kind: 'tag', name: data.observation.tag, committedAt: null }] : [])]; break;
+      case 'commits': items = await this.listCommits(_accessToken, request.fullName); break;
+      case 'issuesAndPr': items = await this.listIssues(_accessToken, request.fullName); break;
+      case 'builds': { const build = await this.getLatestBuild(_accessToken, request.fullName); items = build ? [{ ...build, id: build.id ?? null }] : []; break; }
+      case 'readme': case 'tree': items = []; break;
+      default: throw new Error('本地范围不应请求网络');
+    }
+    const copy = JSON.parse(JSON.stringify(items));
+    const offset = request.cursor === null ? 0 : Number(request.cursor);
+    const end = offset + request.limit;
+    const remaining = end < copy.length;
+    return { scope: request.scope, items: copy.slice(offset, end), coverageComplete: !remaining, hasMore: remaining, nextCursor: remaining ? String(end) : null,
+      accessContextRevision: request.accessContextRevision, observedAt: request.observedAt,
+      ...(offset === 0 ? { fingerprint: JSON.stringify({ scope: request.scope, items: copy }) } : {}),
+      version: { defaultBranch: data.observation?.defaultBranch ?? 'main', headRevision: data.commits[0]?.sha ?? null, releaseRevision: null, tagRevision: null } };
   }
 }

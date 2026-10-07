@@ -1,5 +1,7 @@
 import type { LocalDatabase } from '../../../core/infra/database';
-import type { DetailScope, ScopeSyncState } from '../../../../domain/types';
+import type { BuildInfo, BuildItem, DetailScope, ScopeSyncState } from '../../../../domain/types';
+import { applyScopeSync } from '../../../../domain/rules/scope-ledger';
+import { initialScopeState } from '../../../../domain/rules/observation-application';
 import type { DetailCache } from '../contract';
 
 /** 当前详情缓存 schema；不匹配的旧缓存视为不可用，由同步流程重建。 */
@@ -49,6 +51,84 @@ export function clearDetails(db: LocalDatabase): void {
   db.prepare('DELETE FROM detail_column').run();
 }
 
+// —— 成功同步的原子写入（步骤 8A）：数据、覆盖基线、范围确认与视图版本同事务 ——
+
+/** 单范围的确认写入：目标序号与适配器指纹；covered=false 时不改动账本。 */
+export interface ScopeConfirmationWrite {
+  scope: DetailScope;
+  targetRevision: number;
+  covered: boolean;
+  fingerprint?: string;
+}
+
+function applyConfirmations(
+  db: LocalDatabase,
+  repositoryId: number,
+  accessContextRevision: number,
+  confirmations: readonly ScopeConfirmationWrite[],
+  syncedAt: string,
+): void {
+  for (const confirmation of confirmations) {
+    const base = readScopeState(db, repositoryId, confirmation.scope, accessContextRevision) ?? initialScopeState();
+    const next = applyScopeSync(base, {
+      targetRevision: confirmation.targetRevision,
+      covered: confirmation.covered,
+      syncedAt,
+      ...(confirmation.fingerprint !== undefined ? { fingerprint: confirmation.fingerprint } : {}),
+    });
+    if (next !== base) writeScopeState(db, repositoryId, confirmation.scope, next, accessContextRevision);
+  }
+}
+
+/**
+ * 完整获取成功：详情 payload、栏目、范围确认（只推进覆盖到的目标版本）与视图版本同一事务保存。
+ * 适配器未提供指纹的范围保留旧基线，不用本地拼装的指纹冒充。
+ */
+export function writeSyncedDetail(
+  db: LocalDatabase,
+  cache: DetailCache,
+  accessContextRevision: number,
+  confirmations: readonly ScopeConfirmationWrite[],
+  syncedAt: string,
+): void {
+  const write = db.transaction(() => {
+    db.prepare('INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at, source_updated_at = excluded.source_updated_at, schema_version = excluded.schema_version, access_context_revision = excluded.access_context_revision')
+      .run(cache.repositoryId, JSON.stringify(cache), cache.fetchedAt, cache.fetchedAt, DETAIL_CACHE_SCHEMA_VERSION, accessContextRevision);
+    const upsert = db.prepare('INSERT INTO detail_column (repository_id, column_name, state, payload, error_kind, error_message, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id, column_name) DO UPDATE SET state = excluded.state, payload = excluded.payload, error_kind = excluded.error_kind, error_message = excluded.error_message, updated_at = excluded.updated_at');
+    for (const [name, column] of Object.entries(cache.columns)) {
+      upsert.run(cache.repositoryId, name, column?.status ?? 'unsupported', column?.value === null || column?.value === undefined ? null : JSON.stringify(column.value), column?.error?.kind ?? null, column?.error?.message ?? null, cache.fetchedAt);
+    }
+    applyConfirmations(db, cache.repositoryId, accessContextRevision, confirmations, syncedAt);
+    bumpViewVersion(db, cache.repositoryId, cache.fetchedAt);
+  });
+  write();
+}
+
+/**
+ * 范围抓取成功：只在 SQLite 内改写该范围的内容（不触碰完整抓取时间与 schema/上下文），
+ * 覆盖确认与视图版本同事务保存；payload 损坏或缓存缺失时整体回滚。
+ */
+export function writeBuildsScope(
+  db: LocalDatabase,
+  repositoryId: number,
+  builds: BuildItem[],
+  build: BuildInfo,
+  accessContextRevision: number,
+  confirmations: readonly ScopeConfirmationWrite[],
+  syncedAt: string,
+): void {
+  const write = db.transaction(() => {
+    const updated = db.prepare("UPDATE detail_cache SET payload = json_set(payload, '$.values.builds', json(?), '$.values.build', json(?)) WHERE repository_id = ?")
+      .run(JSON.stringify(builds), JSON.stringify(build), repositoryId);
+    if (updated.changes === 0) throw new Error('详情缓存不存在，无法写入范围结果');
+    db.prepare('INSERT INTO detail_column (repository_id, column_name, state, payload, error_kind, error_message, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id, column_name) DO UPDATE SET state = excluded.state, payload = excluded.payload, error_kind = excluded.error_kind, error_message = excluded.error_message, updated_at = excluded.updated_at')
+      .run(repositoryId, 'builds', builds.length === 0 ? 'empty' : 'success', JSON.stringify(builds), null, null, syncedAt);
+    applyConfirmations(db, repositoryId, accessContextRevision, confirmations, syncedAt);
+    bumpViewVersion(db, repositoryId, syncedAt);
+  });
+  write();
+}
+
 // —— 范围账本、本地视图版本与观察应用记录（步骤 7） ——
 
 interface ScopeStateRow {
@@ -70,7 +150,14 @@ interface ScopeStateRow {
   last_sync_error: string | null;
 }
 
+function decodeFailure(value: string | null): import('../../../../domain/types').NormalizedError | undefined {
+  if (!value || !value.startsWith('{')) return undefined;
+  try { const parsed = JSON.parse(value) as import('../../../../domain/types').NormalizedError; return typeof parsed.message === 'string' && ['network', 'unknown', 'not_found', 'rate_limited', 'access_token_invalid'].includes(parsed.kind) ? parsed : undefined; } catch { return undefined; }
+}
+
 function rowToScopeState(row: ScopeStateRow): ScopeSyncState {
+  const checkFailure = decodeFailure(row.last_check_error);
+  const syncFailure = decodeFailure(row.last_sync_error);
   let dirtyReasons: string[] = [];
   try {
     const parsed = JSON.parse(row.dirty_reasons) as unknown;
@@ -92,13 +179,21 @@ function rowToScopeState(row: ScopeStateRow): ScopeSyncState {
     ...(typeof row.synced_fingerprint === 'string' ? { syncedFingerprint: row.synced_fingerprint } : {}),
     ...(row.last_checked_at !== null ? { lastCheckedAt: row.last_checked_at } : {}),
     ...(row.last_synced_at !== null ? { lastSyncedAt: row.last_synced_at } : {}),
-    ...(row.last_check_error !== null ? { lastCheckError: row.last_check_error } : {}),
-    ...(row.last_sync_error !== null ? { lastSyncError: row.last_sync_error } : {}),
+    ...(row.last_check_error !== null ? { lastCheckError: checkFailure?.message ?? row.last_check_error, ...(checkFailure ? { lastCheckFailure: checkFailure } : {}) } : {}),
+    ...(row.last_sync_error !== null ? { lastSyncError: syncFailure?.message ?? row.last_sync_error, ...(syncFailure ? { lastSyncFailure: syncFailure } : {}) } : {}),
   };
 }
 
 export function readScopeStates(db: LocalDatabase, repositoryId: number, accessContextRevision: number): Partial<Record<DetailScope, ScopeSyncState>> {
   const rows = db.prepare('SELECT scope, cache_status, freshness, check_status, sync_status, detected_revision, synced_revision, important_revision, viewed_revision, dirty_reasons, last_checked_at, last_synced_at, last_check_error, last_sync_error FROM detail_scope_state WHERE repository_id = ? AND access_context_revision = ?').all(repositoryId, accessContextRevision) as ScopeStateRow[];
+  const result: Partial<Record<DetailScope, ScopeSyncState>> = {};
+  for (const row of rows) result[row.scope as DetailScope] = rowToScopeState(row);
+  return result;
+}
+
+/** 内部规划与执行读取：含内部指纹基线；面向展示的状态读取不经过这里。 */
+export function readScopeStatesFull(db: LocalDatabase, repositoryId: number, accessContextRevision: number): Partial<Record<DetailScope, ScopeSyncState>> {
+  const rows = db.prepare('SELECT * FROM detail_scope_state WHERE repository_id = ? AND access_context_revision = ?').all(repositoryId, accessContextRevision) as ScopeStateRow[];
   const result: Partial<Record<DetailScope, ScopeSyncState>> = {};
   for (const row of rows) result[row.scope as DetailScope] = rowToScopeState(row);
   return result;
@@ -129,7 +224,7 @@ export function writeScopeState(db: LocalDatabase, repositoryId: number, scope: 
     repositoryId, scope, state.cacheStatus, state.freshness, state.checkStatus, state.syncStatus,
     state.detectedRevision, state.syncedRevision, state.importantRevision, state.viewedRevision, JSON.stringify(state.dirtyReasons),
     state.observedFingerprint ?? null, state.syncedFingerprint ?? null, state.lastCheckedAt ?? null,
-    state.lastSyncedAt ?? null, state.lastCheckError ?? null, state.lastSyncError ?? null, accessContextRevision,
+    state.lastSyncedAt ?? null, state.lastCheckFailure ? JSON.stringify(state.lastCheckFailure) : state.lastCheckError ?? null, state.lastSyncFailure ? JSON.stringify(state.lastSyncFailure) : state.lastSyncError ?? null, accessContextRevision,
   );
 }
 
@@ -158,4 +253,14 @@ export function insertObservationApply(
   db.prepare(
     'INSERT INTO detail_observation_apply (observation_id, repository_id, applied_at, access_context_revision, affected_scopes) VALUES (?, ?, ?, ?, ?)',
   ).run(entry.observationId, entry.repositoryId, entry.appliedAt, entry.accessContextRevision, JSON.stringify(entry.affectedScopes));
+}
+
+/** 只读当前上下文的已采集默认分支；不猜测分支名，也不把旧上下文作为查询参数。 */
+export function readCachedBranch(db: LocalDatabase, id: number, revision: number): string | null {
+  const row = db.prepare("SELECT CASE WHEN json_valid(payload) THEN json_extract(payload, '$.values.metadata.defaultBranch') END AS branch FROM detail_cache WHERE repository_id = ? AND schema_version = ? AND access_context_revision = ?").get(id, DETAIL_CACHE_SCHEMA_VERSION, revision) as { branch: unknown } | undefined;
+  return typeof row?.branch === 'string' ? row.branch : null;
+}
+export function hasColumnData(db: LocalDatabase, id: number, names: readonly string[]): boolean {
+  if (names.length === 0) return false;
+  return Boolean(db.prepare('SELECT 1 FROM detail_column WHERE repository_id = ? AND payload IS NOT NULL AND column_name IN (' + names.map(() => '?').join(',') + ') LIMIT 1').get(id, ...names));
 }

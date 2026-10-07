@@ -28,6 +28,37 @@ export function hasUnsyncedChanges(ledger: ScopeLedger): boolean {
 }
 
 /**
+ * 应用一次成功的范围同步：只推进覆盖到的目标版本，同步期间的新变化继续待同步。
+ * 成功同步不等于验证：freshness 只按账本派生（无未确认变化时为 unknown），
+ * 检查时间与观察指纹由验证流程另行推进。
+ * 未覆盖（部分失败、窗口重启）时不改动任何状态，保留旧内容与 dirty。
+ */
+export function applyScopeSync(base: ScopeSyncState, input: {
+  targetRevision: number;
+  covered: boolean;
+  syncedAt: string;
+  /** 适配器生成的覆盖指纹；缺省表示本次没有可用基线，不得伪造。 */
+  fingerprint?: string;
+}): ScopeSyncState {
+  if (!input.covered) return base;
+  const ledger = confirmSynced(ledgerOf(base), { targetRevision: input.targetRevision, covered: true });
+  return {
+    ...base,
+    cacheStatus: 'valid',
+    checkStatus: 'idle',
+    syncStatus: 'idle',
+    detectedRevision: ledger.detectedRevision,
+    syncedRevision: ledger.syncedRevision,
+    dirtyReasons: ledger.dirtyReasons,
+    freshness: deriveFreshness(ledger, false),
+    lastSyncedAt: input.syncedAt,
+    lastSyncError: undefined,
+    lastSyncFailure: undefined,
+    ...(input.fingerprint !== undefined ? { syncedFingerprint: input.fingerprint, observedFingerprint: input.fingerprint } : {}),
+  };
+}
+
+/**
  * 成功同步只确认覆盖到的目标版本：
  * 同步期间的新变化（detected 已超过 target）继续待同步，dirty 原因保留。
  */

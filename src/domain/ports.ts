@@ -5,6 +5,7 @@ import type {
   ContentVersion,
   DetailScope,
   ErrorKind,
+  NormalizedError,
   Glance,
   GlanceValues,
   IssueItem,
@@ -154,6 +155,7 @@ export interface ScopeVerifyRequest {
 /** 范围验证结果：checkComplete=false 表示检查区间未完成，不得宣布无变化。 */
 export interface ScopeVerification {
   scope: DetailScope;
+  error?: NormalizedError;
   checkedAt: string;
   /** 检查区间是否完整；预算耗尽、失败、分页未完成或基线不可比时为 false。 */
   checkComplete: boolean;
@@ -186,6 +188,7 @@ export interface ScopeFetchRequest {
  */
 export interface ScopeFetchOutcome<T = unknown> {
   scope: DetailScope;
+  errors?: NormalizedError[];
   items: T[];
   /** 是否还有更早的历史分页可继续读取。 */
   hasMore: boolean;

@@ -8,9 +8,10 @@ import { resolveFailureState } from '../../src/domain/rules/failure-state';
 import { retainRecentSnapshots } from '../../src/domain/rules/snapshot-retention';
 import { detectChanges, hasContentChanges, isComparableObservation, isCosmeticOnly } from '../../src/domain/rules/change-detection';
 import { COLUMN_SCOPE, scopesAffectedByChange, scopeOfColumn } from '../../src/domain/rules/detail-scope';
-import { canCommitTaskResult, confirmSynced, deriveFreshness, deriveUnseen, hasUnsyncedChanges, recordObservation } from '../../src/domain/rules/scope-ledger';
+import { canCommitTaskResult, confirmSynced, deriveFreshness, deriveUnseen, hasUnsyncedChanges, recordObservation, applyScopeSync } from '../../src/domain/rules/scope-ledger';
 import { BUILD_SCOPE_GROUP, hasOnlyBuildChanges, isBuildScopeSet, planSync } from '../../src/domain/rules/sync-plan';
-import type { CheckedSignal, DetailScope, RepoChangeSet, RepositoryObservation, TaskContext } from '../../src/domain/types';
+import { applyScopeVerification, verificationChangeScopes } from '../../src/domain/rules/observation-application';
+import type { CheckedSignal, DetailScope, RepoChangeSet, RepositoryObservation, ScopeSyncState, TaskContext } from '../../src/domain/types';
 
 describe('领域规则', () => {
   it('按公开、重复和数量限制判断清单资格', () => {
@@ -375,5 +376,53 @@ describe('仓库同步规则（步骤 1）', () => {
     expect(compareResolvedActivity(resolved, older)).toBeLessThan(0);
     expect(compareResolvedActivity(older, none)).toBeLessThan(0);
     expect(compareResolvedActivity(none, older)).toBeGreaterThan(0);
+  });
+});
+
+describe('范围同步与验证的账本应用（步骤 8A 纯规则）', () => {
+  const base = (): ScopeSyncState => ({ cacheStatus: 'valid', freshness: 'stale', checkStatus: 'idle', syncStatus: 'idle',
+    detectedRevision: 3, syncedRevision: 1, importantRevision: 2, viewedRevision: 0, dirtyReasons: ['head'] });
+
+  it('成功同步只推进覆盖到的目标版本；同步期间的新变化继续待同步', () => {
+    const partial = applyScopeSync(base(), { targetRevision: 2, covered: true, syncedAt: 'T', fingerprint: 'fp' });
+    expect(partial).toMatchObject({ syncedRevision: 2, detectedRevision: 3, freshness: 'stale' });
+    expect(partial.dirtyReasons).toEqual(['head']); // 未覆盖完的部分不清 dirty
+    expect(partial.lastSyncedAt).toBe('T');
+    expect(partial.syncedFingerprint).toBe('fp');
+    expect(partial.observedFingerprint).toBe('fp');
+
+    const cleared = applyScopeSync(base(), { targetRevision: 3, covered: true, syncedAt: 'T' });
+    expect(cleared).toMatchObject({ syncedRevision: 3, dirtyReasons: [], freshness: 'unknown' }); // 成功同步不宣布 fresh
+    expect(cleared.syncedFingerprint).toBeUndefined(); // 没有适配器指纹时不伪造基线
+  });
+
+  it('未覆盖（部分失败 / 窗口重启）不改动任何状态', () => {
+    const before = base();
+    expect(applyScopeSync(before, { targetRevision: 3, covered: false, syncedAt: 'T', fingerprint: 'fp' })).toBe(before);
+  });
+
+  it('完整验证无变化推进检查时间并可宣布 fresh；不完整检查不推进基线', () => {
+    const clean: ScopeSyncState = { ...base(), detectedRevision: 1, syncedRevision: 1, dirtyReasons: [] };
+    const verified = applyScopeVerification(clean, { checkComplete: true, changed: false, checkedAt: 'T', fingerprint: 'fp2' });
+    expect(verified).toMatchObject({ freshness: 'fresh', lastCheckedAt: 'T', observedFingerprint: 'fp2' });
+    const incomplete = applyScopeVerification(clean, { checkComplete: false, changed: false, checkedAt: 'T' });
+    expect(incomplete).toBe(clean);
+    // 采集指纹只作为观察记录，不推进检查时间，也不宣布无变化
+    const collected = applyScopeVerification(clean, { checkComplete: false, changed: false, checkedAt: 'T', fingerprint: 'fp-collect' });
+    expect(collected).toMatchObject({ observedFingerprint: 'fp-collect', freshness: clean.freshness });
+    expect(collected.lastCheckedAt).toBeUndefined();
+    // 未完成检查中发现的变化证据保留为 dirty，但不推进检查基线
+    const evidence = applyScopeVerification(clean, { checkComplete: false, changed: true, checkedAt: 'T', changedReason: 'build' });
+    expect(evidence).toMatchObject({ detectedRevision: 2, syncedRevision: 1, freshness: 'stale', dirtyReasons: ['build'] });
+    expect(evidence.lastCheckedAt).toBeUndefined();
+  });
+
+  it('验证发现变化按范围标记待同步且不宣称无变化', () => {
+    const clean: ScopeSyncState = { ...base(), detectedRevision: 1, syncedRevision: 1, dirtyReasons: [] };
+    const changed = applyScopeVerification(clean, { checkComplete: true, changed: true, checkedAt: 'T', changedReason: 'build' });
+    expect(changed).toMatchObject({ detectedRevision: 2, importantRevision: 2, syncedRevision: 1, freshness: 'stale', lastCheckedAt: 'T' });
+    expect(changed.dirtyReasons).toEqual(['build']);
+    expect(verificationChangeScopes('builds')).toEqual({ scopes: ['overview', 'builds'], reason: 'build' });
+    expect(verificationChangeScopes('commits')).toEqual({ scopes: ['commits'], reason: 'verify' });
   });
 });

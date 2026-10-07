@@ -1,4 +1,5 @@
 import type { Glance, GlanceValues, RepoInputResult, NormalizedError, FetchedGlance, ObservationHandoff } from '../../../../domain/types';
+import type { RepositoryRef } from '../../../../domain/ports';
 
 export interface AddRepositoryInput {
   fullName: string;
@@ -58,6 +59,7 @@ export interface RepositoryListService {
   findByFullName(fullName: string): Glance | null;
   createPending(fullName: string): Glance;
   applyGlance(id: number, values: GlanceValues): Glance;
+  applyObservedSummary(id: number, values: GlanceValues, observedAt: string, accessContextRevision: number): Glance | null;
   markFailure(id: number, error: NormalizedError): Glance;
   add(values: FetchedGlance): Glance;
   remove(id: unknown): { removed: boolean; fullName?: string };
@@ -73,4 +75,6 @@ export interface RepositoryListService {
   pendingObservations(limit?: number, filter?: { repositoryId?: number; accessContextRevision?: number; afterObservationId?: string }): ObservationHandoff[];
   /** 确认某条观察已由详情应用（幂等；重复确认或不存在返回 false）。 */
   confirmObservationHandoff(observationId: string): boolean;
+  /** 详情 feature 所需的仓库窄引用；默认分支来自最近一次成功观察的已知信号，未知为 null。 */
+  findReference(repositoryId: number): RepositoryRef | null;
 }
