@@ -1,4 +1,4 @@
-import type { GlanceValues, Snapshot } from '../../../../domain/types';
+import type { CacheStatus, GlanceValues, Snapshot } from '../../../../domain/types';
 
 export interface TrendPoint {
   capturedAt: string;
@@ -16,6 +16,9 @@ export interface SnapshotTrendService {
   recordObserved(repositoryId: number, values: GlanceValues, observedAt: string | Date): void;
   retain(repositoryId?: number, now?: Date): void;
   trend(repositoryId: number): TrendPoint[];
+  /** 本地趋势版本及有界分页；不访问网络、不刷新采样时间。 */
+  localCacheState(repositoryId: number): { viewVersion: number; cacheStatus: CacheStatus };
+  readLocalPage(repositoryId: number, offset: number, limit: number): { points: TrendPoint[]; hasMore: boolean };
   listSnapshots(repositoryId: number): Snapshot[];
   remove(repositoryId: number): void;
   clear(): void;

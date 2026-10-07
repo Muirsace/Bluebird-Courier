@@ -11,6 +11,7 @@ import { createRepositoryDetail } from '../../src/main/features/repository-detai
 import { createTokenSettings } from '../../src/main/features/token-settings/implementation/create';
 import { createSnapshotTrend } from '../../src/main/features/snapshot-trend/implementation/create';
 import type { RepositoryListService } from '../../src/main/features/repository-list/contract';
+import type { RepositoryDetailService } from '../../src/main/features/repository-detail/contract';
 import type { TokenSettingsService } from '../../src/main/features/token-settings/contract';
 import type { BluebirdCourierFacade } from '../../src/shared/types';
 import { FakeGitHub } from './fake-github';
@@ -24,6 +25,7 @@ export interface Harness {
   facade: BluebirdCourierFacade;
   /** feature 服务实例（facade 尚未暴露的用例用它们直接验证，如待交接读取与访问上下文推进）。 */
   repositoryList: RepositoryListService;
+  repositoryDetail: RepositoryDetailService;
   tokenSettings: TokenSettingsService;
   /** 关闭并重新打开同一个数据库文件（模拟应用重启）。 */
   reopen(): Harness;
@@ -44,6 +46,7 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
 
   let db = openDatabase(dbPath);
   let repositoryList!: RepositoryListService;
+  let repositoryDetail!: RepositoryDetailService;
   let tokenSettings!: TokenSettingsService;
   let facade!: BluebirdCourierFacade;
   const build = (): void => {
@@ -51,17 +54,20 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
     repositoryList = createRepositoryList({ db, clock, github,
       accessContext: { currentRevision: () => tokenSettings.accessContextRevision() }, nextObservationId: createIdentifierGenerator(),
     });
+    repositoryDetail = createRepositoryDetail({
+      db,
+      github,
+      clock,
+      repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
+      accessContext: { currentRevision: () => tokenSettings.accessContextRevision() },
+    });
     facade = createFacade({
       repositoryList,
       github,
-      repositoryDetail: createRepositoryDetail({
-        db,
-        github,
-        clock,
-        repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
-      }),
+      repositoryDetail,
       tokenSettings,
-      snapshotTrend: createSnapshotTrend({ db, clock }),
+      snapshotTrend: createSnapshotTrend({ db, clock, accessContext: { currentRevision: () => tokenSettings.accessContextRevision() } }),
+      clock,
     });
   };
   build();
@@ -78,6 +84,9 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox } = {}):
     },
     get repositoryList() {
       return repositoryList;
+    },
+    get repositoryDetail() {
+      return repositoryDetail;
     },
     get tokenSettings() {
       return tokenSettings;

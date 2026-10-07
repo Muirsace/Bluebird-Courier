@@ -112,8 +112,7 @@ export interface LocalReadRequest {
   /** 各范围的续读游标（范围分页）；缺省从头读取。 */
   cursors?: Partial<Record<DetailScope, PaginationCursor>>;
 }
-export const LOCAL_READ_DEFAULT_LIMIT = 30;
-export const LOCAL_READ_MAX_LIMIT = 200;
+export { LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT } from '../domain/types';
 
 /** 只读本地读取结果：无网络副作用，不启动抓取。 */
 export interface LocalReadResult {

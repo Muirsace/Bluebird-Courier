@@ -71,7 +71,7 @@ export interface SyncTaskState {
 /** 本地视图读取结果；无网络副作用，不启动抓取。 */
 export interface LocalDetailView {
   repository: Glance;
-  /** mode='status' 或没有详情缓存时为 null。 */
+  /** mode='status' 或缓存不可用时为 null。 */
   values: DetailValues | null;
   columns: Partial<Record<ColumnName, ColumnResult>>;
   viewVersion: number;
@@ -80,6 +80,8 @@ export interface LocalDetailView {
   task: SyncTaskState | null;
   cursors?: Partial<Record<DetailScope, PaginationCursor>>;
   truncated: boolean;
+  /** 损坏缓存、schema 或访问上下文不匹配等明确失败；不得伪装成空成功。 */
+  error: NormalizedError | null;
 }
 
 /** 幂等观察应用结果：duplicate=true 表示同一 observationId 重放，不再重复递增序号。 */
@@ -107,15 +109,16 @@ export interface RepositoryDetailService {
   remove(repositoryId: number): void;
   clear(): void;
   /**
-   * 只读本地视图 / 纯状态：无网络副作用，不启动抓取。
-   * 步骤 7 实现（当前为 undefined，不返回假视图）。
+   * 只读本地视图 / 纯状态：无网络副作用，不启动抓取，不刷新抓取时间。
+   * mode='status' 只读状态与版本，不解析详情 payload；无效/损坏缓存以 error 明示。
+   * 内容读取按 scopes 选择范围、itemLimit 收口并支持按范围续读游标。
    */
-  readLocal?(repositoryId: number, request?: LocalReadRequest): LocalDetailView | null;
+  readLocal(repositoryId: number, request?: LocalReadRequest): LocalDetailView | null;
   /**
-   * 幂等应用清单观察（按 observationId 去重，旧 dirty 不被重复递增）。
-   * 步骤 7 实现（当前为 undefined）。
+   * 幂等应用清单观察：按 observationId 去重；同事务保存受影响范围的序号、dirty 原因与应用记录。
+   * 观察只递增待同步序号，不推进成功同步基线，也不宣布 fresh；跨访问上下文观察不改动账本。
    */
-  applyObservation?(handoff: ObservationHandoff, appliedAt: string): ObservationApplyOutcome;
+  applyObservation(handoff: ObservationHandoff, appliedAt: string): ObservationApplyOutcome;
   /**
    * 按范围执行同步（后台任务的实际执行入口）。
    * 步骤 8 实现（当前为 undefined）。

@@ -129,9 +129,11 @@ if (userDataPathError !== null) {
           github,
           clock: systemClock,
           repositoryById: (repositoryId) => repositoryList.findById(repositoryId),
+          accessContext: { currentRevision: () => tokenSettings.accessContextRevision() },
         }),
         tokenSettings,
-        snapshotTrend: createSnapshotTrend({ db, clock: systemClock }),
+        snapshotTrend: createSnapshotTrend({ db, clock: systemClock, accessContext: { currentRevision: () => tokenSettings.accessContextRevision() } }),
+        clock: systemClock,
         logger,
       });
       registerIpc(facade, {

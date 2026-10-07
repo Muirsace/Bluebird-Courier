@@ -205,8 +205,37 @@ function migrationV4(database: MigrationDatabase): void {
   });
 }
 
+function migrationV5(database: MigrationDatabase): void {
+  // 详情侧观察应用与本地视图版本：只追加，不改写 V1～V4。
+  database.exec(`
+    ALTER TABLE detail_scope_state ADD COLUMN access_context_revision INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE snapshot ADD COLUMN access_context_revision INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE IF NOT EXISTS detail_observation_apply (
+      observation_id TEXT PRIMARY KEY,
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      applied_at TEXT NOT NULL,
+      access_context_revision INTEGER NOT NULL,
+      affected_scopes TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS detail_view_state (
+      repository_id INTEGER PRIMARY KEY REFERENCES repository(id) ON DELETE CASCADE,
+      view_version INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_detail_observation_apply_repo ON detail_observation_apply(repository_id);
+    CREATE INDEX IF NOT EXISTS idx_observation_handoff_repo_context ON observation_handoff(repository_id, access_context_revision, detected_at) WHERE applied_at IS NULL;
+    CREATE TABLE IF NOT EXISTS snapshot_view_state (
+      repository_id INTEGER PRIMARY KEY REFERENCES repository(id) ON DELETE CASCADE,
+      view_version INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+}
+
 /** 按版本递增，保持旧数据库可重复打开。 */
-export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4] as const;
+export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5] as const;
 export const migrationRunner = createMigrationRunner(MIGRATIONS);
 
 /** 生产唯一入口：委托给迁移执行器，内容与 user_version 的原子提交由 runner 保证。 */

@@ -37,7 +37,7 @@ export function createRepositoryListService({ db, clock, github, logger, accessC
     clear: () => clearRepositories(db),
     checkRepositories: (accessToken, accessContextRevision, origin) => check.checkRepositories(accessToken, accessContextRevision, origin),
     checkRepository: (repositoryId, accessToken, accessContextRevision) => check.checkRepository(repositoryId, accessToken, accessContextRevision),
-    pendingObservations: (limit = 100) => readPendingObservations(db, limit),
+    pendingObservations: (limit = 100, filter) => readPendingObservations(db, Number.isFinite(limit) ? Math.min(200, Math.max(1, Math.floor(limit))) : 100, filter),
     confirmObservationHandoff: (observationId) => confirmObservationHandoff(db, observationId, clock.now().toISOString()),
   };
 }

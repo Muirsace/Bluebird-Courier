@@ -183,3 +183,228 @@ describe('全量信息抓取（详情页）', () => {
     expect(second.error?.kind).toBe('rate_limited');
   });
 });
+
+// —— 步骤 7A：本地读取与观察应用 ——
+
+describe('本地读取与观察应用（步骤 7A）', () => {
+  async function readyWithDetailCache(): Promise<{ id: number }> {
+    harness = createHarness();
+    await h().facade.saveAccessToken('ghp_valid_token');
+    h().github.addRepo(makeRepoData({ observation: { head: 'sha-a' } }));
+    const added = await h().facade.addRepository('octo-demo/hello-world');
+    if (!added.ok) throw new Error(`setup failed: ${added.error?.message}`);
+    const id = (await h().facade.listRepositories())[0]!.id;
+    const fetched = await h().facade.fetchDetail(id);
+    if (!fetched.detail) throw new Error('detail setup failed');
+    h().github.resetCalls();
+    return { id };
+  }
+
+  /** 让清单产生一条真实的待交接观察（HEAD 前进）。 */
+  async function producePendingHandoff(id: number): Promise<number> {
+    await h().facade.refreshGlance(); // 基线（首次观察不宣称变化）
+    h().github.repos.get('octo-demo/hello-world')!.observation!.head = 'sha-b';
+    h().clock.advanceMs(60_000);
+    await h().facade.refreshGlance();
+    const pending = h().repositoryList.pendingObservations();
+    if (pending.length !== 1) throw new Error(`expected one pending handoff, got ${pending.length}`);
+    return id;
+  }
+
+  it('本地读取：零 GitHub 调用，不改变抓取时间、观察快照与趋势', async () => {
+    const { id } = await readyWithDetailCache();
+    const before = {
+      detailFetchedAt: (h().db.prepare('SELECT fetched_at FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string }).fetched_at,
+      listFetchedAt: (await h().facade.listRepositories())[0]!.fetchedAt,
+      snapshots: (h().db.prepare('SELECT COUNT(*) AS n FROM snapshot').get() as { n: number }).n,
+      observation: (h().db.prepare('SELECT observation_json, activity_at FROM repository WHERE id = ?').get(id) as { observation_json: string | null; activity_at: string | null }),
+    };
+
+    const read = await h().facade.readLocalDetail(id);
+
+    expect(read.error).toBeNull();
+    expect(read.detail).not.toBeNull();
+    expect(read.detail!.releases).toHaveLength(2);
+    expect(read.truncated).toBe(false);
+    expect(read.task).toBeNull(); // 不返回虚假的 running / queued
+    expect(h().github.calls).toEqual({}); // 本地读取零 GitHub 调用
+
+    const after = {
+      detailFetchedAt: (h().db.prepare('SELECT fetched_at FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string }).fetched_at,
+      listFetchedAt: (await h().facade.listRepositories())[0]!.fetchedAt,
+      snapshots: (h().db.prepare('SELECT COUNT(*) AS n FROM snapshot').get() as { n: number }).n,
+      observation: (h().db.prepare('SELECT observation_json, activity_at FROM repository WHERE id = ?').get(id) as { observation_json: string | null; activity_at: string | null }),
+    };
+    expect(after).toEqual(before);
+  });
+
+  it('status 模式不解析损坏 payload；view 模式明示损坏，不伪装成空成功', async () => {
+    const { id } = await readyWithDetailCache();
+    h().db.prepare('UPDATE detail_cache SET payload = ? WHERE repository_id = ?').run('{broken json', id);
+
+    const status = await h().facade.readLocalDetail(id, { mode: 'status' });
+    expect(status.detail).toBeNull();
+    expect(status.error).toBeNull(); // status 只读状态与版本，不接触 payload
+    expect(status.truncated).toBe(false);
+    expect(h().github.calls).toEqual({});
+
+    const view = await h().facade.readLocalDetail(id, { scopes: ['commits'] });
+    expect(view.detail).toBeNull();
+    expect(view.error).toMatchObject({ kind: 'unknown' });
+    expect(view.error?.message).toContain('损坏');
+  });
+
+  it('没有访问令牌时仍可读取有效缓存', async () => {
+    harness = createHarness();
+    h().db.prepare(
+      'INSERT INTO repository (owner, name, full_name, added_at, stars, forks, open_issues) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run('octo-demo', 'hello-world', 'octo-demo/hello-world', '2026-09-26T12:00:00.000Z', 10, 2, 3);
+    const payload = JSON.stringify({
+      repositoryId: 1,
+      fullName: 'octo-demo/hello-world',
+      values: {
+        releases: [{ tagName: 'v1', title: 'v1', publishedAt: null }],
+        commits: [],
+        issues: [],
+        pullRequests: [],
+        build: { status: 'success', workflowName: null, url: null, finishedAt: null, resultDescription: 'success' },
+      },
+      columns: {},
+      fetchedAt: '2026-09-26T12:00:00.000Z',
+      source: 'fresh',
+    });
+    h().db.prepare(
+      'INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (1, ?, ?, NULL, 1, 0)',
+    ).run(payload, '2026-09-26T12:00:00.000Z');
+
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    const read = await h().facade.readLocalDetail(1);
+    expect(read.error).toBeNull();
+    expect(read.detail?.releases).toEqual([{ tagName: 'v1', title: 'v1', publishedAt: null }]);
+    expect(read.accessContextRevision).toBe(0);
+  });
+
+  it('内容读取有界可按范围续读；访问上下文与 schema 不匹配时明示失败', async () => {
+    harness = createHarness();
+    h().db.prepare(
+      'INSERT INTO repository (owner, name, full_name, added_at, stars, forks, open_issues) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run('octo-demo', 'hello-world', 'octo-demo/hello-world', '2026-09-26T12:00:00.000Z', 10, 2, 3);
+    const commits = [1, 2, 3, 4, 5].map((index) => ({ sha: `sha-${index}`, message: `m${index}`, authorName: null, committedAt: '2026-09-26T00:00:00.000Z' }));
+    const payload = JSON.stringify({
+      repositoryId: 1,
+      fullName: 'octo-demo/hello-world',
+      values: {
+        releases: [{ tagName: 'v1', title: 'v1', publishedAt: null }],
+        commits,
+        issues: [],
+        pullRequests: [],
+        build: { status: 'none', workflowName: null, url: null, finishedAt: null, resultDescription: null },
+      },
+      columns: {},
+      fetchedAt: '2026-09-26T12:00:00.000Z',
+      source: 'fresh',
+    });
+    h().db.prepare(
+      'INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (1, ?, ?, NULL, 1, 0)',
+    ).run(payload, '2026-09-26T12:00:00.000Z');
+
+    const first = await h().facade.readLocalDetail(1, { scopes: ['commits'], itemLimit: 2 });
+    expect(first.detail?.commits.map((item) => item.sha)).toEqual(['sha-1', 'sha-2']);
+    expect(first.detail?.releases).toEqual([]); // 未选择范围以空值表达
+    expect(first.truncated).toBe(true);
+    expect(JSON.parse(first.cursors!.commits!)).toMatchObject({ repositoryId: 1, scope: 'commits', offset: 2 });
+
+    const second = await h().facade.readLocalDetail(1, { scopes: ['commits'], itemLimit: 2, cursors: { commits: first.cursors!.commits! } });
+    expect(second.detail?.commits.map((item) => item.sha)).toEqual(['sha-3', 'sha-4']);
+    expect(JSON.parse(second.cursors!.commits!)).toMatchObject({ repositoryId: 1, scope: 'commits', offset: 4 });
+
+    const third = await h().facade.readLocalDetail(1, { scopes: ['commits'], itemLimit: 2, cursors: { commits: second.cursors!.commits! } });
+    expect(third.detail?.commits.map((item) => item.sha)).toEqual(['sha-5']);
+    expect(third.truncated).toBe(false);
+    expect(third.cursors).toBeUndefined();
+
+    // 访问上下文不匹配：不可展示且明示失败
+    h().db.prepare('UPDATE detail_cache SET access_context_revision = 7 WHERE repository_id = 1').run();
+    const foreign = await h().facade.readLocalDetail(1, { scopes: ['commits'] });
+    expect(foreign.detail).toBeNull();
+    expect(foreign.error?.message).toContain('访问上下文');
+
+    // schema 不匹配：同样明示失败
+    h().db.prepare('UPDATE detail_cache SET access_context_revision = 0, schema_version = 99 WHERE repository_id = 1').run();
+    const incompatible = await h().facade.readLocalDetail(1, { scopes: ['commits'] });
+    expect(incompatible.detail).toBeNull();
+    expect(incompatible.error?.message).toContain('schema');
+  });
+
+  it('观察应用：同事务写账本与应用记录；幂等重放；确认前中断可重启重放', async () => {
+    const { id } = await readyWithDetailCache();
+    await producePendingHandoff(id);
+    const [handoff] = h().repositoryList.pendingObservations();
+
+    // 模拟"应用成功、确认前中断"：直接调用 feature 应用，不确认交接
+    const applied = h().repositoryDetail.applyObservation(handoff!, h().clock.now().toISOString());
+    expect(applied.applied).toBe(true);
+    expect(applied.duplicate).toBe(false);
+    expect(applied.affectedScopes).toEqual(['overview', 'commits', 'builds', 'readme', 'tree']);
+
+    const rows = h().db.prepare(
+      'SELECT scope, detected_revision, synced_revision, freshness, dirty_reasons, last_synced_at FROM detail_scope_state WHERE repository_id = ? ORDER BY scope',
+    ).all(id) as Array<{ scope: string; detected_revision: number; synced_revision: number; freshness: string; dirty_reasons: string; last_synced_at: string | null }>;
+    expect(rows.map((row) => row.scope)).toEqual(['builds', 'commits', 'overview', 'readme', 'tree']);
+    for (const row of rows) {
+      expect(row).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale', last_synced_at: null }); // 不宣布 fresh、不写同步时间
+      expect(JSON.parse(row.dirty_reasons)).toContain('head');
+    }
+
+    // 本地读取带出账本状态（只读，不启动任务）
+    const read = await h().facade.readLocalDetail(id);
+    expect(read.syncState.commits).toMatchObject({ detectedRevision: 1, syncedRevision: 0, freshness: 'stale' });
+    expect(read.task).toBeNull();
+
+    // 同一 observationId 重放：不重复递增
+    const replay = h().repositoryDetail.applyObservation(handoff!, '2026-09-26T13:00:00.000Z');
+    expect(replay).toMatchObject({ applied: false, duplicate: true });
+    const afterReplay = h().db.prepare('SELECT detected_revision FROM detail_scope_state WHERE repository_id = ? AND scope = ?').get(id, 'commits') as { detected_revision: number };
+    expect(afterReplay.detected_revision).toBe(1);
+    expect(h().repositoryList.pendingObservations()).toHaveLength(1); // 中断状态：仍未确认
+
+    // 重启重放：打开详情时消费 → 重放判重 → 确认
+    h().reopen();
+    h().github.resetCalls();
+    const opened = await h().facade.fetchDetail(id);
+    expect(opened.detail).not.toBeNull();
+    expect(h().github.calls).toEqual({}); // 缓存优先，无额外网络
+    expect(h().repositoryList.pendingObservations()).toEqual([]);
+  });
+
+  it('跨访问上下文观察不改动账本，也不被确认', async () => {
+    const { id } = await readyWithDetailCache();
+    await producePendingHandoff(id);
+    const [handoff] = h().repositoryList.pendingObservations();
+    h().tokenSettings.advanceAccessContext('2026-09-26T13:00:00.000Z');
+
+    const outcome = h().repositoryDetail.applyObservation(handoff!, h().clock.now().toISOString());
+    expect(outcome).toMatchObject({ applied: false, duplicate: false });
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state').get() as { n: number }).n).toBe(0);
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_observation_apply').get() as { n: number }).n).toBe(0);
+
+    // facade 打开时不确认（应用无进展），待交接保留供后续重放
+    const opened = await h().facade.fetchDetail(id);
+    expect(opened.detail).not.toBeNull();
+    expect(h().repositoryList.pendingObservations()).toHaveLength(1);
+  });
+
+  it('应用事务失败：账本回滚、待交接保留、打开不中断', async () => {
+    const { id } = await readyWithDetailCache();
+    await producePendingHandoff(id);
+    const [handoff] = h().repositoryList.pendingObservations();
+    h().db.exec('DROP TABLE detail_observation_apply');
+
+    expect(() => h().repositoryDetail.applyObservation(handoff!, h().clock.now().toISOString())).toThrow();
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state').get() as { n: number }).n).toBe(0); // 事务回滚
+
+    const opened = await h().facade.fetchDetail(id);
+    expect(opened.detail).not.toBeNull();
+    expect(h().repositoryList.pendingObservations()).toHaveLength(1); // 失败不确认
+  });
+});

@@ -1,5 +1,5 @@
 import type { LocalDatabase } from '../../../core/infra/database';
-import { deleteExpired } from './snapshot-store';
+import { bumpSnapshotViewVersion, deleteExpired } from './snapshot-store';
 
 export interface RetentionRunner {
   retain(repositoryId?: number, now?: Date): void;
@@ -14,10 +14,15 @@ export function createRetentionRunner(db: LocalDatabase): RetentionRunner {
       deleteExpired(db, repositoryId, now);
     },
     remove(repositoryId) {
-      db.prepare('DELETE FROM snapshot WHERE repository_id = ?').run(repositoryId);
+      db.transaction(() => {
+        if (db.prepare('DELETE FROM snapshot WHERE repository_id = ?').run(repositoryId).changes > 0) bumpSnapshotViewVersion(db, repositoryId);
+      })();
     },
     clear() {
-      db.prepare('DELETE FROM snapshot').run();
+      db.transaction(() => {
+        db.prepare('UPDATE snapshot_view_state SET view_version = view_version + 1 WHERE repository_id IN (SELECT DISTINCT repository_id FROM snapshot)').run();
+        db.prepare('DELETE FROM snapshot').run();
+      })();
     },
   };
 }

@@ -118,10 +118,10 @@ export function insertObservationHandoff(
 }
 
 /** 读取待交接观察（未确认，按检测时间升序）。 */
-export function readPendingObservations(db: LocalDatabase, limit: number): ObservationHandoff[] {
+export function readPendingObservations(db: LocalDatabase, limit: number, filter: { repositoryId?: number; accessContextRevision?: number; afterObservationId?: string } = {}): ObservationHandoff[] {
   const rows = db.prepare(
-    'SELECT observation_id, repository_id, detected_at, access_context_revision, change_set FROM observation_handoff WHERE applied_at IS NULL ORDER BY detected_at ASC, rowid ASC LIMIT ?',
-  ).all(limit) as Array<{ observation_id: string; repository_id: number; detected_at: string; access_context_revision: number; change_set: string }>;
+    'SELECT observation_id, repository_id, detected_at, access_context_revision, change_set FROM observation_handoff WHERE applied_at IS NULL AND json_valid(change_set) AND (? IS NULL OR repository_id = ?) AND (? IS NULL OR access_context_revision = ?) AND (? IS NULL OR (detected_at, rowid) > (SELECT detected_at, rowid FROM observation_handoff WHERE observation_id = ?)) ORDER BY detected_at ASC, rowid ASC LIMIT ?',
+  ).all(filter.repositoryId ?? null, filter.repositoryId ?? null, filter.accessContextRevision ?? null, filter.accessContextRevision ?? null, filter.afterObservationId ?? null, filter.afterObservationId ?? null, limit) as Array<{ observation_id: string; repository_id: number; detected_at: string; access_context_revision: number; change_set: string }>;
   const result: ObservationHandoff[] = [];
   for (const row of rows) {
     try {

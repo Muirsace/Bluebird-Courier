@@ -160,6 +160,30 @@ describe('同步记账存储与兼容升级（V3）', () => {
     });
   });
 
+  it('V5 升级：追加详情应用记录与视图版本表，保留旧行', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 4)).run(legacy);
+    seedRepository(legacy);
+    legacy.prepare('INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at) VALUES (1, ?, ?, NULL)')
+      .run('{"repositoryId":1,"values":{"releases":[]}}', '2026-09-26T12:00:00.000Z');
+    expect(legacy.pragma('user_version', { simple: true })).toBe(4);
+    legacy.close();
+
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(tableNames(db)).toEqual(expect.arrayContaining(['detail_observation_apply', 'detail_view_state']));
+    // 旧详情缓存与清单资料保留
+    expect(db.prepare('SELECT full_name FROM repository WHERE id = 1').get()).toEqual({ full_name: 'octo-demo/hello-world' });
+    expect(db.prepare('SELECT fetched_at FROM detail_cache WHERE repository_id = 1').get()).toEqual({ fetched_at: '2026-09-26T12:00:00.000Z' });
+    // 视图版本从 0 起步；应用记录按 observation_id 幂等
+    expect(db.prepare('SELECT view_version FROM detail_view_state WHERE repository_id = 1').get()).toBeUndefined();
+    db.prepare('INSERT INTO detail_observation_apply (observation_id, repository_id, applied_at, access_context_revision, affected_scopes) VALUES (?, 1, ?, 0, ?)')
+      .run('obs-1', '2026-09-26T12:00:00.000Z', '["commits"]');
+    expect(() => db.prepare('INSERT INTO detail_observation_apply (observation_id, repository_id, applied_at, access_context_revision, affected_scopes) VALUES (?, 1, ?, 0, ?)')
+      .run('obs-1', '2026-09-26T13:00:00.000Z', '["commits"]')).toThrow(/UNIQUE/);
+  });
+
   it('迁移中途失败：该版本已写入的内容与 user_version 一起回滚', () => {
     const pathname = tempDbPath();
     const db = new Database(pathname);

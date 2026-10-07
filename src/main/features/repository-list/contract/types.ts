@@ -70,7 +70,7 @@ export interface RepositoryListService {
   /** 单仓库检查（重试入口）；与批量检查共用去重登记。 */
   checkRepository(repositoryId: number, accessToken: string, accessContextRevision: number): Promise<RepositorySingleCheckOutcome>;
   /** 读取待交接的清单观察（按检测时间升序，最多 limit 条）。 */
-  pendingObservations(limit?: number): ObservationHandoff[];
+  pendingObservations(limit?: number, filter?: { repositoryId?: number; accessContextRevision?: number; afterObservationId?: string }): ObservationHandoff[];
   /** 确认某条观察已由详情应用（幂等；重复确认或不存在返回 false）。 */
   confirmObservationHandoff(observationId: string): boolean;
 }

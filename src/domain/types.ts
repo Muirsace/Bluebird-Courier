@@ -219,6 +219,10 @@ export interface ContentVersion {
 /** 同步记账范围；趋势是本地快照视图，不产生远端请求。 */
 export type DetailScope = 'overview' | 'releases' | 'commits' | 'issuesAndPr' | 'builds' | 'readme' | 'tree' | 'trends';
 
+/** 有界本地读取：每个范围的条目缺省值与上限（feature 与展示层共用同一契约）。 */
+export const LOCAL_READ_DEFAULT_LIMIT = 30;
+export const LOCAL_READ_MAX_LIMIT = 200;
+
 export type CacheStatus = 'missing' | 'valid' | 'invalid';
 export type Freshness = 'fresh' | 'stale' | 'unknown';
 export type RequestStatus = 'idle' | 'queued' | 'running' | 'error';
