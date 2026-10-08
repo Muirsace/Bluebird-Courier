@@ -51,7 +51,7 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox; scopePo
   let tokenSettings!: TokenSettingsService;
   let facade!: BluebirdCourierFacade;
   const build = (): void => {
-    tokenSettings = createTokenSettings({ db, cipher, github });
+    tokenSettings = createTokenSettings({ db, cipher, github, clock });
     repositoryList = createRepositoryList({ db, clock, github,
       accessContext: { currentRevision: () => tokenSettings.accessContextRevision() }, nextObservationId: createIdentifierGenerator(),
     });

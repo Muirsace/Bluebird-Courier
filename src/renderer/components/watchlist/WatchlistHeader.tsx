@@ -85,8 +85,8 @@ export function WatchlistHeader({
       onClick={onRefresh}
       disabled={refreshing}
       aria-busy={refreshing}
-      aria-label={sidebar ? '全部刷新' : undefined}
-      title={sidebar ? '全部刷新' : undefined}
+      aria-label={sidebar ? '检查更新' : undefined}
+      title={sidebar ? '检查更新' : undefined}
       data-button-motion={sidebar ? 'icon' : undefined}
       className={sidebar
         ? 'sidebar-refresh inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-secondary transition-colors hover:bg-surface-hover hover:text-primary active:bg-surface-active disabled:cursor-not-allowed disabled:opacity-60'
@@ -95,7 +95,7 @@ export function WatchlistHeader({
       {sidebar ? (refreshing
         ? <Spinner className="sidebar-refresh-spinner h-4 w-4" />
         : <span className="repository-refresh-icon" aria-hidden="true" />
-      ) : <>{refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}{refreshing ? '刷新中…' : '全部刷新'}</>}
+      ) : <>{refreshing ? <Spinner className="h-3.5 w-3.5" /> : null}{refreshing ? '检查中…' : '检查更新'}</>}
     </button>
   );
 

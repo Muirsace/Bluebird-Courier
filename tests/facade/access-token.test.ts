@@ -82,13 +82,19 @@ describe('访问令牌校验与保存', () => {
     expect(bad.error).toMatchObject({ kind: 'access_token_invalid' });
   });
 
-  it('重新保存覆盖旧访问令牌（换令牌后继续用）', async () => {
+  it('已有令牌拒绝直接覆盖，确认更换才更新令牌与访问上下文', async () => {
     harness = createHarness();
     await h().facade.saveAccessToken('ghp_valid_token');
     h().github.validAccessToken = 'ghp_replaced_token';
 
     const result = await h().facade.saveAccessToken('ghp_replaced_token');
-    expect(result).toEqual({ ok: true, error: null });
+    expect(result.ok).toBe(false);
+    expect(h().tokenSettings.readAccessToken()).toBe('ghp_valid_token');
+    expect(h().tokenSettings.accessContextRevision()).toBe(0);
+
+    expect((await h().facade.beginTokenReplacement!()).ok).toBe(true);
+    expect((await h().facade.confirmTokenReplacement!('ghp_replaced_token')).ok).toBe(true);
+    expect(h().tokenSettings.accessContextRevision()).toBe(1);
 
     const row = h()
       .db.prepare("SELECT value FROM setting WHERE key = 'access_token'")

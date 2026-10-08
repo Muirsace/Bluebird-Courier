@@ -231,3 +231,80 @@ describe('交接失败的范围隔离', () => {
     expect(h.db.prepare("SELECT COUNT(*) AS n FROM observation_handoff WHERE observation_id LIKE 'bad-%' AND applied_at IS NULL").get()).toEqual({ n: 100 });
   });
 });
+
+describe('本地视图接口（任务 01）：权威版本、栏目状态与成功时间', () => {
+  it('强制抓取后的摘要时间取本次成功观察，与返回的当前Summary一致', async () => {
+    const { h, id } = await ready();
+    h.clock.advanceMs(60_000);
+    const refreshed = await h.facade.refreshRepository!(id, true);
+
+    expect(refreshed.error).toBeNull();
+    expect(refreshed.summaryFetchedAt).toBe(h.clock.now().toISOString());
+    expect(refreshed.summaryFetchedAt).toBe(refreshed.detail!.repository.fetchedAt);
+    expect((await h.facade.readLocalDetail(id)).summaryFetchedAt).toBe(refreshed.summaryFetchedAt);
+  });
+
+  it('status 与 view 统一给出权威详情版本与栏目状态元信息（不含 payload）', async () => {
+    const { h, id } = await ready();
+    const status = await h.facade.readLocalDetail(id, { mode: 'status' });
+    const view = await h.facade.readLocalDetail(id);
+
+    expect(status.detail).toBeNull(); // 状态读取不解析内容
+    expect(status.detailViewVersion).toBe(view.detailViewVersion);
+    expect(status.detailViewVersion).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(status.columns)).toContain('commits');
+    // 栏目状态只有元信息，不携带栏目 payload 副本
+    expect(status.columns.commits).toMatchObject({ status: 'success', value: null });
+    expect(view.columns.commits).toMatchObject({ status: 'success', value: null });
+    expect(h.github.calls).toEqual({});
+  });
+
+  it('打开结果提供权威版本、访问上下文、截断事实与两个成功时间', async () => {
+    const { h, id } = await ready();
+    const read = await h.facade.readLocalDetail(id);
+    const opened = await h.facade.fetchDetail(id);
+
+    expect(opened.detailViewVersion).toBe(read.detailViewVersion);
+    expect(opened.accessContextRevision).toBe(read.accessContextRevision);
+    expect(opened.truncated).toBe(false); // 缺省预算内未被截断
+    const detailFetchedAt = (h.db.prepare('SELECT fetched_at FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string }).fetched_at;
+    expect(opened.detailFetchedAt).toBe(detailFetchedAt);
+    expect(read.detailFetchedAt).toBe(detailFetchedAt);
+    // 摘要成功时间来自真实摘要检查，不用详情时间冒充
+    expect(opened.summaryFetchedAt).toBe((await h.facade.listRepositories())[0]!.fetchedAt);
+    // 只读读取与缓存打开不改写完整详情时间
+    expect((h.db.prepare('SELECT fetched_at FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string }).fetched_at).toBe(detailFetchedAt);
+    expect(h.github.calls).toEqual({});
+
+    // 长列表：成功返回详情时带截断事实与各范围续读游标
+    setValues(h, id, { commits: Array.from({ length: 45 }, (_, i) => ({ sha: 's' + i, message: 'm', authorName: null, committedAt: '2026-09-26T00:00:00.000Z' })) });
+    const truncatedOpen = await h.facade.fetchDetail(id);
+    expect(truncatedOpen.truncated).toBe(true);
+    expect(truncatedOpen.cursors?.commits).toBeTruthy();
+    expect(h.github.calls).toEqual({});
+  });
+});
+
+describe('观察交接恢复路径（任务 01 核实）', () => {
+  it('无 Token 重启后打开仓库：本地重放待交接观察并确认，全程零网络', async () => {
+    const { h, id } = await ready();
+    // 制造真实交接：先建立观察基线，再推进 HEAD 并经轻量检查产生待交接记录。
+    await h.facade.refreshGlance();
+    h.github.repos.get('octo-demo/hello-world')!.observation = { head: 'sha-b' };
+    h.clock.advanceMs(60_000);
+    await h.facade.refreshGlance();
+    expect(h.repositoryList.pendingObservations()).toHaveLength(1);
+
+    // 模拟重启 + 无 Token（离线）：打开仓库经 feature contract 重放并确认交接。
+    h.reopen();
+    h.db.prepare("DELETE FROM setting WHERE key = 'access_token'").run();
+    h.github.resetCalls();
+    const opened = await h.facade.fetchDetail(id);
+
+    expect(opened.detail).not.toBeNull(); // 离线仍可展示已有缓存
+    expect(h.repositoryList.pendingObservations()).toEqual([]); // 重放后确认，不重复
+    expect(h.db.prepare("SELECT detected_revision, synced_revision, freshness FROM detail_scope_state WHERE repository_id = ? AND scope = 'commits'").get(id))
+      .toEqual({ detected_revision: 1, synced_revision: 0, freshness: 'stale' });
+    expect(h.github.calls).toEqual({}); // 恢复路径是本地写入，不是网络路径
+  });
+});

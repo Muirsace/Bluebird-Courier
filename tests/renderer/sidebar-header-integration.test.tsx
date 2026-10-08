@@ -136,13 +136,14 @@ describe('App Chrome ownership / 900px boundary', () => {
     expect(repoSlot('owner/A')).toBe(nodes.row);
   });
 
-  it('startup gate keeps Sidebar brand / Settings available without fetching a Watchlist', async () => {
-    await mount(repos, false);
+  it('startup gate keeps Sidebar brand / Settings available without mounting a Watchlist', async () => {
+    await mount([], false);
     expect(brand()).not.toBeNull();
     expect(navButton('设置')?.getAttribute('aria-pressed')).toBe('true');
     expect(workspace().querySelector('.settings-page')).not.toBeNull();
     expect(document.querySelector('.watchlist-page')).toBeNull();
-    expect(stub.calls.listRepositories).toBe(0);
+    // 只读一次本地资料用于判定入口；没有清单页就没有启动检查
+    expect(stub.calls.listRepositories).toBe(1);
   });
 });
 

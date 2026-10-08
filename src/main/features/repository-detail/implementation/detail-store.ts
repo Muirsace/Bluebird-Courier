@@ -1,25 +1,28 @@
 import type { LocalDatabase } from '../../../core/infra/database';
-import type { BuildInfo, BuildItem, DetailScope, ScopeSyncState } from '../../../../domain/types';
+import type { BuildInfo, BuildItem, DetailScope, DetailValues, ScopeSyncState } from '../../../../domain/types';
 import { applyScopeSync } from '../../../../domain/rules/scope-ledger';
 import { initialScopeState } from '../../../../domain/rules/observation-application';
-import type { DetailCache } from '../contract';
+import type { ColumnName, ColumnResult, DetailCache } from '../contract';
 
 /** 当前详情缓存 schema；不匹配的旧缓存视为不可用，由同步流程重建。 */
 export const DETAIL_CACHE_SCHEMA_VERSION = 1;
 
 /** 缓存元信息：不含 payload，供纯状态读取与校验使用。 */
 export interface DetailCacheMeta {
+  /** 缓存身份/最近写入时间；用于本地续读身份与验证有效期回退，不代表完整详情成功时间。 */
   fetchedAt: string;
+  /** 最近一次全部远端范围完整覆盖的时间；null 表示还没有可信的完整详情（旧库或首次部分成功）。 */
+  completeFetchedAt: string | null;
   schemaVersion: number;
   accessContextRevision: number;
 }
 
 export function readDetailMeta(db: LocalDatabase, repositoryId: number): DetailCacheMeta | null {
   const row = db.prepare(
-    'SELECT fetched_at, schema_version, access_context_revision FROM detail_cache WHERE repository_id = ?',
-  ).get(repositoryId) as { fetched_at: string; schema_version: number; access_context_revision: number } | undefined;
+    'SELECT fetched_at, complete_fetched_at, schema_version, access_context_revision FROM detail_cache WHERE repository_id = ?',
+  ).get(repositoryId) as { fetched_at: string; complete_fetched_at: string | null; schema_version: number; access_context_revision: number } | undefined;
   if (!row) return null;
-  return { fetchedAt: row.fetched_at, schemaVersion: row.schema_version, accessContextRevision: row.access_context_revision };
+  return { fetchedAt: row.fetched_at, completeFetchedAt: row.complete_fetched_at, schemaVersion: row.schema_version, accessContextRevision: row.access_context_revision };
 }
 
 export function readDetail(db: LocalDatabase, repositoryId: number): DetailCache | null {
@@ -80,9 +83,15 @@ function applyConfirmations(
   }
 }
 
+function upsertColumn(db: LocalDatabase, repositoryId: number, name: ColumnName, column: ColumnResult | undefined, updatedAt: string): void {
+  db.prepare('INSERT INTO detail_column (repository_id, column_name, state, payload, error_kind, error_message, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id, column_name) DO UPDATE SET state = excluded.state, payload = excluded.payload, error_kind = excluded.error_kind, error_message = excluded.error_message, updated_at = excluded.updated_at')
+    .run(repositoryId, name, column?.status ?? 'unsupported', column?.value === null || column?.value === undefined ? null : JSON.stringify(column.value), column?.error?.kind ?? null, column?.error?.message ?? null, updatedAt);
+}
+
 /**
- * 完整获取成功：详情 payload、栏目、范围确认（只推进覆盖到的目标版本）与视图版本同一事务保存。
+ * 建立/重建缓存：详情 payload、栏目、范围确认（只推进覆盖到的目标版本）与视图版本同一事务保存。
  * 适配器未提供指纹的范围保留旧基线，不用本地拼装的指纹冒充。
+ * `complete=false`（部分成功、含仍有范围在暂存）时完整成功时间保持未知/旧值，不把创建时刻冒充完整同步。
  */
 export function writeSyncedDetail(
   db: LocalDatabase,
@@ -90,16 +99,63 @@ export function writeSyncedDetail(
   accessContextRevision: number,
   confirmations: readonly ScopeConfirmationWrite[],
   syncedAt: string,
+  complete: boolean,
 ): void {
   const write = db.transaction(() => {
-    db.prepare('INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at, source_updated_at = excluded.source_updated_at, schema_version = excluded.schema_version, access_context_revision = excluded.access_context_revision')
-      .run(cache.repositoryId, JSON.stringify(cache), cache.fetchedAt, cache.fetchedAt, DETAIL_CACHE_SCHEMA_VERSION, accessContextRevision);
-    const upsert = db.prepare('INSERT INTO detail_column (repository_id, column_name, state, payload, error_kind, error_message, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id, column_name) DO UPDATE SET state = excluded.state, payload = excluded.payload, error_kind = excluded.error_kind, error_message = excluded.error_message, updated_at = excluded.updated_at');
-    for (const [name, column] of Object.entries(cache.columns)) {
-      upsert.run(cache.repositoryId, name, column?.status ?? 'unsupported', column?.value === null || column?.value === undefined ? null : JSON.stringify(column.value), column?.error?.kind ?? null, column?.error?.message ?? null, cache.fetchedAt);
-    }
+    db.prepare('INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision, complete_fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at, source_updated_at = excluded.source_updated_at, schema_version = excluded.schema_version, access_context_revision = excluded.access_context_revision, complete_fetched_at = excluded.complete_fetched_at')
+      .run(cache.repositoryId, JSON.stringify(cache), cache.fetchedAt, cache.fetchedAt, DETAIL_CACHE_SCHEMA_VERSION, accessContextRevision, complete ? syncedAt : null);
+    for (const [name, column] of Object.entries(cache.columns)) upsertColumn(db, cache.repositoryId, name as ColumnName, column, cache.fetchedAt);
     applyConfirmations(db, cache.repositoryId, accessContextRevision, confirmations, syncedAt);
     bumpViewVersion(db, cache.repositoryId, cache.fetchedAt);
+  });
+  write();
+}
+
+/**
+ * 部分提交的单个范围写入：只包含本次成功来源的 values 键与栏目；完整覆盖时附带确认。
+ * 失败范围不出现在写入列表里，保留旧值与旧成功时间。
+ */
+export interface ScopeContentWrite {
+  scope: DetailScope;
+  values: Partial<DetailValues>;
+  columns: Partial<Record<ColumnName, ColumnResult>>;
+  confirmation?: ScopeConfirmationWrite;
+}
+
+/** payload 允许被分级改写的 values 键；SQL 路径只能由白名单拼接。 */
+const CONTENT_VALUE_KEYS: readonly (keyof DetailValues)[] = ['metadata', 'releases', 'tags', 'commits', 'issues', 'pullRequests', 'builds', 'build', 'readmes', 'tree'];
+
+/**
+ * 有旧缓存时的分级提交：逐范围改写 payload 内本次成功来源的键，其他栏目原样保留；
+ * 完整覆盖的范围随指纹与成功时间一起推进同步基线。
+ * 只有 `complete=true`（全部远端范围完整覆盖，且没有范围仍在暂存）才推进完整成功时间；
+ * 后续部分更新或构建独立更新保留旧完整时间。
+ * payload 损坏或缓存缺失时整体回滚，不产生半套写入。
+ */
+export function writeScopeContents(
+  db: LocalDatabase,
+  repositoryId: number,
+  accessContextRevision: number,
+  writes: readonly ScopeContentWrite[],
+  syncedAt: string,
+  complete: boolean,
+): void {
+  if (writes.length === 0 && !complete) return;
+  const write = db.transaction(() => {
+    for (const entry of writes) {
+      const keys = (Object.entries(entry.values) as Array<[keyof DetailValues, unknown]>)
+        .filter(([key, value]) => value !== undefined && CONTENT_VALUE_KEYS.includes(key));
+      if (keys.length > 0) {
+        const sql = 'UPDATE detail_cache SET payload = json_set(payload' + keys.map(([key]) => `, '$.values.${key}', json(?)`).join('') + ') WHERE repository_id = ?';
+        const updated = db.prepare(sql).run(...keys.map(([, value]) => JSON.stringify(value)), repositoryId);
+        if (updated.changes === 0) throw new Error('详情缓存不存在，无法写入范围结果');
+      }
+      for (const [name, column] of Object.entries(entry.columns)) upsertColumn(db, repositoryId, name as ColumnName, column, syncedAt);
+      if (entry.confirmation) applyConfirmations(db, repositoryId, accessContextRevision, [entry.confirmation], syncedAt);
+    }
+    // 完整覆盖的一轮推进缓存身份时间与完整成功时间；部分轮次两者都保留，未完成不得冒充完整详情。
+    if (complete) db.prepare('UPDATE detail_cache SET fetched_at = ?, source_updated_at = ?, complete_fetched_at = ? WHERE repository_id = ?').run(syncedAt, syncedAt, syncedAt, repositoryId);
+    bumpViewVersion(db, repositoryId, syncedAt);
   });
   write();
 }
@@ -121,8 +177,7 @@ export function writeBuildsScope(
     const updated = db.prepare("UPDATE detail_cache SET payload = json_set(payload, '$.values.builds', json(?), '$.values.build', json(?)) WHERE repository_id = ?")
       .run(JSON.stringify(builds), JSON.stringify(build), repositoryId);
     if (updated.changes === 0) throw new Error('详情缓存不存在，无法写入范围结果');
-    db.prepare('INSERT INTO detail_column (repository_id, column_name, state, payload, error_kind, error_message, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(repository_id, column_name) DO UPDATE SET state = excluded.state, payload = excluded.payload, error_kind = excluded.error_kind, error_message = excluded.error_message, updated_at = excluded.updated_at')
-      .run(repositoryId, 'builds', builds.length === 0 ? 'empty' : 'success', JSON.stringify(builds), null, null, syncedAt);
+    upsertColumn(db, repositoryId, 'builds', { status: builds.length === 0 ? 'empty' : 'success', value: builds, error: null }, syncedAt);
     applyConfirmations(db, repositoryId, accessContextRevision, confirmations, syncedAt);
     bumpViewVersion(db, repositoryId, syncedAt);
   });

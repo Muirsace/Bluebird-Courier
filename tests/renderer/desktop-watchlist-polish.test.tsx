@@ -33,8 +33,8 @@ describe('Desktop Watchlist static polish', () => {
     expect(document.querySelectorAll('.desktop-watchlist-heading')).toHaveLength(1);
     expect(document.querySelector('.desktop-watchlist-heading h2')?.textContent).toBe('监控清单');
     expect(document.querySelector('.desktop-watchlist-title .watchlist-count')?.getAttribute('aria-label')).toBe('2 个仓库');
-    expect(document.querySelector('.sidebar-refresh')?.getAttribute('aria-label')).toBe('全部刷新');
-    expect(document.querySelector('.sidebar-refresh')?.getAttribute('title')).toBe('全部刷新');
+    expect(document.querySelector('.sidebar-refresh')?.getAttribute('aria-label')).toBe('检查更新');
+    expect(document.querySelector('.sidebar-refresh')?.getAttribute('title')).toBe('检查更新');
     expect(repoActionsButton(fullName)).toBeNull();
   });
 

@@ -306,11 +306,15 @@ export function createStub(options: StubOptions = {}): StubHandle {
       return {
         repositoryId,
         viewVersion: 1,
+        detailViewVersion: 1,
         accessContextRevision: 1,
         detail: repository ? makeDetail(repository, options.detail) : null,
+        columns: {},
         syncState: {},
         task: null,
         truncated: false,
+        summaryFetchedAt: null,
+        detailFetchedAt: null,
         error: null,
       };
     },
@@ -403,6 +407,7 @@ export function createStub(options: StubOptions = {}): StubHandle {
 
 export interface RenderResult {
   container: HTMLElement;
+  queryClient: QueryClient;
   unmount: () => Promise<void>;
 }
 
@@ -431,6 +436,7 @@ export async function renderNode(stub: StubHandle, node: ReactNode): Promise<Ren
   });
   return {
     container,
+    queryClient,
     async unmount() {
       await act(async () => {
         root.unmount();
@@ -472,7 +478,7 @@ export async function openAddInput(): Promise<HTMLInputElement> {
 }
 
 export function refreshAllButton(): HTMLButtonElement | null {
-  return buttonByLabel('全部刷新') ?? buttonByText('全部刷新') ?? buttonByText('刷新中…');
+  return buttonByLabel('检查更新') ?? buttonByText('检查更新') ?? buttonByText('检查中…');
 }
 
 export async function pressEscape(): Promise<void> {

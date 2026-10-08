@@ -234,8 +234,19 @@ function migrationV5(database: MigrationDatabase): void {
   `);
 }
 
+/**
+ * 完整详情成功时间与旧库兼容：只追加，不改写 V1～V5。
+ * `fetched_at` 保留为缓存身份/创建时间；`complete_fetched_at` 单独记录"最近一次全部远端范围完整覆盖"的时间，
+ * 旧行留空表示未知，不把创建时刻冒充完整同步时间。
+ */
+function migrationV6(database: MigrationDatabase): void {
+  ensureColumns(database, 'detail_cache', {
+    complete_fetched_at: 'TEXT',
+  });
+}
+
 /** 按版本递增，保持旧数据库可重复打开。 */
-export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5] as const;
+export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5, migrationV6] as const;
 export const migrationRunner = createMigrationRunner(MIGRATIONS);
 
 /** 生产唯一入口：委托给迁移执行器，内容与 user_version 的原子提交由 runner 保证。 */

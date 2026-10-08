@@ -4,7 +4,7 @@ import type { CipherBox } from '../../../core/infra/encryption';
 import { SecureStorageUnavailableError } from '../../../core/infra/encryption';
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { Logger } from '../../../core/infra/logger';
-import { writeToken } from './token-store';
+import { readToken, writeToken } from './token-store';
 
 export interface TokenVerificationResult {
   ok: boolean;
@@ -16,7 +16,7 @@ export interface TokenVerifier {
   save(token: string): Promise<TokenVerificationResult>;
 }
 
-function normalizeError(error: unknown): NormalizedError {
+export function normalizeTokenError(error: unknown): NormalizedError {
   if (error instanceof SecureStorageUnavailableError) {
     return { kind: 'unknown', message: '系统安全存储不可用，无法保存访问令牌' };
   }
@@ -51,7 +51,7 @@ export function createTokenVerifier({ db, cipher, github, logger }: {
       return { ok: true, error: null };
     } catch (error) {
       logger?.error('访问令牌校验失败', error);
-      return { ok: false, error: normalizeError(error) };
+      return { ok: false, error: normalizeTokenError(error) };
     }
   };
 
@@ -59,11 +59,15 @@ export function createTokenVerifier({ db, cipher, github, logger }: {
     const checked = await verify(token);
     if (!checked.ok) return checked;
     try {
+      // 网络校验期间其他首次保存可能已提交；同步写入前再次检查，禁止迟到结果绕过更换确认。
+      if (readToken(db, cipher) !== null) {
+        return { ok: false, error: { kind: 'unknown', message: '访问令牌已配置，请通过确认更换流程更新令牌' } };
+      }
       writeToken(db, cipher, token);
       return { ok: true, error: null };
     } catch (error) {
       logger?.error('访问令牌保存失败', error);
-      return { ok: false, error: normalizeError(error) };
+      return { ok: false, error: normalizeTokenError(error) };
     }
   };
 

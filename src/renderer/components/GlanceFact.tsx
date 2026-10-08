@@ -3,6 +3,8 @@ interface GlanceFactProps {
   value: string;
   mono?: boolean;
   muted?: boolean;
+  /** 悬停说明（如活动来源与准确时间）；不传则不设置 title。 */
+  title?: string;
   /**
    * 给一个"旧值"时做一次短交叉淡化：旧值绝对定位淡出（不参与布局），真值原位淡入。
    * 详情首次抓取完成用它把表头的 `—` 柔和换成真实值；不传就还是原来的纯展示。
@@ -16,6 +18,7 @@ export function GlanceFact({
   value,
   mono = false,
   muted = false,
+  title,
   crossfadeFrom,
 }: GlanceFactProps) {
   const valueColor = muted ? 'text-muted' : 'text-primary';
@@ -26,7 +29,7 @@ export function GlanceFact({
     <div className="flex min-w-0 items-baseline gap-2">
       <span className="shrink-0 text-xs text-muted">{label}</span>
       {swapping ? (
-        <span className={`relative ${valueClass}`}>
+        <span className={`relative ${valueClass}`} title={title}>
           {/* 旧值不占位：容器宽度始终按真值算，表头不会因为换值而推挤 */}
           <span aria-hidden="true" className="detail-fact-from absolute left-0 top-0 whitespace-nowrap">
             {crossfadeFrom}
@@ -34,7 +37,7 @@ export function GlanceFact({
           <span className="detail-fact-to">{value}</span>
         </span>
       ) : (
-        <span className={valueClass}>{value}</span>
+        <span className={valueClass} title={title}>{value}</span>
       )}
     </div>
   );

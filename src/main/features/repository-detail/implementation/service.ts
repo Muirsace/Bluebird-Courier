@@ -12,7 +12,7 @@ import type {
 } from '../contract';
 import { applyScopeObservation, initialScopeState, observationReasons } from '../../../../domain/rules/observation-application';
 import { SCOPE_ORDER } from '../../../../domain/rules/detail-scope';
-import { hasReadableDetail, readLocalColumns, readLocalScopePage, readHistoryPage } from './local-detail-store';
+import { hasReadableDetail, historyReadOffset, readLocalColumns, readLocalScopePage, readHistoryPage } from './local-detail-store';
 import {
   DETAIL_CACHE_SCHEMA_VERSION,
   bumpViewVersion,
@@ -27,6 +27,7 @@ import {
   readViewVersion,
   writeScopeState,
 } from './detail-store';
+import { applyViewAcknowledgment } from './acknowledge-viewed';
 import { buildLocalView } from './open-detail';
 import { createSyncTaskRunner } from './task-runner';
 
@@ -107,9 +108,13 @@ export function createRepositoryDetailService(dependencies: RepositoryDetailDepe
       requireRepository(repositoryId);
       // 本地优先：分页只读已保存内容，不在读取路径触发网络；首次获取由打开用例负责。
       const meta = readDetailMeta(db, repositoryId);
-      const offset = cursor === undefined ? 0 : Number(cursor);
-      if (!meta || meta.schemaVersion !== DETAIL_CACHE_SCHEMA_VERSION || meta.accessContextRevision !== accessContext.currentRevision() || !Number.isSafeInteger(offset) || offset < 0) return { items: [], nextCursor: null, hasMore: false };
-      return readHistoryPage(db, repositoryId, kind, offset);
+      const revision = accessContext.currentRevision();
+      if (!meta || meta.schemaVersion !== DETAIL_CACHE_SCHEMA_VERSION || meta.accessContextRevision !== revision) return { items: [], nextCursor: null, hasMore: false };
+      // 续读绑定仓库、上下文、内容版本与栏目；后台换版后旧游标不能继续消费新列表。
+      const identity = { repositoryId, accessContextRevision: revision, viewVersion: readViewVersion(db, repositoryId), fetchedAt: meta.fetchedAt };
+      const offset = historyReadOffset(cursor, kind, identity);
+      if (offset === null) return { items: [], nextCursor: null, hasMore: false };
+      return readHistoryPage(db, repositoryId, kind, offset, identity);
     },
     remove: (repositoryId) => deleteDetail(db, repositoryId),
     clear: () => clearDetails(db),
@@ -145,6 +150,17 @@ export function createRepositoryDetailService(dependencies: RepositoryDetailDepe
       });
       write();
       return { applied: true, duplicate: false, affectedScopes: [...scopes] };
+    },
+
+    acknowledgeViewed(repositoryId, acknowledgment) {
+      // 同步确认原语：只读账本、按需推进 viewedRevision；无网络、无 Token、不改写视图版本。
+      return applyViewAcknowledgment(db, {
+        repositoryId,
+        repositoryExists: repositoryById(repositoryId) !== null,
+        currentAccessContextRevision: accessContext.currentRevision(),
+        currentDetailViewVersion: readViewVersion(db, repositoryId),
+        acknowledgment,
+      });
     },
   };
 }

@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import { formatCount } from '../lib/format';
-import { formatRelativeTime } from '../lib/time';
+import { formatActivityTooltip, formatRelativeTime } from '../lib/time';
+import { useDisplayNow } from '../lib/display-clock';
 import { GlanceFact } from './GlanceFact';
 import { RepositoryActions } from './watchlist/RepositoryActions';
 import { RepositoryMotionItem } from './watchlist/RepositoryMotionItem';
@@ -9,6 +10,10 @@ import type { RepositoryItemProps } from './watchlist/RepositoryMotionItem';
 /** Legacy large card for the single-column Watchlist. Menu and activator are siblings. */
 export const RepoRow = forwardRef<HTMLLIElement, RepositoryItemProps>(function RepoRow(props, forwardedRef) {
   const { repo, onOpen, onRemove, refreshing } = props;
+  const now = useDisplayNow();
+  // 只格式化主进程聚合的 activityAt；pushedAt 等原始字段不在这里重新选取。
+  const activityText = formatRelativeTime(repo.activityAt, now);
+  const activityTitle = formatActivityTooltip(repo.activityAt, repo.activityKind, repo.fetchedAt, now);
   return (
     <RepositoryMotionItem ref={forwardedRef} {...props}>
       {(exitingCard) => (
@@ -31,10 +36,7 @@ export const RepoRow = forwardRef<HTMLLIElement, RepositoryItemProps>(function R
               <span className="block min-w-0 truncate text-sm text-secondary" title={repo.owner}>{repo.owner}</span>
               <span className="mt-2 flex flex-wrap items-baseline gap-x-5 gap-y-2">
                 <GlanceFact label="Stars" value={formatCount(repo.stars)} />
-                <GlanceFact
-                  label="最近活动"
-                  value={repo.pushedAt ? formatRelativeTime(repo.pushedAt) : '—'}
-                />
+                <GlanceFact label="最近活动" value={activityText} title={activityTitle} />
                 <GlanceFact
                   label="最新版本"
                   value={repo.latestReleaseTag ?? '无发版'}
@@ -43,7 +45,7 @@ export const RepoRow = forwardRef<HTMLLIElement, RepositoryItemProps>(function R
                 />
               </span>
               <span className="mt-1 block text-xs text-muted">
-                抓取于 {repo.fetchedAt ? formatRelativeTime(repo.fetchedAt) : '尚未抓取'}
+                抓取于 {repo.fetchedAt ? formatRelativeTime(repo.fetchedAt, now) : '尚未抓取'}
                 {refreshing ? <span className="text-secondary"> · 正在更新…</span> : null}
               </span>
             </button>

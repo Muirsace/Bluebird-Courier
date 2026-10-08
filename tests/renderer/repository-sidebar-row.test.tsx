@@ -2,11 +2,13 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Glance } from '../../src/shared/types';
+import { formatDateTime } from '../../src/renderer/lib/time';
 import type { RenderResult, StubHandle } from './helpers';
 import {
   buttonByText, click, createStub, dialog, makeGlance, menu, menuItem, navButton,
-  renderApp, repoActionsButton, openRepositoryActions, repoMotion, repoOpenButton, repoSlot, resetReducedMotion,
-  resetSystemTheme, setReducedMotion, setViewportWidth, settle, settleMotion, submitForm, typeInto,
+  refreshAllButton, renderApp, repoActionsButton, openRepositoryActions, repoMotion, repoOpenButton,
+  repoSlot, resetReducedMotion, resetSystemTheme, setReducedMotion, setViewportWidth,
+  settle, settleMotion, submitForm, typeInto,
 } from './helpers';
 import { readRendererStyles } from './support/styles';
 
@@ -153,6 +155,35 @@ describe('Compact Repository Sidebar', () => {
     await mount([{ ...makeGlance(1, A), latestReleaseTag: null, pushedAt: null }]);
     expect(repoOpenButton(A)?.textContent).toContain('无发版');
     expect(repoOpenButton(A)?.querySelector('.repository-sidebar-activity')?.textContent?.trim()).toBe('—');
+  });
+
+  it('formats only the main-process activityAt, never falling back to pushedAt', async () => {
+    const now = Date.now();
+    const pushedAt = new Date(now - 5 * 60_000).toISOString();
+    const activityAt = new Date(now - 2 * 3_600_000).toISOString();
+    await mount([{ ...makeGlance(1, A), pushedAt, activityAt, activityKind: 'code' }]);
+    const activity = (): HTMLElement | null =>
+      repoOpenButton(A)?.querySelector('.repository-sidebar-activity') ?? null;
+    expect(activity()?.textContent?.trim()).toBe('2 小时前');
+    expect(activity()?.getAttribute('aria-label')).toBe('最近活动 2 小时前');
+
+    // pushedAt 还在但主进程没有聚合活动：显示不可用，不退回 pushedAt 的"5 分钟前"。
+    stub.setRepositories([{ ...makeGlance(1, A), pushedAt, activityAt: null, activityKind: null }]);
+    await click(refreshAllButton());
+    await settle();
+    expect(activity()?.textContent?.trim()).toBe('—');
+    expect(activity()?.textContent).not.toContain('分钟前');
+  });
+
+  it('exposes the activity source and the summary check time on hover', async () => {
+    const now = Date.now();
+    const activityAt = new Date(now - 3_600_000).toISOString();
+    const fetchedAt = new Date(now - 120_000).toISOString();
+    await mount([{ ...makeGlance(1, A), fetchedAt, activityAt, activityKind: 'release' }]);
+    const title = repoOpenButton(A)?.querySelector('.repository-sidebar-activity')?.getAttribute('title') ?? '';
+    expect(title).toContain(`最近发版：${formatDateTime(activityAt)}`);
+    expect(title).toContain(`上次检查摘要：${formatDateTime(fetchedAt)}`);
+    expect(title.split('\n')).toHaveLength(2);
   });
 
   it('initial rows stay idle; add enters without replacing existing row DOM', async () => {

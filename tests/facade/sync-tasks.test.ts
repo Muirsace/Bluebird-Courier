@@ -65,6 +65,16 @@ function scopeRow(id: number, scope: string): Record<string, unknown> | undefine
   return h().db.prepare('SELECT * FROM detail_scope_state WHERE repository_id = ? AND scope = ? ORDER BY access_context_revision DESC').get(id, scope) as Record<string, unknown> | undefined;
 }
 
+/** 直接制造某范围的待同步变化（验证发现变化之外的注入路径）。 */
+function dirtyScope(id: number, scope: string, reason: string): void {
+  h().db.prepare('UPDATE detail_scope_state SET detected_revision = detected_revision + 1, dirty_reasons = ?, freshness = ? WHERE repository_id = ? AND scope = ?')
+    .run(JSON.stringify([reason]), 'stale', id, scope);
+}
+
+function cachePayload(id: number): { values: Record<string, unknown> } {
+  return JSON.parse((h().db.prepare('SELECT payload FROM detail_cache WHERE repository_id = ?').get(id) as { payload: string }).payload) as { values: Record<string, unknown> };
+}
+
 async function waitForReleases(): Promise<void> {
   for (let i = 0; i < 100 && h().github.count('listReleases') === 0; i++) await new Promise(resolve => setTimeout(resolve, 0));
   if (h().github.count('listReleases') === 0) throw new Error('发版读取没有开始');
@@ -229,22 +239,37 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
     expect(row.freshness).toBe('stale');
   });
 
-  it('部分失败与事务失败：保留旧内容与 dirty，回滚不产生半套写入', async () => {
-    // 部分失败：一次栏目请求失败 → 任务失败、缓存与账本原样保留
+  it('部分失败与事务失败：成功范围提交、失败范围保留旧值与 dirty，回滚不产生半套写入', async () => {
+    // 有缓存部分成功：一发版请求成功 + 一提交请求失败 → 成功范围原子提交，失败范围保留旧值并记录真实错误
     const { id } = await readyWithCache({ observation: { head: 'sha-a' } });
     await produceHeadHandoff();
     const [handoff] = h().repositoryList.pendingObservations();
     h().repositoryDetail.applyObservation(handoff!, h().clock.now().toISOString());
     h().github.resetCalls();
-    const before = h().db.prepare('SELECT fetched_at, payload FROM detail_cache WHERE repository_id = ?').get(id);
+    const before = h().db.prepare('SELECT fetched_at, payload FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string; payload: string };
     const beforeCommits = scopeRow(id, 'commits')!;
+    const beforeReleases = scopeRow(id, 'releases')!;
 
+    h().github.repos.get(NAME)!.releases = [
+      { tagName: 'v3.0.0', title: 'v3.0.0', publishedAt: '2026-09-26T03:00:00.000Z' },
+      ...h().github.repos.get(NAME)!.releases,
+    ];
     h().github.fail(NAME, 'listCommits', fixtures.networkError());
     const opened = await h().facade.fetchDetail(id);
     expect(opened.detail).not.toBeNull(); // 旧缓存继续展示
     await waitTaskSettled(id);
-    expect(h().db.prepare('SELECT fetched_at, payload FROM detail_cache WHERE repository_id = ?').get(id)).toEqual(before);
-    expect(scopeRow(id, 'commits')).toMatchObject({ ...beforeCommits, sync_status: 'error', last_sync_error: expect.any(String) }); // 数据、序号和基线保留，只增加可读错误
+    const status = await h().facade.readLocalDetail(id);
+    expect(status.error).toMatchObject({ kind: 'network' }); // 局部失败可读，不伪装成成功
+
+    const after = h().db.prepare('SELECT fetched_at, payload FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string; payload: string };
+    expect(after.fetched_at).toBe(before.fetched_at); // 不完整的一轮不刷新完整详情时间
+    const afterValues = (JSON.parse(after.payload) as { values: { releases: Array<{ tagName: string }>; commits: unknown[] } }).values;
+    expect(afterValues.releases.map((entry) => entry.tagName)).toContain('v3.0.0'); // 成功范围已提交
+    expect(afterValues.commits).toEqual((JSON.parse(before.payload) as { values: { commits: unknown[] } }).values.commits); // 失败范围保留旧值
+    expect(scopeRow(id, 'commits')).toMatchObject({ ...beforeCommits, sync_status: 'error', last_sync_error: expect.any(String) }); // 序号、基线、成功时间保留，只增加可读错误
+    expect(JSON.parse((scopeRow(id, 'commits') as { dirty_reasons: string }).dirty_reasons)).toContain('head');
+    expect(scopeRow(id, 'releases')).toMatchObject({ sync_status: 'idle', last_synced_at: h().clock.now().toISOString() }); // 成功范围确认并推进成功时间
+    expect(scopeRow(id, 'releases')!.synced_fingerprint).not.toBe(beforeReleases.synced_fingerprint);
     h().github.failures.clear();
     h().github.resetCalls();
 
@@ -267,6 +292,9 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
     await produceHeadHandoff();
     h().github.resetCalls();
     const release = h().github.holdNext('listReleases');
+    // 先留下一条续读暂存：删除仓库必须级联清理，旧暂存不得随后续任务回填
+    h().db.prepare('INSERT INTO cache_query_page (repository_id, scope, query_key, access_context_revision, schema_version, payload, cursor, has_more, saved_at) VALUES (?, ?, ?, 0, 1, ?, ?, 1, ?)')
+      .run(id, 'tree', JSON.stringify([NAME, 'main', 50]), JSON.stringify({ items: [{ path: 'staged.ts' }], pages: 1, bytes: 20 }), 'staged-cursor', h().clock.now().toISOString());
     const pending = h().facade.refreshRepository!(id, true);
     await h().facade.removeRepository(id);
     release();
@@ -274,6 +302,7 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
     expect(removed.detail).toBeNull();
     expect(removed.error).not.toBeNull();
     expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_cache').get() as { n: number }).n).toBe(0);
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM cache_query_page').get() as { n: number }).n).toBe(0);
 
     // 上下文切换：旧上下文任务完成后不得写入当前缓存
     const { id: second } = await readyWithCache();
@@ -374,7 +403,7 @@ describe('构建范围独立更新与范围验证（步骤 8A）', () => {
     expect(JSON.parse(String((scopeRow(id, 'overview') as { dirty_reasons: string }).dirty_reasons))).toEqual([]); // 构建组随同修复
   });
 
-  it('过期验证：完整检查无变化 → fresh；发现变化 → 标记构建待同步并在下次打开执行范围抓取', async () => {
+  it('过期验证：完整检查无变化 → fresh；发现变化 → 同一次打开内完成后继范围抓取', async () => {
     const { id } = await readyWithCache();
     const handoff = queueBuildsHandoff(id, 'builds-2');
     h().repositoryDetail.applyObservation(handoff, h().clock.now().toISOString());
@@ -393,33 +422,96 @@ describe('构建范围独立更新与范围验证（步骤 8A）', () => {
     expect(opened.task).toMatchObject({ kind: 'check', targetScopes: ['builds'] });
     await waitTaskSettled(id);
     expect(h().github.count('verifyScopes')).toBe(1);
+    expect(h().github.count('fetchScope')).toBe(0); // 检查无变化：0 次范围抓取
     let builds = scopeRow(id, 'builds')!;
     expect(builds).toMatchObject({ freshness: 'fresh', last_checked_at: h().clock.now().toISOString() });
     expect(builds.observed_fingerprint).toBe('fp-builds-new');
     expect(builds.synced_fingerprint).toBe('fp-builds-old'); // 验证不冒充同步基线
 
-    // 验证发现变化：标记待同步（不直接抓取），下次打开才执行范围抓取
+    // 验证发现变化：同一次打开流程内完成后继范围抓取，用户无需再次导航
     h().github.resetCalls();
     h().clock.advanceMs(31 * 60_000);
     h().db.prepare("UPDATE detail_scope_state SET last_checked_at = ? WHERE scope <> 'builds'").run(h().clock.now().toISOString());
     h().github.setScopeVerification(NAME, 'builds', { checkedAt: h().clock.now().toISOString(), checkComplete: true, changed: true });
+    const secondItems = [{ status: 'failure', workflowName: 'ci', url: null, finishedAt: null, resultDescription: 'failure', id: '2' }];
+    h().github.setScopeFetch(NAME, 'builds', buildsHandler({ items: secondItems, fingerprint: 'fp-builds-2' }));
     const verifyTask = await h().facade.fetchDetail(id);
     expect(verifyTask.task).toMatchObject({ kind: 'check' });
     await waitTaskSettled(id);
-    expect(h().github.count('fetchScope')).toBe(0);
-    builds = scopeRow(id, 'builds')!;
-    expect(builds.freshness).toBe('stale');
-    expect(JSON.parse(builds.dirty_reasons as string)).toContain('build');
-    expect(JSON.parse(String((scopeRow(id, 'overview') as { dirty_reasons: string }).dirty_reasons))).toContain('build');
-
-    const secondItems = [{ status: 'failure', workflowName: 'ci', url: null, finishedAt: null, resultDescription: 'failure', id: '2' }];
-    h().github.setScopeFetch(NAME, 'builds', buildsHandler({ items: secondItems, fingerprint: 'fp-builds-2' }));
-    const syncTask = await h().facade.fetchDetail(id);
-    expect(syncTask.task).toMatchObject({ kind: 'scope' });
-    await waitTaskSettled(id);
-    expect(h().github.count('fetchScope')).toBe(1);
+    expect(h().github.count('verifyScopes')).toBe(1);
+    expect(h().github.count('fetchScope')).toBe(1); // 后继同步在同一次打开内真实执行
+    const read = await h().facade.readLocalDetail(id, { scopes: ['builds'] });
+    expect(read.detail!.builds!.map((entry) => entry.id)).toEqual(['2']); // 本地内容已更新，打开用例完成后即可读到
     builds = scopeRow(id, 'builds')!;
     expect(builds).toMatchObject({ detected_revision: 2, synced_revision: 2, freshness: 'unknown' });
+    expect(JSON.parse(builds.dirty_reasons as string)).toEqual([]);
+
+    // 再次打开：无变化、无未同步工作 → 不再抓取
+    h().github.resetCalls();
+    const reopen = await h().facade.fetchDetail(id);
+    expect(reopen.task).toBeNull();
+    expect(h().github.count('fetchScope')).toBe(0);
+  });
+
+  it('验证发现非构建变化：后继完整同步同样在同一次打开内完成', async () => {
+    const { id } = await readyWithCache();
+    h().clock.advanceMs(31 * 60_000);
+    h().github.setScopeVerification(NAME, 'releases', { checkedAt: h().clock.now().toISOString(), checkComplete: true, changed: true });
+    h().github.repos.get(NAME)!.releases = [
+      { tagName: 'v4.0.0', title: 'v4.0.0', publishedAt: null },
+      ...h().github.repos.get(NAME)!.releases,
+    ];
+    const opened = await h().facade.fetchDetail(id);
+    expect(opened.task).toMatchObject({ kind: 'check' });
+    await waitTaskSettled(id);
+    expect(h().github.count('verifyScopes')).toBe(7); // 适配器调用口径：7 个过期范围各验证一次；未配置的范围返回未完成，不冒充无变化
+    const read = await h().facade.readLocalDetail(id, { scopes: ['releases'] });
+    expect(read.detail!.releases[0]!.tagName).toBe('v4.0.0'); // 同一次打开内已抓取并展示
+    expect(scopeRow(id, 'releases')).toMatchObject({ detected_revision: 1, synced_revision: 1, freshness: 'unknown' });
+  });
+
+  it('后继同步在释放任务登记前接续：页面轮询看不到任务快照间隙', async () => {
+    const { id } = await readyWithCache();
+    h().clock.advanceMs(31 * 60_000);
+    h().db.prepare("UPDATE detail_scope_state SET last_checked_at = ? WHERE scope <> 'builds'").run(h().clock.now().toISOString());
+    h().github.setScopeVerification(NAME, 'builds', { checkedAt: h().clock.now().toISOString(), checkComplete: true, changed: true });
+    h().github.setScopeFetch(NAME, 'builds', buildsHandler({ items: [{ status: 'failure', workflowName: 'ci', url: null, finishedAt: null, resultDescription: 'failure', id: '9' }], fingerprint: 'fp-follow' }));
+    const gate = h().github.holdNext('fetchScope'); // 后继同步挂起在闸门，观察验证结束到后继开始之间
+
+    const opened = await h().facade.fetchDetail(id);
+    expect(opened.task).toMatchObject({ kind: 'check' });
+
+    const seen: Array<string | null> = [];
+    for (let i = 0; i < 200 && h().github.count('fetchScope') === 0; i++) {
+      seen.push((await h().facade.readLocalDetail(id, { mode: 'status' })).task?.kind ?? null);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(h().github.count('fetchScope')).toBe(1); // 后继已开始并阻塞在闸门
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen).not.toContain(null); // check → scope 之间没有任务快照间隙
+    const during = await h().facade.readLocalDetail(id, { mode: 'status' });
+    expect(during.task).toMatchObject({ kind: 'scope', status: 'running' });
+
+    gate();
+    await waitTaskSettled(id);
+    expect((await h().facade.readLocalDetail(id, { scopes: ['builds'] })).detail!.builds!.map((entry) => entry.id)).toEqual(['9']);
+  });
+
+  it('验证限流：不追加后继同步，保留可重试状态', async () => {
+    const { id } = await readyWithCache();
+    h().clock.advanceMs(31 * 60_000);
+    h().github.setScopeVerification(NAME, 'overview', {
+      checkedAt: h().clock.now().toISOString(), checkComplete: false, changed: false,
+      error: { kind: 'rate_limited', message: '抓取被限流', resetAt: '2026-09-26T08:00:00.000Z' },
+    });
+    const opened = await h().facade.fetchDetail(id);
+    expect(opened.task).toMatchObject({ kind: 'check' });
+    await waitTaskSettled(id);
+    expect(h().github.count('verifyScopes')).toBe(1); // 限流后停止后续范围的验证
+    expect(h().github.count('fetchScope')).toBe(0); // 不追加后继抓取，避免无界重试
+    const overview = scopeRow(id, 'overview')!;
+    expect(overview).toMatchObject({ check_status: 'error' });
+    expect(JSON.parse(String(overview.last_check_error))).toMatchObject({ kind: 'rate_limited', message: '抓取被限流' });
   });
 
   it('范围抓取失败（部分失败）保留旧构建内容与 dirty', async () => {
@@ -436,5 +528,163 @@ describe('构建范围独立更新与范围验证（步骤 8A）', () => {
     const builds = scopeRow(id, 'builds')!;
     expect(builds).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale' });
     expect(JSON.parse(builds.dirty_reasons as string)).toContain('build');
+  });
+});
+
+describe('部分提交与来源级成败（步骤 8B）', () => {
+  it('发版双来源部分失败：成功栏目提交、失败栏目保留旧值，组合范围不确认目标', async () => {
+    const { id } = await readyWithCache();
+    dirtyScope(id, 'releases', 'release');
+    // 给标签一个可辨认旧值，验证失败来源保留
+    h().db.prepare("UPDATE detail_cache SET payload = json_set(payload, '$.values.tags', json(?)) WHERE repository_id = ?")
+      .run(JSON.stringify([{ name: 'old-tag', committedAt: null }]), id);
+    h().db.prepare("UPDATE detail_column SET state = 'success', payload = ? WHERE repository_id = ? AND column_name = 'tags'")
+      .run(JSON.stringify([{ name: 'old-tag', committedAt: null }]), id);
+    const beforeFingerprint = scopeRow(id, 'releases')!.synced_fingerprint;
+
+    h().github.setScopeFetch(NAME, 'releases', async request => ({
+      scope: request.scope,
+      items: [{ kind: 'release', tagName: 'v9', title: 'v9', publishedAt: null }],
+      hasMore: false, nextCursor: null, coverageComplete: true,
+      observedAt: request.observedAt, accessContextRevision: request.accessContextRevision,
+      fingerprint: 'lying-complete', // 带指纹的部分失败也不能确认组合覆盖
+      errors: [{ kind: 'network', message: '标签请求失败' }],
+      parts: {
+        releases: { ok: true, coverageComplete: true, hasMore: false, nextCursor: null },
+        tags: { ok: false, coverageComplete: false, hasMore: true, nextCursor: 'retry' },
+      },
+    }));
+    await h().facade.fetchDetail(id);
+    await waitTaskSettled(id);
+
+    const values = cachePayload(id).values as { releases: Array<{ tagName: string }>; tags: Array<{ name: string }> };
+    expect(values.releases.map((entry) => entry.tagName)).toEqual(['v9']); // 成功来源已更新
+    expect(values.tags).toEqual([{ name: 'old-tag', committedAt: null }]); // 失败来源保留旧值
+    const releases = scopeRow(id, 'releases')!;
+    expect(releases).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale', sync_status: 'error' }); // 组合范围不确认
+    expect(releases.synced_fingerprint).toBe(beforeFingerprint);
+    expect(JSON.parse(String(releases.last_sync_error))).toMatchObject({ kind: 'network', message: '标签请求失败' });
+    const releasesColumn = h().db.prepare("SELECT state, payload FROM detail_column WHERE repository_id = ? AND column_name = 'releases'").get(id) as { state: string; payload: string };
+    expect(releasesColumn.state).toBe('success');
+    expect(JSON.parse(releasesColumn.payload)).toMatchObject([{ tagName: 'v9' }]);
+    const tagsColumn = h().db.prepare("SELECT state, payload FROM detail_column WHERE repository_id = ? AND column_name = 'tags'").get(id) as { state: string; payload: string };
+    expect(tagsColumn.state).toBe('success'); // 失败来源的栏目不动
+    expect(JSON.parse(tagsColumn.payload)).toEqual([{ name: 'old-tag', committedAt: null }]);
+  });
+
+  it('议题来源成功、PR 来源失败：议题列表提交，PR 列表保留，范围不确认', async () => {
+    const { id } = await readyWithCache();
+    dirtyScope(id, 'issuesAndPr', 'verify');
+    h().db.prepare("UPDATE detail_cache SET payload = json_set(payload, '$.values.pullRequests', json(?)) WHERE repository_id = ?")
+      .run(JSON.stringify([{ number: 900, title: 'old-pr', state: 'open', authorName: null, body: null, updatedAt: '2026-09-20T00:00:00.000Z' }]), id);
+
+    h().github.setScopeFetch(NAME, 'issuesAndPr', async request => ({
+      scope: request.scope,
+      items: [{ kind: 'issue', number: 1, title: 'new-issue', state: 'open', authorName: null, body: null, updatedAt: '2026-09-26T00:00:00.000Z' }],
+      hasMore: false, nextCursor: null, coverageComplete: false,
+      observedAt: request.observedAt, accessContextRevision: request.accessContextRevision,
+      errors: [{ kind: 'network', message: 'PR 请求失败' }],
+      parts: {
+        issues: { ok: true, coverageComplete: true, hasMore: false, nextCursor: null },
+        pullRequests: { ok: false, coverageComplete: false, hasMore: true, nextCursor: 'retry' },
+      },
+    }));
+    await h().facade.fetchDetail(id);
+    await waitTaskSettled(id);
+
+    const values = cachePayload(id).values as { issues: Array<{ number: number }>; pullRequests: Array<{ number: number }> };
+    expect(values.issues.map((entry) => entry.number)).toEqual([1]);
+    expect(values.pullRequests.map((entry) => entry.number)).toEqual([900]);
+    expect(scopeRow(id, 'issuesAndPr')).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale', sync_status: 'error' });
+  });
+
+  it('真实成功空结果替换该范围内容；未完成的空结果不替换已确认内容', async () => {
+    const { id } = await readyWithCache();
+    expect((await h().facade.readLocalDetail(id, { scopes: ['releases'] })).detail!.releases).toHaveLength(2);
+
+    // 未完成的空结果：不替换已确认内容，不无界重试
+    dirtyScope(id, 'releases', 'release');
+    let releaseReads = 0;
+    h().github.setScopeFetch(NAME, 'releases', async request => {
+      releaseReads += 1;
+      return { scope: request.scope, items: [], hasMore: true, nextCursor: null, coverageComplete: false,
+        observedAt: request.observedAt, accessContextRevision: request.accessContextRevision };
+    });
+    await h().facade.fetchDetail(id);
+    await waitTaskSettled(id);
+    expect(releaseReads).toBe(1); // 单次调用未完成即停止，不重复请求
+    let read = await h().facade.readLocalDetail(id, { scopes: ['releases'] });
+    expect(read.detail!.releases.map((entry) => entry.tagName)).toEqual(['v2.4.0', 'v2.3.1']); // 旧内容保留
+    expect(scopeRow(id, 'releases')).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale', sync_status: 'error' });
+    expect(scopeRow(id, 'commits')).toMatchObject({ sync_status: 'idle' }); // 其他有效范围照常提交
+
+    // 真实成功空结果：替换内容并推进同步基线
+    h().github.resetCalls();
+    dirtyScope(id, 'releases', 'release');
+    h().github.setScopeFetch(NAME, 'releases', async request => ({
+      scope: request.scope, items: [], hasMore: false, nextCursor: null, coverageComplete: true,
+      observedAt: request.observedAt, accessContextRevision: request.accessContextRevision,
+      fingerprint: 'fp-empty',
+      parts: {
+        releases: { ok: true, coverageComplete: true, hasMore: false, nextCursor: null },
+        tags: { ok: true, coverageComplete: true, hasMore: false, nextCursor: null },
+      },
+    }));
+    await h().facade.fetchDetail(id);
+    await waitTaskSettled(id);
+    read = await h().facade.readLocalDetail(id, { scopes: ['releases'] });
+    expect(read.detail!.releases).toEqual([]);
+    expect(read.detail!.tags).toEqual([]);
+    const releases = scopeRow(id, 'releases')!;
+    expect(releases).toMatchObject({ detected_revision: 2, synced_revision: 2, freshness: 'unknown' });
+    expect(releases.synced_fingerprint).toBe('fp-empty');
+  });
+});
+
+describe('完整详情成功时间与缓存身份分离（R1）', () => {
+  it('首次部分成功不宣布完整时间；完整成功才推进；后续部分与构建更新保留旧完整时间', async () => {
+    const { id } = await ready();
+    // 无缓存 + 树请求失败 + 其他范围成功：建立缓存，但完整详情时间未知
+    h().github.setScopeFetch(NAME, 'tree', async () => { throw fixtures.networkError(); });
+    const first = await h().facade.fetchDetail(id);
+    expect(first.detail).not.toBeNull();
+    expect(first.error).not.toBeNull();
+    const created = h().db.prepare('SELECT fetched_at, complete_fetched_at FROM detail_cache WHERE repository_id = ?').get(id) as { fetched_at: string; complete_fetched_at: string | null };
+    expect(created.fetched_at).toEqual(expect.any(String)); // 缓存身份/创建时间可以保留
+    expect(created.complete_fetched_at).toBeNull(); // 完整详情时间不得由创建时刻冒充
+    expect(first.detailFetchedAt ?? null).toBeNull();
+    expect((await h().facade.readLocalDetail(id, { mode: 'status' })).detailFetchedAt ?? null).toBeNull();
+    expect((await h().facade.readLocalDetail(id)).detailFetchedAt ?? null).toBeNull(); // status/打开/只读同一语义
+
+    // 全部远端范围完整覆盖的一轮：推进完整时间
+    h().github.setScopeFetch(NAME, 'tree', async request => ({ scope: request.scope, items: [], hasMore: false, nextCursor: null, coverageComplete: true,
+      observedAt: request.observedAt, accessContextRevision: request.accessContextRevision, fingerprint: 'fp-tree' }));
+    h().clock.advanceMs(60_000);
+    const complete = await h().facade.refreshRepository!(id, true);
+    expect(complete.error).toBeNull();
+    const completeAt = h().clock.now().toISOString();
+    expect(complete.detailFetchedAt).toBe(completeAt);
+    expect(h().db.prepare('SELECT complete_fetched_at FROM detail_cache WHERE repository_id = ?').get(id)).toEqual({ complete_fetched_at: completeAt });
+    expect((await h().facade.readLocalDetail(id, { mode: 'status' })).detailFetchedAt).toBe(completeAt);
+
+    // 构建范围独立更新：保留旧完整时间
+    const handoff = queueBuildsHandoff(id, 'r1-builds');
+    expect(h().repositoryDetail.applyObservation(handoff, h().clock.now().toISOString())).toMatchObject({ applied: true });
+    h().github.setScopeFetch(NAME, 'builds', async request => ({ scope: request.scope, items: [{ status: 'success', workflowName: 'ci', url: null, finishedAt: null, resultDescription: 'success', id: '7' }],
+      hasMore: false, nextCursor: null, coverageComplete: true, observedAt: request.observedAt, accessContextRevision: request.accessContextRevision, fingerprint: 'fp-builds' }));
+    h().clock.advanceMs(60_000);
+    expect((await h().facade.fetchDetail(id)).detailFetchedAt).toBe(completeAt);
+    await waitTaskSettled(id);
+    expect((await h().facade.readLocalDetail(id)).detailFetchedAt).toBe(completeAt);
+    expect(h().db.prepare('SELECT complete_fetched_at FROM detail_cache WHERE repository_id = ?').get(id)).toEqual({ complete_fetched_at: completeAt });
+
+    // 后续部分失败的一轮：成功范围照常提交，完整时间仍保留旧值
+    h().github.fail(NAME, 'listCommits', fixtures.networkError());
+    h().clock.advanceMs(60_000);
+    const partial = await h().facade.refreshRepository!(id, true);
+    expect(partial.error).not.toBeNull();
+    expect(partial.detailFetchedAt).toBe(completeAt);
+    expect(scopeRow(id, 'commits')).toMatchObject({ sync_status: 'error' });
+    expect(h().db.prepare('SELECT complete_fetched_at FROM detail_cache WHERE repository_id = ?').get(id)).toEqual({ complete_fetched_at: completeAt });
   });
 });

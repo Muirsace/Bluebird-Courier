@@ -23,8 +23,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function mount(configured = true): Promise<StubHandle> {
-  const stub = createStub({ repositories: [makeGlance(1, 'owner/A'), makeGlance(2, 'owner/B')] });
+async function mount(configured = true, repositories = [makeGlance(1, 'owner/A'), makeGlance(2, 'owner/B')]): Promise<StubHandle> {
+  const stub = createStub({ repositories });
   stub.api.accessTokenState = async () => ({ configured });
   view = await renderApp(stub);
   await settle();
@@ -125,13 +125,25 @@ describe('Desktop AppShell', () => {
     expect(document.body.textContent).toContain('查看位置');
   });
 
-  it('未配置令牌仍走启动闸门，侧栏不触发刷新', async () => {
+  it('未配置令牌但有本地清单：侧栏保留清单，不再强制设置页', async () => {
     const stub = await mount(false);
+    expect(sidebar().querySelector('.watchlist-page')).not.toBeNull();
+    expect(workspace().querySelector('.workspace-empty')?.textContent).toContain('从左侧选择一个仓库');
+    expect(workspace().querySelector('#accessToken-input')).toBeNull();
+    expect(navButton('设置')?.getAttribute('aria-pressed')).toBe('false');
+    // 只读一次本地清单用于判定入口，不做任何自动抓取
+    expect(stub.calls.listRepositories).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(0);
+  });
+
+  it('未配置令牌且没有本地清单：仍走启动闸门', async () => {
+    const stub = await mount(false, []);
     expect(workspace().querySelector('#accessToken-input')).not.toBeNull();
     expect(sidebar().querySelector('.watchlist-page')).toBeNull();
     expect(navButton('监控清单')).toBeNull();
     expect(navButton('设置')?.getAttribute('aria-pressed')).toBe('true');
-    expect(stub.calls.listRepositories).toBe(0);
+    expect(stub.calls.listRepositories).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(0);
   });
 
   it('不把焦点拉进 Workspace，Repo 与 Detail Tabs 仍为可聚焦按钮', async () => {

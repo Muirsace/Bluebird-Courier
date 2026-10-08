@@ -1,7 +1,12 @@
 import type { DetailScope, DetailValues } from '../../../../domain/types';
+import type { LocalQueryIdentity } from '../../../../domain/rules/local-read';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { ColumnName, ColumnResult } from '../contract';
+
+export type HistoryListKey = 'commits' | 'issues' | 'pullRequests';
+const HISTORY_KINDS: readonly HistoryListKey[] = ['commits', 'issues', 'pullRequests'];
+const HISTORY_PAGE_SIZE = 30;
 
 type ListKey = 'releases' | 'tags' | 'commits' | 'issues' | 'pullRequests' | 'builds' | 'readmes' | 'tree';
 const RANGE_LISTS: Partial<Record<DetailScope, readonly ListKey[]>> = {
@@ -31,7 +36,8 @@ function objectValue(db: LocalDatabase, id: number, key: string): Record<string,
     .get('$.values.' + key, id) as { value: string };
   return JSON.parse(row.value) as Record<string, unknown>;
 }
-function validItem(key: ListKey, value: unknown): boolean {
+/** 本地栏目条目的最小结构校验；持久缓存读取与暂存恢复共用同一判定。 */
+export function isLocalColumnItemValid(key: ListKey, value: unknown): boolean {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   if (key === 'releases') return typeof item.tagName === 'string' && typeof item.title === 'string';
@@ -74,10 +80,23 @@ export function readLocalScopePage(db: LocalDatabase, id: number, scope: DetailS
   for (const row of rows.slice(0, limit)) {
     if (row.kind !== 'object') throw new Error(row.part + ' 条目损坏');
     const item: unknown = JSON.parse(row.value);
-    if (!validItem(row.part, item)) throw new Error(row.part + ' 条目损坏');
+    if (!isLocalColumnItemValid(row.part, item)) throw new Error(row.part + ' 条目损坏');
     (values[row.part] as unknown[]).push(item);
   }
   return { values, hasMore: rows.length > limit, count: Math.min(rows.length, limit), missing: validKeys.length === 0 && build === null };
+}
+
+/**
+ * 与内容读取同源的范围可展示判定：有界读取该范围首页，结构损坏或无可展示内容为 false。
+ * 与 readLocalScopePage 走同一 SQL 与条目校验，确认与内容读取对范围有效性的结论一致；
+ * 只审计首页，不整份解析 payload（下一页的损坏由该页读取时另行发现）。
+ */
+export function isLocalScopeDisplayable(db: LocalDatabase, id: number, scope: DetailScope, limit: number): boolean {
+  try {
+    return !readLocalScopePage(db, id, scope, 0, limit).missing;
+  } catch {
+    return false;
+  }
 }
 
 /** 栏目元信息不读取 value，避免返回已裁剪之外的完整栏目副本。 */
@@ -90,10 +109,33 @@ export function readLocalColumns(db: LocalDatabase, id: number): Partial<Record<
   return result;
 }
 
-/** 既有本地历史按栏目独立分页，不能先取默认30条视图再二次裁剪。 */
-export function readHistoryPage(db: LocalDatabase, id: number, kind: 'commits' | 'issues' | 'pullRequests', offset: number): { items: unknown[]; nextCursor: string | null; hasMore: boolean } {
-  if (!['commits', 'issues', 'pullRequests'].includes(kind) || !hasReadableDetail(db, id) || valueType(db, id, kind) !== 'array') return { items: [], nextCursor: null, hasMore: false };
-  const rows = db.prepare('SELECT j.value AS value, j.type AS kind FROM detail_cache AS c, json_each(c.payload, ?) AS j WHERE c.repository_id = ? ORDER BY CAST(j.key AS INTEGER) LIMIT 31 OFFSET ?').all('$.values.' + kind, id, offset) as Array<{ value: string; kind: string }>;
-  const items = rows.slice(0, 30).map(row => { const item: unknown = row.kind === 'object' ? JSON.parse(row.value) : null; if (!validItem(kind, item)) throw new Error('历史条目损坏'); return item; });
-  return { items, nextCursor: rows.length > 30 ? String(offset + items.length) : null, hasMore: rows.length > 30 };
+/**
+ * 历史续读游标绑定仓库、上下文、内容版本（含完整提交时间）与栏目；
+ * 裸 offset 等旧格式不是当前安全游标，换版后旧游标一律失效。
+ */
+export function historyReadOffset(cursor: string | null | undefined, kind: HistoryListKey, identity: LocalQueryIdentity): number | null {
+  if (cursor == null) return 0;
+  if (cursor.length > 4096) return null;
+  try {
+    const value = JSON.parse(cursor) as LocalQueryIdentity & { kind?: unknown; offset?: unknown };
+    return value.repositoryId === identity.repositoryId && value.accessContextRevision === identity.accessContextRevision
+      && value.viewVersion === identity.viewVersion && value.fetchedAt === identity.fetchedAt && value.kind === kind
+      && typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0 ? value.offset : null;
+  } catch { return null; }
+}
+
+/** 既有本地历史按栏目独立分页，不能先取默认30条视图再二次裁剪；库里只读回本页。 */
+export function readHistoryPage(
+  db: LocalDatabase,
+  id: number,
+  kind: HistoryListKey,
+  offset: number,
+  identity: LocalQueryIdentity,
+): { items: unknown[]; nextCursor: string | null; hasMore: boolean } {
+  if (!HISTORY_KINDS.includes(kind) || !hasReadableDetail(db, id) || valueType(db, id, kind) !== 'array') return { items: [], nextCursor: null, hasMore: false };
+  const rows = db.prepare('SELECT j.value AS value, j.type AS kind FROM detail_cache AS c, json_each(c.payload, ?) AS j WHERE c.repository_id = ? ORDER BY CAST(j.key AS INTEGER) LIMIT ? OFFSET ?')
+    .all('$.values.' + kind, id, HISTORY_PAGE_SIZE + 1, offset) as Array<{ value: string; kind: string }>;
+  const items = rows.slice(0, HISTORY_PAGE_SIZE).map(row => { const item: unknown = row.kind === 'object' ? JSON.parse(row.value) : null; if (!isLocalColumnItemValid(kind, item)) throw new Error('历史条目损坏'); return item; });
+  const hasMore = rows.length > HISTORY_PAGE_SIZE;
+  return { items, nextCursor: hasMore ? JSON.stringify({ ...identity, kind, offset: offset + items.length }) : null, hasMore };
 }

@@ -57,7 +57,7 @@ describe('Token 设置 feature', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-access-context-'));
     const db = openDatabase(path.join(directory, 'app.db'));
     try {
-      const service = createTokenSettings({ db, cipher: new FakeCipherBox(), github: new FakeGitHub() });
+      const service = createTokenSettings({ db, cipher: new FakeCipherBox(), github: new FakeGitHub(), clock: { now: () => new Date('2026-10-07T08:00:00.000Z') } });
       expect(service.accessContextRevision()).toBe(0);
 
       expect(service.advanceAccessContext('2026-10-06T08:00:00.000Z')).toBe(1);

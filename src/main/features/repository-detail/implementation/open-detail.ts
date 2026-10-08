@@ -46,8 +46,12 @@ export function buildLocalView(repository: Glance, input: LocalViewInput, reques
     if (state?.syncStatus === 'error' && state.lastSyncError) error ??= state.lastSyncFailure ?? failure(state.lastSyncError);
     if (state?.checkStatus === 'error' && state.lastCheckError) error ??= state.lastCheckFailure ?? failure(state.lastCheckError);
   }
-  const base = { repository, values: null, columns: {}, viewVersion: input.viewVersion,
-    accessContextRevision: input.currentAccessContextRevision, scopes, task: input.task, truncated: false, error };
+  // 详情成功时间独立于缓存身份：只取最近一次全部远端范围完整覆盖的时间；部分成功或旧库留空。
+  const metaUsable = input.cacheMeta !== null && input.cacheMeta.schemaVersion === DETAIL_CACHE_SCHEMA_VERSION
+    && input.cacheMeta.accessContextRevision === input.currentAccessContextRevision;
+  const base: LocalDetailView = { repository, values: null, columns: mode === 'status' ? input.columns : {}, viewVersion: input.viewVersion,
+    accessContextRevision: input.currentAccessContextRevision, detailFetchedAt: metaUsable ? input.cacheMeta!.completeFetchedAt : null,
+    scopes, task: input.task, truncated: false, error };
   if (mode === 'status' || cacheStatus !== 'valid') return base;
 
   const identity = { repositoryId: repository.id, accessContextRevision: input.currentAccessContextRevision,

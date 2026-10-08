@@ -117,7 +117,7 @@ if (userDataPathError !== null) {
         ...createGitHubRepositoryAdapter(githubClient),
         ...createGitHubDetailAdapter(githubClient),
       };
-      const tokenSettings = createTokenSettings({ db, cipher, github, logger });
+      const tokenSettings = createTokenSettings({ db, cipher, github, logger, clock: systemClock });
       const repositoryList = createRepositoryList({ db, clock: systemClock, logger, github,
         accessContext: { currentRevision: () => tokenSettings.accessContextRevision() }, nextObservationId: createIdentifierGenerator(),
       });

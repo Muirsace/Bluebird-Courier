@@ -84,4 +84,35 @@ describe('门面入参守卫（错型入参不穿出原始引擎错误）', () =
 
     expect(view.preferences).toEqual({ theme: 'dark' });
   });
+
+  it('展示确认：无效入参整组保守忽略，不触碰账本', async () => {
+    await hWithRepo();
+    const id = (await h().facade.listRepositories())[0]!.id;
+    await h().facade.fetchDetail(id);
+    h().github.resetCalls();
+    const before = h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE viewed_revision > 0').get();
+
+    const invalids: unknown[] = [
+      null,
+      'acknowledge',
+      {},
+      [1],
+      { detailViewVersion: 1.5, accessContextRevision: 0, scopes: ['commits'] },
+      { detailViewVersion: -1, accessContextRevision: 0, scopes: ['commits'] },
+      { detailViewVersion: '1', accessContextRevision: 0, scopes: ['commits'] },
+      { detailViewVersion: 1, accessContextRevision: '0', scopes: ['commits'] },
+      { detailViewVersion: 1, accessContextRevision: 0 },
+      { detailViewVersion: 1, accessContextRevision: 0, scopes: [] },
+      { detailViewVersion: 1, accessContextRevision: 0, scopes: [42, {}, 'unknown-scope'] },
+    ];
+    for (const invalid of invalids) {
+      const result = await h().facade.acknowledgeRepositoryViewed(id, invalid as never);
+      expect(result).toEqual({ ok: false, seenRevision: 0 });
+    }
+    // 非数值标识同样不触碰数据库
+    const badId = await h().facade.acknowledgeRepositoryViewed({} as never, { detailViewVersion: 1, accessContextRevision: 0, scopes: ['commits'] } as never);
+    expect(badId).toEqual({ ok: false, seenRevision: 0 });
+    expect(h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE viewed_revision > 0').get()).toEqual(before);
+    expect(h().github.calls).toEqual({});
+  });
 });

@@ -104,13 +104,16 @@ describe('one product state across two layout shells', () => {
     expectDetail(true);
   });
 
-  it('Settings save completion navigates using the current Narrow layout, including its original transition', async () => {
+  it('Settings token replacement completion navigates using the current Narrow layout, including its original transition', async () => {
     await mount();
     await click(navButton('设置')); await settle();
     await typeInto(token(), 'fixture-token');
+    stub.api.beginTokenReplacement = async () => ({ ok: true, state: 'awaiting_confirmation', error: null });
+    stub.api.cancelTokenReplacement = async () => ({ ok: true, state: 'idle', error: null });
     let finish!: () => void;
-    stub.api.saveAccessToken = () => new Promise(resolve => { finish = () => resolve({ ok: true, error: null }); });
-    await submitForm(token().form!);
+    stub.api.confirmTokenReplacement = () => new Promise(resolve => { finish = () => resolve({ ok: true, state: 'completed', error: null }); });
+    await submitForm(token().form!); await settle();
+    await click(buttonByText('确认更换'));
     await resize(899);
     await act(async () => finish()); await settle();
     await settleMotion(950);
@@ -155,26 +158,47 @@ describe('one product state across two layout shells', () => {
     expect(stub.calls).toEqual(calls);
   });
 
-  it.each(['saving', 'validating'] as const)('Settings %s pending survives resize with one request', async (operation) => {
+  it('Settings 首次保存 pending survives resize with one request', async () => {
+    setViewportWidth(1152);
+    stub = createStub({ repositories: repos });
+    stub.api.accessTokenState = async () => ({ configured: false });
+    view = await renderApp(stub); await settle();
+    await click(navButton('设置'));
+    await settle();
+    await typeInto(token(), 'fixture-token');
+    let finish!: (result: { ok: boolean; error: null }) => void;
+    const request = vi.fn(() => new Promise<{ ok: boolean; error: null }>(resolve => { finish = resolve; }));
+    stub.api.saveAccessToken = request;
+    await submitForm(token().form!);
+    for (const next of [899, 1152, 768]) {
+      await resize(next);
+      expect(buttonByText('验证中…')?.disabled).toBe(true);
+      expect(token().value).toBe('fixture-token');
+      expect(request).toHaveBeenCalledOnce();
+    }
+    await act(async () => finish({ ok: true, error: null }));
+    await settle();
+    expect(document.body.textContent).toContain('令牌已保存并验证');
+  });
+
+  it('Settings 测试连接 pending survives resize with one request', async () => {
     await mount();
     await click(navButton('设置'));
     await settle();
     await typeInto(token(), 'fixture-token');
     let finish!: (result: { ok: boolean; error: null }) => void;
     const request = vi.fn(() => new Promise<{ ok: boolean; error: null }>(resolve => { finish = resolve; }));
-    if (operation === 'saving') stub.api.saveAccessToken = request;
-    else stub.api.validateAccessToken = request;
-    if (operation === 'saving') await submitForm(token().form!);
-    else await click(buttonByText('测试连接'));
+    stub.api.validateAccessToken = request;
+    await click(buttonByText('测试连接'));
     for (const next of [899, 1152, 768]) {
       await resize(next);
-      expect(buttonByText(operation === 'saving' ? '验证中…' : '测试中…')?.disabled).toBe(true);
+      expect(buttonByText('测试中…')?.disabled).toBe(true);
       expect(token().value).toBe('fixture-token');
       expect(request).toHaveBeenCalledOnce();
     }
     await act(async () => finish({ ok: true, error: null }));
     await settle();
-    expect(document.body.textContent).toContain(operation === 'saving' ? '令牌已保存并验证' : 'GitHub 连接正常');
+    expect(document.body.textContent).toContain('GitHub 连接正常');
   });
 });
 

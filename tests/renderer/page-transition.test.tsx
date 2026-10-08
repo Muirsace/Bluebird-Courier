@@ -143,11 +143,11 @@ describe('页面切换 · 仓库详情（清单 ↔ 详情）', () => {
 });
 
 describe('页面切换 · 刷新与数据更新不重播', () => {
-  it('全部刷新不触发导航：容器节点与方向都不变', async () => {
+  it('检查更新不触发导航：容器节点与方向都不变', async () => {
     await mount();
     const node = transitionNode();
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
 
     expect(transitionNode()).toBe(node);

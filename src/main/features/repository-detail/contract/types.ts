@@ -67,12 +67,28 @@ export interface LocalDetailView {
   columns: Partial<Record<ColumnName, ColumnResult>>;
   viewVersion: number;
   accessContextRevision: number;
+  /** 最近一次完整详情成功提交时间；构建独立更新与缓存读不改变它。 */
+  detailFetchedAt: string | null;
   scopes: Partial<Record<DetailScope, ScopeSyncState>>;
   task: SyncTaskState | null;
   cursors?: Partial<Record<DetailScope, PaginationCursor>>;
   truncated: boolean;
   /** 损坏缓存、schema 或访问上下文不匹配等明确失败；不得伪装成空成功。 */
   error: NormalizedError | null;
+}
+
+/** 展示确认输入：上报实际展示到的权威详情版本、范围与访问上下文。 */
+export interface ViewAcknowledgment {
+  detailViewVersion: number;
+  accessContextRevision: number;
+  scopes: readonly DetailScope[];
+}
+
+/** 展示确认结果：accepted 表示输入通过校验并被视为已接收。 */
+export interface AcknowledgeOutcome {
+  accepted: boolean;
+  /** 确认后仍未查看的重要版本（没有则 0）；是剩余量，不是确认版本。 */
+  seenRevision: number;
 }
 
 /** 幂等观察应用结果：duplicate=true 表示同一 observationId 重放，不再重复递增序号。 */
@@ -130,6 +146,13 @@ export interface RepositoryDetailService {
    * 观察只递增待同步序号，不推进成功同步基线，也不宣布 fresh；跨访问上下文观察不改动账本。
    */
   applyObservation(handoff: ObservationHandoff, appliedAt: string): ObservationApplyOutcome;
+  /**
+   * 展示确认（同步原语，无网络副作用）：校验仓库、访问上下文、权威详情版本与可展示范围，
+   * 只推进实际已同步范围的 viewedRevision（上限为 syncedRevision 与 importantRevision），
+   * 待同步的新变化继续保留；旧版本、跨上下文或不可展示范围的确认保守忽略。
+   * 只在该数值实际推进时才写库，也不改写详情视图版本（避免确认→版本变化→重复确认循环）。
+   */
+  acknowledgeViewed(repositoryId: number, acknowledgment: ViewAcknowledgment): AcknowledgeOutcome;
   /**
    * 按范围执行同步（显式范围入口）。
    * 步骤 8 剩余能力：当前后台执行由打开 / 强制用例经 domain 计划驱动（构建范围已可执行）；

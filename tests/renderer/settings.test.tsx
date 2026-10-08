@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act } from 'react';
 import type { RenderResult, StubHandle, StubOptions } from './helpers';
-import type { AccessTokenResult, NormalizedError } from '../../src/shared/types';
+import type { AccessTokenResult, NormalizedError, TokenOperationResult } from '../../src/shared/types';
 import {
   alertTexts,
   bodyText,
@@ -12,12 +12,15 @@ import {
   createStub,
   makeGlance,
   navButton,
+  openRepo,
   renderApp,
+  repoOpenButton,
   repoRows,
   resetSystemTheme,
   resetReducedMotion,
   segmentedButton,
   settle,
+  settleMotion,
   setReducedMotion,
   submitForm,
   typeInto,
@@ -33,11 +36,64 @@ const tokenErrorCases: Array<{ kind: NormalizedError['kind']; expected: string }
   { kind: 'rate_limited', expected: 'GitHub 请求频率受限，请稍后再试' },
 ];
 
-async function mount(options: StubOptions = {}): Promise<void> {
+/** 已配置令牌的更换流程使用三个命名桥接方法；这里安装可控替身并记录调用。 */
+function attachReplacement(confirmResult?: TokenOperationResult) {
+  const state = {
+    began: 0,
+    confirmed: [] as string[],
+    cancelled: 0,
+    confirmResult: confirmResult ?? ({ ok: true, state: 'completed', error: null } as TokenOperationResult),
+  };
+  let beginGate: Promise<void> | null = null;
+  let confirmGate: Promise<void> | null = null;
+  handle.api.beginTokenReplacement = async () => {
+    state.began += 1;
+    // 闸门只作用于当前这一次登记：之后的登记立即返回。
+    const gate = beginGate;
+    beginGate = null;
+    if (gate) await gate;
+    return { ok: true, state: 'awaiting_confirmation' as const, error: null };
+  };
+  handle.api.confirmTokenReplacement = async (token: string) => {
+    state.confirmed.push(token);
+    const gate = confirmGate;
+    confirmGate = null;
+    if (gate) await gate;
+    return state.confirmResult;
+  };
+  handle.api.cancelTokenReplacement = async () => {
+    state.cancelled += 1;
+    return { ok: true, state: 'idle' as const, error: null };
+  };
+  const hold = (set: (gate: Promise<void> | null) => void): (() => void) => {
+    let release = (): void => {};
+    set(new Promise<void>((resolve) => {
+      release = () => {
+        set(null);
+        resolve();
+      };
+    }));
+    return release;
+  };
+  return {
+    state,
+    /** 挂起下一次开始登记的请求；返回放行函数。 */
+    holdBegin(): () => void {
+      return hold((gate) => { beginGate = gate; });
+    },
+    /** 挂起下一次确认请求；返回放行函数。 */
+    holdConfirm(): () => void {
+      return hold((gate) => { confirmGate = gate; });
+    },
+  };
+}
+
+async function mount(options: StubOptions = {}, configured = true): Promise<void> {
   handle = createStub({
     ...options,
     repositories: options.repositories ?? [makeGlance(1, 'octocat/Hello-World')],
   });
+  if (!configured) handle.api.accessTokenState = async () => ({ configured: false });
   view = await renderApp(handle);
   await settle();
 }
@@ -223,8 +279,8 @@ describe('设置页 · 访问令牌', () => {
     expect(buttonByText('测试连接')).toBe(testButton);
   });
 
-  it('保存并验证成功：提示一次、清空输入、令牌状态更新', async () => {
-    await mount();
+  it('首次保存成功：提示一次、清空输入、令牌状态更新', async () => {
+    await mount({}, false);
     await openSettings();
 
     const input = tokenInput();
@@ -254,7 +310,7 @@ describe('设置页 · 访问令牌', () => {
         ok: false,
         error: { kind: 'access_token_invalid', message: '令牌无效' },
       },
-    });
+    }, false);
     await openSettings();
 
     const input = tokenInput();
@@ -269,7 +325,7 @@ describe('设置页 · 访问令牌', () => {
     expect(tokenFeedback()?.className).not.toContain('border');
     expect(bodyText()).toContain('Personal Access Token');
     expect(tokenInput().value).toBe('ghp_wrong');
-    expect(bodyText()).toContain('已配置');
+    expect(bodyText()).toContain('未配置');
   });
 
   it('测试连接成功：给出有效提示且不保存', async () => {
@@ -327,8 +383,8 @@ describe('设置页 · 访问令牌', () => {
     expect(tokenFeedback()?.getAttribute('role')).toBe('alert');
   });
 
-  it('保存并验证期间显示 loading，成功后保留本机已配置状态', async () => {
-    await mount();
+  it('首次保存期间显示 loading，成功后保留本机已配置状态', async () => {
+    await mount({}, false);
     await openSettings();
     await typeInto(tokenInput(), 'ghp_to_save');
 
@@ -350,6 +406,8 @@ describe('设置页 · 访问令牌', () => {
     expect(buttonByText('测试连接')?.disabled).toBe(true);
     expect(tokenInput().disabled).toBe(true);
 
+    // 保存成功后主进程会报告已配置（重读访问令牌状态时返回 true）。
+    handle.api.accessTokenState = async () => ({ configured: true });
     await act(async () => {
       resolveSave({ ok: true, error: null });
     });
@@ -466,5 +524,399 @@ describe('设置页 · 访问令牌', () => {
     await settle();
     expect(alertTexts().join(' ')).toContain('请输入访问令牌');
     expect(handle.calls.saveAccessToken).toBe(0);
+  });
+});
+
+describe('设置页 · 更换已配置的令牌', () => {
+  async function beginReplacementFlow(): Promise<ReturnType<typeof attachReplacement>> {
+    const replacement = attachReplacement();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    const form = tokenInput().form;
+    if (!form) throw new Error('输入框不在表单内');
+    await submitForm(form);
+    await settle();
+    return replacement;
+  }
+
+  it('提交先进入确认并明示会清理本地资料，确认后走更换桥接', async () => {
+    await mount();
+    await openSettings();
+    const replacement = await beginReplacementFlow();
+
+    expect(replacement.state.began).toBe(1);
+    expect(replacement.state.confirmed).toHaveLength(0);
+    // 已配置的令牌不经过直接保存（后端同样拒绝绕过确认的保存）。
+    expect(handle.calls.saveAccessToken).toBe(0);
+    expect(bodyText()).toContain('清理本机已保存的仓库资料');
+
+    await click(buttonByText('确认更换'));
+    await settle();
+
+    expect(replacement.state.confirmed).toEqual(['ghp_replacement']);
+    expect(bodyText()).toContain('令牌已更换并验证');
+    expect(tokenInput().value).toBe('');
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 950);
+    });
+    await settle();
+    expect(document.querySelector('.settings-page')).toBeNull();
+    expect(repoRows()).toHaveLength(1);
+  });
+
+  it('取消更换：真实取消后端操作，保留输入与原资料且不导航', async () => {
+    await mount();
+    await openSettings();
+    const replacement = await beginReplacementFlow();
+
+    await click(buttonByText('取消'));
+    await settle();
+
+    expect(replacement.state.cancelled).toBe(1);
+    expect(replacement.state.confirmed).toHaveLength(0);
+    expect(buttonByText('确认更换')).toBeNull();
+    expect(tokenInput().value).toBe('ghp_replacement');
+    expect(bodyText()).not.toContain('已更换');
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 950);
+    });
+    await settle();
+    expect(document.querySelector('.settings-page')).not.toBeNull();
+    await click(navButton('监控清单'));
+    await settle();
+    expect(repoRows()).toHaveLength(1);
+  });
+
+  it('验证失败：错误就地展示，可直接重新确认', async () => {
+    await mount();
+    await openSettings();
+    const replacement = attachReplacement({ ok: false, state: 'failed', error: { kind: 'access_token_invalid', message: 'Bad credentials' } });
+    await typeInto(tokenInput(), 'ghp_first_try');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    await click(buttonByText('确认更换'));
+    await settle();
+    expect(tokenFeedback()?.textContent).toContain('令牌无效或已过期，请检查后重试');
+    expect(tokenFeedback()?.textContent).not.toContain('Bad credentials');
+    // 失败不是死状态：面板保留，可直接重试。
+    expect(buttonByText('确认更换')).not.toBeNull();
+
+    replacement.state.confirmResult = { ok: true, state: 'completed', error: null };
+    await click(buttonByText('确认更换'));
+    await settle();
+    expect(replacement.state.confirmed).toEqual(['ghp_first_try', 'ghp_first_try']);
+    expect(bodyText()).toContain('令牌已更换并验证');
+  });
+
+  it('取消晚到：已提交的成功仍清理旧清单缓存，且不自动导航', async () => {
+    await mount();
+    const replacement = attachReplacement();
+    // 旧清单与旧详情先真正进入展示缓存
+    await openRepo('octocat/Hello-World');
+    await settle();
+    expect(handle.calls.fetchDetail).toBe(1);
+    await openSettings();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    const release = replacement.holdConfirm();
+    await click(buttonByText('确认更换'));
+    await click(buttonByText('取消'));
+    await settle();
+    expect(replacement.state.cancelled).toBe(1);
+
+    // 主进程其实已经保存新令牌并清理资料，只是回包晚于取消；此后重读返回清空结果
+    handle.setRepositories([]);
+    await act(async () => release());
+    await settle();
+
+    // 已提交是不可逆事实：如实告知，而不是假装取消有效
+    expect(tokenFeedback()?.textContent).toContain('令牌已更换并验证');
+    await new Promise((resolve) => {
+      setTimeout(resolve, 950);
+    });
+    await settle();
+    expect(document.querySelector('.settings-page')).not.toBeNull();
+
+    // 旧清单缓存被清掉：回到清单看到的是清空后的重读结果，不是旧行
+    await click(navButton('监控清单'));
+    await settle();
+    await settleMotion();
+    expect(repoRows()).toHaveLength(0);
+    expect(bodyText()).toContain('还没有监控仓库');
+  });
+
+  it('输入变化后迟到的已提交成功：清理旧上下文且不覆盖正在编辑的输入', async () => {
+    await mount();
+    const replacement = attachReplacement();
+    await openSettings();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    const release = replacement.holdConfirm();
+    await click(buttonByText('确认更换'));
+    await typeInto(tokenInput(), 'ghp_edited_later');
+    expect(replacement.state.cancelled).toBe(1);
+
+    handle.setRepositories([]);
+    await act(async () => release());
+    await settle();
+
+    // 输入不被覆盖、面板不再出现，但已提交的成功仍被披露并清理旧缓存
+    expect(tokenInput().value).toBe('ghp_edited_later');
+    expect(buttonByText('确认更换')).toBeNull();
+    expect(tokenFeedback()?.textContent).toContain('令牌已更换并验证');
+    await click(navButton('监控清单'));
+    await settle();
+    await settleMotion();
+    expect(repoRows()).toHaveLength(0);
+  });
+
+  it('确认在途时离开设置页：迟到的已提交成功仍清理旧上下文，不回填已卸载页面', async () => {
+    await mount();
+    const replacement = attachReplacement();
+    await openSettings();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    const release = replacement.holdConfirm();
+    await click(buttonByText('确认更换'));
+    await click(navButton('监控清单'));
+    await settle();
+    expect(replacement.state.cancelled).toBe(1);
+    expect(document.querySelector('.settings-page')).toBeNull();
+
+    handle.setRepositories([]);
+    await act(async () => release());
+    await settle();
+    // 退场动画播完才断言旧行从清单消失（happy-dom 不自动跑 CSS 动画）
+    await settleMotion();
+
+    // 已卸载页面不回填状态、不导航；旧上下文缓存仍然必须清掉
+    expect(document.querySelector('.settings-page')).toBeNull();
+    expect(bodyText()).not.toContain('已更换');
+    expect(repoRows()).toHaveLength(0);
+    expect(bodyText()).toContain('还没有监控仓库');
+  });
+
+  it('已提交成功但回包延迟：旧详情缓存被清理，重进详情重新抓取', async () => {
+    await mount();
+    const replacement = attachReplacement();
+    await openRepo('octocat/Hello-World');
+    await settle();
+    expect(handle.calls.fetchDetail).toBe(1);
+    await openSettings();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    const release = replacement.holdConfirm();
+    await click(buttonByText('确认更换'));
+    await click(buttonByText('取消'));
+    await act(async () => release());
+    await settle();
+    await settleMotion();
+
+    // 清单在旧上下文的缓存里仍在（本例不做清单清空），但详情缓存必须已经不可复用
+    await click(navButton('监控清单'));
+    await settle();
+    expect(repoOpenButton('octocat/Hello-World')).not.toBeNull();
+    await click(repoOpenButton('octocat/Hello-World'));
+    await settle();
+    expect(handle.calls.fetchDetail).toBe(2);
+  });
+
+  it('验证被取消的失败不会清理：旧清单与旧详情原样保留', async () => {
+    await mount();
+    const replacement = attachReplacement();
+    await openRepo('octocat/Hello-World');
+    await settle();
+    expect(handle.calls.fetchDetail).toBe(1);
+    await openSettings();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    const release = replacement.holdConfirm();
+    await click(buttonByText('确认更换'));
+    await click(buttonByText('取消'));
+    await settle();
+    expect(replacement.state.cancelled).toBe(1);
+
+    // 后端返回"验证已被取消"的失败：资料保留，不清任何缓存
+    replacement.state.confirmResult = { ok: false, state: 'idle', error: { kind: 'unknown', message: '更换访问令牌操作已取消，未做任何修改' } };
+    await act(async () => release());
+    await settle();
+    expect(bodyText()).not.toContain('已更换');
+
+    await click(navButton('监控清单'));
+    await settle();
+    expect(repoRows()).toHaveLength(1);
+    await click(repoOpenButton('octocat/Hello-World'));
+    await settle();
+    // 旧详情缓存仍可复用：没有重新抓取
+    expect(handle.calls.fetchDetail).toBe(1);
+  });
+
+  it('begin 登记在途时编辑：回收旧意图、恢复可操作，且不取消更新的操作', async () => {
+    await mount();
+    await openSettings();
+    const replacement = attachReplacement();
+    const releaseBegin = replacement.holdBegin();
+    await typeInto(tokenInput(), 'ghp_first_value');
+    await submitForm(tokenInput().form!);
+    expect(buttonByText('保存并验证')?.disabled).toBe(true);
+
+    await typeInto(tokenInput(), 'ghp_second_value');
+    // 编辑即回收：可操作状态恢复，后端 awaiting 被真实取消
+    expect(buttonByText('保存并验证')?.disabled).toBe(false);
+    expect(replacement.state.cancelled).toBe(1);
+
+    // 新的一次登记先完成，随后旧 begin 才迟到返回
+    await submitForm(tokenInput().form!);
+    await settle();
+    expect(replacement.state.began).toBe(2);
+    expect(buttonByText('确认更换')).not.toBeNull();
+
+    await act(async () => releaseBegin());
+    await settle();
+    // 迟到的旧 begin 不打开/关闭任何面板，也不取消更新的操作
+    expect(replacement.state.cancelled).toBe(1);
+    expect(buttonByText('确认更换')).not.toBeNull();
+  });
+
+  it('begin 登记在途时离开设置页：后端 awaiting 被真实取消', async () => {
+    await mount();
+    await openSettings();
+    const replacement = attachReplacement();
+    const releaseBegin = replacement.holdBegin();
+    await typeInto(tokenInput(), 'ghp_pending');
+    await submitForm(tokenInput().form!);
+    await click(navButton('监控清单'));
+    await settle();
+    expect(replacement.state.cancelled).toBe(1);
+
+    await act(async () => releaseBegin());
+    await settle();
+    expect(document.querySelector('.settings-page')).toBeNull();
+    expect(alertTexts()).toHaveLength(0);
+  });
+
+  it('重复点击确认只提交一次请求', async () => {
+    await mount();
+    await openSettings();
+    const replacement = await beginReplacementFlow();
+
+    const release = replacement.holdConfirm();
+    await click(buttonByText('确认更换'));
+    await click(buttonByText('验证中…'));
+    expect(replacement.state.confirmed).toHaveLength(1);
+
+    await act(async () => release());
+    await settle();
+    expect(replacement.state.confirmed).toHaveLength(1);
+    expect(bodyText()).toContain('令牌已更换并验证');
+  });
+
+  it('旧成功的缓存重读完成后，不导航打断新发起的更换', async () => {
+    await mount();
+    await openSettings();
+    const replacement = await beginReplacementFlow();
+    const readLocal = handle.api.listRepositories;
+    let releaseRead = (): void => {};
+    const gate = new Promise<void>(resolve => { releaseRead = resolve; });
+    handle.api.listRepositories = async () => { await gate; return readLocal(); };
+
+    await click(buttonByText('确认更换'));
+    await settle();
+    await typeInto(tokenInput(), 'ghp_next_operation');
+    await submitForm(tokenInput().form!);
+    await settle();
+    expect(replacement.state.began).toBe(2);
+    await act(async () => releaseRead());
+    await settle();
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 950)); });
+    await settle();
+
+    expect(document.querySelector('.settings-page')).not.toBeNull();
+    expect(buttonByText('确认更换')).not.toBeNull();
+    expect(tokenInput().value).toBe('ghp_next_operation');
+  });
+
+  it('确认成功取消旧清单Query，旧请求迟到返回不能回填新上下文缓存', async () => {
+    await mount();
+    await openSettings();
+    await beginReplacementFlow();
+    const readLocal = handle.api.listRepositories;
+    const oldRepositories = await readLocal();
+    let releaseOld = (): void => {};
+    const gate = new Promise<void>(resolve => { releaseOld = resolve; });
+    let holdNextRead = true;
+    handle.api.listRepositories = async () => {
+      if (holdNextRead) { holdNextRead = false; await gate; return oldRepositories; }
+      return readLocal();
+    };
+    await act(async () => { void view!.queryClient.refetchQueries({ queryKey: ['repositories'] }); });
+    await settle();
+    handle.setRepositories([]);
+    await click(buttonByText('确认更换'));
+    await settle();
+    expect(view!.queryClient.getQueryData(['repositories'])).toEqual([]);
+
+    await act(async () => releaseOld());
+    await settle();
+    expect(view!.queryClient.getQueryData(['repositories'])).toEqual([]);
+    await click(navButton('监控清单'));
+    await settleMotion();
+    expect(repoRows()).toHaveLength(0);
+  });
+
+  it('成功提示的等待期内发起新更换，旧定时导航不得取消新操作', async () => {
+    await mount();
+    await openSettings();
+    const replacement = await beginReplacementFlow();
+    await click(buttonByText('确认更换'));
+    await settle();
+    await typeInto(tokenInput(), 'ghp_next_operation');
+    await submitForm(tokenInput().form!);
+    await settle();
+    expect(replacement.state.began).toBe(2);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 950)); });
+    await settle();
+
+    expect(document.querySelector('.settings-page')).not.toBeNull();
+    expect(buttonByText('确认更换')).not.toBeNull();
+    expect(tokenInput().value).toBe('ghp_next_operation');
+  });
+
+  it('成功更换后丢弃旧清单缓存，重读后显示清空结果', async () => {
+    await mount();
+    const replacement = attachReplacement();
+    // 先进入详情，让清单与详情的展示数据都进入过缓存。
+    await openRepo('octocat/Hello-World');
+    await settle();
+    await openSettings();
+    await typeInto(tokenInput(), 'ghp_replacement');
+    await submitForm(tokenInput().form!);
+    await settle();
+
+    // 主进程按新上下文清空旧资料：此后的重读返回清空结果。
+    handle.setRepositories([]);
+    await click(buttonByText('确认更换'));
+    await settle();
+    expect(replacement.state.confirmed).toEqual(['ghp_replacement']);
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 950);
+    });
+    await settle();
+    expect(document.querySelector('.settings-page')).toBeNull();
+    expect(repoRows()).toHaveLength(0);
+    expect(bodyText()).toContain('还没有监控仓库');
   });
 });

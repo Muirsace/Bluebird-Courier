@@ -9,12 +9,13 @@ import { canCommitTaskResult, deriveFreshness, hasUnsyncedChanges, ledgerOf } fr
 import { applyScopeObservation, applyScopeVerification, initialScopeState, verificationChangeScopes } from '../../../../domain/rules/observation-application';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
 import type { DetailCache, DetailObservation, SyncTaskState } from '../contract';
-import { DETAIL_CACHE_SCHEMA_VERSION, bumpViewVersion, readDetailMeta, readScopeState, readScopeStatesFull, writeBuildsScope, writeSyncedDetail, writeScopeState, readDetail, readCachedBranch, hasColumnData, type ScopeConfirmationWrite } from './detail-store';
+import { DETAIL_CACHE_SCHEMA_VERSION, bumpViewVersion, readDetailMeta, readScopeState, readScopeStatesFull, writeBuildsScope, writeScopeContents, writeSyncedDetail, writeScopeState, readDetail, readCachedBranch, hasColumnData, type ScopeConfirmationWrite } from './detail-store';
 import { hasReadableDetail } from './local-detail-store';
-import { collectScope, loadFullDetail } from './refresh-detail';
+import { clearStagedScope, pendingStagedScopes, pruneForeignStagedScopes, pruneStagedQueries, readStagedScope, writeStagedScope } from './staged-scope';
+import { collectScope, loadFullDetail, type OpenScopeStaging, type ScopeStaging } from './refresh-detail';
 
 const DETAIL_VERIFICATION_TTL_MS = 30 * 60_000;
-export interface SyncTaskOutcome { ok: boolean; error: unknown; stored?: boolean; }
+export interface SyncTaskOutcome { ok: boolean; error: unknown; stored?: boolean; /** 验证发现变化时，同一次打开流程内需要安排的后继同步。 */ followUp?: boolean; }
 export interface ScheduledSyncTask { snapshot: SyncTaskState; settled: Promise<SyncTaskOutcome>; }
 export interface SyncTaskRunner {
   schedule(repositoryId: number, token: string, intent: 'open' | 'force'): ScheduledSyncTask | null;
@@ -61,28 +62,71 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
       bumpViewVersion(db, context.repoId, clock.now().toISOString());
     })();
   }
+  /** 按范围给出暂存句柄：身份含仓库、默认分支、每页上限、访问上下文与 schema，参数漂移即不可接续。 */
+  function scopeStaging(repositoryId: number, context: TaskContext, scope: DetailScope, params: { fullName: string; defaultBranch: string | null; limit: number }): ScopeStaging {
+    const query = { scope, fullName: params.fullName, defaultBranch: params.defaultBranch, limit: params.limit,
+      accessContextRevision: context.accessContextRevision, schemaVersion: DETAIL_CACHE_SCHEMA_VERSION };
+    pruneStagedQueries(db, repositoryId, query);
+    return {
+      read: () => readStagedScope(db, repositoryId, query),
+      save: state => writeStagedScope(db, repositoryId, query, state, clock.now().toISOString()),
+      clear: () => clearStagedScope(db, repositoryId, scope),
+    };
+  }
   async function executeFull(repository: Glance, token: string, context: TaskContext): Promise<SyncTaskOutcome> {
+    // Token 更换或 schema 升级后旧上下文的暂存不得回填。
+    pruneForeignStagedScopes(db, repository.id, context.accessContextRevision, DETAIL_CACHE_SCHEMA_VERSION);
+    const openStaging: OpenScopeStaging = (scope, params) => scopeStaging(repository.id, context, scope, params);
     const loaded = await loadFullDetail(scopeFetch, token, repository, readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null,
-      context.accessContextRevision, () => clock.now().toISOString(), () => writable(context, repository.fullName));
+      context.accessContextRevision, () => clock.now().toISOString(), () => writable(context, repository.fullName), openStaging);
     if (!writable(context, repository.fullName)) throw new Error('任务结果已过期，放弃写入');
     const cache: DetailCache = { repositoryId: repository.id, fullName: repository.fullName,
       values: loaded.values, columns: loaded.columns, fetchedAt: clock.now().toISOString(), source: 'fresh' };
+    // 摘要观察独立于内容提交；监听器故障不改变详情事务的结果。
     try { if (loaded.observation) onObserved?.({ repositoryId: repository.id, accessContextRevision: context.accessContextRevision, ...loaded.observation }); } catch {}
     if (!writable(context, repository.fullName)) throw new Error('任务身份已变化，放弃写入');
     const failedScopes = Object.keys(loaded.failures) as DetailScope[];
-    if (failedScopes.length > 0 && readDetailMeta(db, repository.id)?.accessContextRevision === context.accessContextRevision && readDetailMeta(db, repository.id)?.schemaVersion === DETAIL_CACHE_SCHEMA_VERSION && hasReadableDetail(db, repository.id)) throw loaded.failureErrors[failedScopes[0]!] ?? new Error(loaded.failures[failedScopes[0]!]!);
-    db.transaction(() => {
-      writeSyncedDetail(db, cache, context.accessContextRevision,
-        REMOTE_SCOPES.filter(scope => loaded.fingerprints[scope] !== undefined).map(scope => confirmation(context, scope, loaded.fingerprints[scope])), cache.fetchedAt);
+    const syncedAt = cache.fetchedAt;
+    const meta = readDetailMeta(db, repository.id);
+    const validCache = meta !== null && meta.schemaVersion === DETAIL_CACHE_SCHEMA_VERSION && meta.accessContextRevision === context.accessContextRevision && hasReadableDetail(db, repository.id);
+    const hasContent = loaded.deliveries.some(delivery => Object.keys(delivery.values).length > 0);
+    // 只有全部远端范围完整覆盖、且没有范围仍在暂存时才算一轮完整详情；否则完整成功时间保持旧值/未知。
+    const complete = failedScopes.length === 0 && loaded.stagedScopes.length === 0;
+    // 成功范围（含来源级成功栏目）与失败错误在同一事务提交；失败范围保留旧值、旧成功时间与 dirty。
+    const write = db.transaction(() => {
+      if (validCache) {
+        writeScopeContents(db, repository.id, context.accessContextRevision,
+          loaded.deliveries.filter(delivery => Object.keys(delivery.values).length > 0).map(delivery => ({
+            scope: delivery.scope,
+            values: delivery.values,
+            columns: delivery.columns,
+            ...(delivery.complete && delivery.fingerprint !== undefined ? { confirmation: confirmation(context, delivery.scope, delivery.fingerprint) } : {}),
+          })),
+          syncedAt, complete);
+      } else if (hasContent) {
+        // 无有效旧缓存但取得部分内容：建立缓存；失败范围明示错误，不确认其覆盖。
+        writeSyncedDetail(db, cache, context.accessContextRevision,
+          loaded.deliveries.filter(delivery => delivery.complete && delivery.fingerprint !== undefined).map(delivery => confirmation(context, delivery.scope, delivery.fingerprint)), syncedAt, complete);
+      }
+      // 未取得任何内容的首次获取不建立缓存；失败与错误仍完整记录。
       for (const scope of failedScopes) recordFailure(context, repository.fullName, [scope], loaded.failureErrors[scope] ?? new Error(loaded.failures[scope]));
-    })();
-    // 摘要观察独立于内容提交；监听器故障不改变详情事务的结果。
-    return { ok: failedScopes.length === 0, stored: true, error: failedScopes.length > 0 ? loaded.failureErrors[failedScopes[0]!] ?? new Error(loaded.failures[failedScopes[0]!]) : null };
+    });
+    write();
+    const blockingError = loaded.blocked ? new PortFailure(loaded.blocked.kind, loaded.blocked.message, loaded.blocked.resetAt) : null;
+    const first = failedScopes[0];
+    return { ok: failedScopes.length === 0, stored: hasContent,
+      error: blockingError ?? (first ? loaded.failureErrors[first] ?? new Error(loaded.failures[first]) : null) };
   }
   async function executeBuilds(repository: Glance, token: string, context: TaskContext): Promise<void> {
-    const outcome = await collectScope(scopeFetch, token, { fullName: repository.fullName, scope: 'builds',
-      defaultBranch: readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null, cursor: null, limit: 30,
-      accessContextRevision: context.accessContextRevision, observedAt: clock.now().toISOString() }, () => writable(context, repository.fullName));
+    pruneForeignStagedScopes(db, repository.id, context.accessContextRevision, DETAIL_CACHE_SCHEMA_VERSION);
+    const defaultBranch = readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null;
+    const collected = await collectScope(scopeFetch, token, { fullName: repository.fullName, scope: 'builds', defaultBranch, cursor: null, limit: 30,
+      accessContextRevision: context.accessContextRevision, observedAt: clock.now().toISOString() },
+      () => writable(context, repository.fullName), scopeStaging(repository.id, context, 'builds', { fullName: repository.fullName, defaultBranch, limit: 30 }));
+    // 本轮未完成但有可续读暂存：保持 dirty，下一批继续；不记录错误、不触碰旧构建内容。
+    if (collected.staged) return;
+    if (collected.blocked) throw new PortFailure(collected.blocked.kind, collected.blocked.message, collected.blocked.resetAt);
+    const outcome = collected.outcome;
     if (!outcome.coverageComplete || !outcome.fingerprint) throw new Error('构建范围覆盖未完成，保留旧内容和dirty');
     const items = outcome.items as BuildItem[];
     writeBuildsScope(db, repository.id, items, items[0] ?? emptyLocalBuild(), context.accessContextRevision,
@@ -90,6 +134,7 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
   }
   async function executeCheck(repository: Glance, token: string, context: TaskContext): Promise<SyncTaskOutcome> {
     const failures: Array<{ scope: DetailScope; error: unknown }> = [];
+    let blocked = false;
     for (const scope of Object.keys(context.targets) as DetailScope[]) {
       if (!writable(context, repository.fullName)) throw new Error('任务结果已过期，停止验证');
       const checkedAt = clock.now().toISOString();
@@ -116,11 +161,15 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
         })();
         if (result.error) failures.push({ scope, error: new PortFailure(result.error.kind, result.error.message, result.error.resetAt) });
         else if (!result.checkComplete) failures.push({ scope, error: new Error('检查窗口尚未完整覆盖，保留旧基线') });
-        if (result.error?.kind === 'access_token_invalid' || result.error?.kind === 'rate_limited') break;
-      } catch (error) { failures.push({ scope, error }); if (error instanceof PortFailure && (error.kind === 'access_token_invalid' || error.kind === 'rate_limited')) break; }
+        if (result.error?.kind === 'access_token_invalid' || result.error?.kind === 'rate_limited') { blocked = true; break; }
+      } catch (error) { failures.push({ scope, error }); if (error instanceof PortFailure && (error.kind === 'access_token_invalid' || error.kind === 'rate_limited')) { blocked = true; break; } }
     }
     for (const failure of failures) recordFailure(context, repository.fullName, [failure.scope], failure.error);
-    return { ok: failures.length === 0, error: failures[0]?.error ?? null };
+    // 验证发现变化后，同一次打开流程内安排至多一个兼容后继同步；后续动作仍由 domain 计划按账本目标决定。
+    // 令牌无效或限流时不再追加请求，避免无界重试。
+    const states = readScopeStatesFull(db, repository.id, context.accessContextRevision);
+    const followUp = !blocked && REMOTE_SCOPES.some(scope => { const state = states[scope]; return state !== undefined && hasUnsyncedChanges(ledgerOf(state)); });
+    return { ok: failures.length === 0, error: failures[0]?.error ?? null, followUp };
   }
   function schedule(repositoryId: number, token: string, intent: 'open' | 'force'): ScheduledSyncTask | null {
     const repository = repositoryById(repositoryId);
@@ -130,8 +179,11 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     const valid = meta?.schemaVersion === DETAIL_CACHE_SCHEMA_VERSION && meta.accessContextRevision === revision && hasReadableDetail(db, repositoryId);
     const cacheStatus: CacheStatus = meta === null ? 'missing' : valid ? 'valid' : 'invalid';
     const states = readScopeStatesFull(db, repositoryId, revision);
-    const dirtyScopes = REMOTE_SCOPES.filter(scope => states[scope] && hasUnsyncedChanges(ledgerOf(states[scope]!)));
-    const dirtyReasonsByScope = Object.fromEntries(dirtyScopes.map(scope => [scope, states[scope]!.dirtyReasons]));
+    // 仍有暂存进度的范围同样属于"未同步工作"：下一批从续读点继续，而不是永久从头重读。
+    const stagedScopes = pendingStagedScopes(db, repositoryId, revision, DETAIL_CACHE_SCHEMA_VERSION);
+    const dirtyScopes = REMOTE_SCOPES.filter(scope => stagedScopes.includes(scope) || (states[scope] !== undefined && hasUnsyncedChanges(ledgerOf(states[scope]!))));
+    const dirtyReasonsByScope = Object.fromEntries(dirtyScopes.map(scope => [scope,
+      [...new Set([...(states[scope]?.dirtyReasons ?? []), ...(stagedScopes.includes(scope) ? ['staged'] : [])])]]));
     const now = clock.now().toISOString();
     const expiredScopes = REMOTE_SCOPES.filter(scope => {
       const state = states[scope];
@@ -173,6 +225,11 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
         const outcome = kind === 'open' || kind === 'force' ? await executeFull(repository, token, context)
           : kind === 'scope' ? (await executeBuilds(repository, token, context), { ok: true, error: null }) : await executeCheck(repository, token, context);
         snapshot.status = outcome.ok ? 'idle' : 'error';
+        // 验证发现变化：在释放本任务登记之前同步登记后继同步（重新读取账本目标、遵循 domain 计划），
+        // 页面轮询不会看到任务快照间隙；上下文或仓库已变化时不再追加。
+        if (kind === 'check' && outcome.followUp === true && writable(context, repository.fullName)) {
+          try { schedule(repositoryId, token, 'open'); } catch { /* 后继登记失败不改变本次验证结果与账本 */ }
+        }
         return outcome;
       } catch (error) {
         snapshot.status = 'error';

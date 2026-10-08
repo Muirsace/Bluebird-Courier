@@ -46,8 +46,8 @@ describe('Desktop Repository Omnibox shell', () => {
     expect(action().getAttribute('aria-hidden')).toBe('true');
     expect(action().disabled).toBe(true);
     const refresh = refreshAllButton()!;
-    expect(refresh.getAttribute('aria-label')).toBe('全部刷新');
-    expect(refresh.title).toBe('全部刷新');
+    expect(refresh.getAttribute('aria-label')).toBe('检查更新');
+    expect(refresh.title).toBe('检查更新');
     expect(refresh.textContent?.trim()).toBe('');
     expect(refresh.closest('.watchlist-page-heading')?.querySelector('h2')?.textContent).toBe('监控清单');
     expect(chrome().contains(input())).toBe(true);
@@ -61,7 +61,7 @@ describe('Desktop Repository Omnibox shell', () => {
     expect(buttonByLabel('新增仓库')).not.toBeNull();
     expect(input().disabled).toBe(true);
     expect(input().placeholder).toBe('owner/repo 或 GitHub 网址');
-    expect(buttonByText('全部刷新')).not.toBeNull();
+    expect(buttonByText('检查更新')).not.toBeNull();
     await openAddInput();
     expect(input().disabled).toBe(false);
     expect(document.activeElement).toBe(input());

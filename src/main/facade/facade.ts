@@ -2,8 +2,8 @@ import { emptyLocalValues, localReadCursor, localReadLimit, localReadOffset, sel
 import { SCOPE_ORDER } from '../../domain/rules/detail-scope';
 import type { Clock, GitHubPort, Logger } from '../../domain/ports';
 import type { DetailScope, FetchedGlance, Glance, GlanceValues, NormalizedError, PaginationCursor, RepoInputResult } from '../../domain/types';
-import type { AccessTokenResult, AccessTokenState, AddRepositoryResult, BluebirdCourierFacade, DetailResult, LocalReadRequest, LocalReadResult, RefreshGlanceResult, SettingsView } from '../../shared/types';
-import type { DetailAccessResult, LocalDetailView, RepositoryDetailService, LocalReadRequest as DetailLocalReadRequest } from '../features/repository-detail/contract';
+import type { AccessTokenResult, AccessTokenState, AcknowledgeResult, AddRepositoryResult, BluebirdCourierFacade, DetailResult, LocalReadRequest, LocalReadResult, RefreshGlanceResult, SettingsView } from '../../shared/types';
+import type { DetailAccessResult, LocalDetailView, RepositoryDetailService, LocalReadRequest as DetailLocalReadRequest, ViewAcknowledgment } from '../features/repository-detail/contract';
 import type { RepositoryListService } from '../features/repository-list/contract';
 import type { SnapshotTrendService } from '../features/snapshot-trend/contract';
 import type { TokenSettingsService } from '../features/token-settings/contract';
@@ -57,6 +57,18 @@ function localReadRequestFrom(input: unknown): DetailLocalReadRequest {
     request.cursors = cursors;
   }
   return request;
+}
+
+/** 展示确认入参守卫：只接受非负整数版本与合法范围；无效输入保守忽略（返回 null 不产生行为）。 */
+function acknowledgmentFrom(input: unknown): ViewAcknowledgment | null {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
+  const value = input as { detailViewVersion?: unknown; accessContextRevision?: unknown; scopes?: unknown };
+  if (typeof value.detailViewVersion !== 'number' || !Number.isSafeInteger(value.detailViewVersion) || value.detailViewVersion < 0) return null;
+  if (typeof value.accessContextRevision !== 'number' || !Number.isSafeInteger(value.accessContextRevision) || value.accessContextRevision < 0) return null;
+  if (!Array.isArray(value.scopes)) return null;
+  const scopes = value.scopes.filter((scope): scope is DetailScope => typeof scope === 'string' && DETAIL_SCOPES.has(scope as DetailScope));
+  if (scopes.length === 0) return null;
+  return { detailViewVersion: value.detailViewVersion, accessContextRevision: value.accessContextRevision, scopes };
 }
 
 export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
@@ -126,13 +138,21 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
       cached: !access.fetched && view.values !== null,
       stale: view.values !== null && (error !== null || Object.values(view.scopes).some((state) => state?.freshness === 'stale')),
       columns: view.columns,
+      // 组合展示版本保持既有语义；确认与续读按权威详情版本 detailViewVersion。
       viewVersion: view.viewVersion + deps.snapshotTrend.localCacheState(repository.id).viewVersion,
+      detailViewVersion: view.viewVersion,
+      accessContextRevision: view.accessContextRevision,
+      ...(view.cursors !== undefined ? { cursors: view.cursors } : {}),
+      truncated: view.truncated,
+      summaryFetchedAt: view.repository.fetchedAt ?? null,
+      detailFetchedAt: view.detailFetchedAt,
       syncState: view.scopes,
       task: deps.repositoryDetail.readLocal(repository.id, { mode: 'status' })?.task ?? null,
     };
   }
 
-  const facade: Record<string, unknown> = {
+  // 直接按契约类型装配：缺少必需方法、参数或结果不符时在编译期暴露，不用类型强转掩盖。
+  const facade: BluebirdCourierFacade = {
     accessTokenState: async (): Promise<AccessTokenState> => ({ configured: deps.tokenSettings.accessTokenConfigured() }),
     validateAccessToken,
     async saveAccessToken(accessToken: string): Promise<AccessTokenResult> {
@@ -206,11 +226,15 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
       const notFound: LocalReadResult = {
         repositoryId: validId(repositoryId) ? repositoryId : 0,
         viewVersion: 0,
+        detailViewVersion: 0,
         accessContextRevision: current,
         detail: null,
+        columns: {},
         syncState: {},
         task: null,
         truncated: false,
+        summaryFetchedAt: null,
+        detailFetchedAt: null,
         error: { kind: 'not_found', message: '监控仓库不存在' },
       };
       if (!validId(repositoryId)) return notFound;
@@ -243,15 +267,28 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
       const detail = values === null ? null : toWireDetail({ repository: view.repository, ...values, trend });
       return {
         repositoryId,
+        // 组合展示版本保持既有语义；确认按权威详情版本 detailViewVersion，趋势采样不会使确认失效。
         viewVersion: view.viewVersion + trendVersion,
+        detailViewVersion: view.viewVersion,
         accessContextRevision: view.accessContextRevision,
         detail,
+        columns: view.columns,
         syncState: view.scopes,
         task: view.task, // 真实在途任务快照；无任务为 null，不返回虚假的 running / queued 状态
         ...(Object.keys(cursors).length > 0 ? { cursors } : {}),
         truncated,
+        summaryFetchedAt: view.repository.fetchedAt ?? null,
+        detailFetchedAt: view.detailFetchedAt,
         error,
       };
+    },
+    async acknowledgeRepositoryViewed(repositoryId: unknown, acknowledgment: unknown): Promise<AcknowledgeResult> {
+      // 无效标识或无效输入保守忽略：ok=false，不产生任何写入或网络行为。
+      const parsed = acknowledgmentFrom(acknowledgment);
+      if (!validId(repositoryId) || !parsed) return { ok: false, seenRevision: 0 };
+      // 无 Token 也可确认本地实际展示：feature 事务内校验仓库、上下文、权威版本与可展示范围。
+      const outcome = deps.repositoryDetail.acknowledgeViewed(repositoryId, parsed);
+      return { ok: outcome.accepted, seenRevision: outcome.seenRevision };
     },
     async refreshRepository(repositoryId: number, force = true): Promise<DetailResult> {
       const repository = find(repositoryId); const accessToken = token();
@@ -280,7 +317,7 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade {
       return result;
     },
   };
-  return facade as unknown as BluebirdCourierFacade;
+  return facade;
 }
 
 async function fetchGlance(token: string, fullName: string, github: GitHubPort): Promise<FetchedGlance> {

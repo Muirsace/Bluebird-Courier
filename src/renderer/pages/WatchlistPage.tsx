@@ -18,7 +18,7 @@ import { usePageHost } from '../components/shell/PageHost';
 import { prefersReducedMotion, revealScrollFallbackMs } from '../lib/motion';
 import type { AddRepositoryOutcome, AddRepositoryPosition } from '../components/watchlist/AddRepositoryForm';
 
-/** 启动时自动抓取一次轻量信息（整个会话一次；之后走「全部刷新」）。 */
+/** 启动时自动抓取一次轻量信息（整个会话一次；之后走「检查更新」）。 */
 let startupRefreshed = false;
 const WATCHLIST_TOP_PROXIMITY_PX = 144;
 /** 新增落点的实测等待上限；超时按不可见处理（宁可多给一个「查看位置」）。 */
@@ -113,6 +113,7 @@ export function WatchlistPage({ onOpenDetail, onGoSettings, sidebar = false, act
   const listQuery = useQuery({
     queryKey: ['repositories'],
     queryFn: () => getApi().listRepositories(),
+    networkMode: 'always',
   });
 
   const [adding, setAdding] = useState(false);

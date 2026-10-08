@@ -184,6 +184,26 @@ describe('同步记账存储与兼容升级（V3）', () => {
       .run('obs-1', '2026-09-26T13:00:00.000Z', '["commits"]')).toThrow(/UNIQUE/);
   });
 
+  it('V6 升级：追加完整详情成功时间列，旧行留空不冒充完整同步', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 5)).run(legacy);
+    seedRepository(legacy);
+    legacy.prepare('INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (1, ?, ?, NULL, 1, 0)')
+      .run('{"repositoryId":1,"values":{"releases":[]}}', '2026-09-26T12:00:00.000Z');
+    expect(legacy.pragma('user_version', { simple: true })).toBe(5);
+    legacy.close();
+
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    // 旧缓存的完整时间未知：创建时刻不得冒充完整同步时间
+    expect(db.prepare('SELECT fetched_at, complete_fetched_at FROM detail_cache WHERE repository_id = 1').get())
+      .toEqual({ fetched_at: '2026-09-26T12:00:00.000Z', complete_fetched_at: null });
+    // 新列可独立写入完整成功时间
+    db.prepare('UPDATE detail_cache SET complete_fetched_at = ? WHERE repository_id = 1').run('2026-09-26T13:00:00.000Z');
+    expect(db.prepare('SELECT complete_fetched_at FROM detail_cache WHERE repository_id = 1').get()).toEqual({ complete_fetched_at: '2026-09-26T13:00:00.000Z' });
+  });
+
   it('迁移中途失败：该版本已写入的内容与 user_version 一起回滚', () => {
     const pathname = tempDbPath();
     const db = new Database(pathname);

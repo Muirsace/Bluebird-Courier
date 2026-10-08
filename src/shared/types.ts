@@ -83,8 +83,20 @@ export interface DetailResult {
   stale?: boolean;
   source?: CacheSource;
   columns?: Partial<Record<ColumnName, ColumnResult>>;
-  /** 本地数据版本：后台结果写入后由只读读取比对，用于更新本地 Query。 */
+  /** 组合展示版本：详情或趋势任一变化都会改变，供页面比对是否重读（保持既有语义）。 */
   viewVersion?: number;
+  /** 权威详情视图版本：展示确认的 detailViewVersion 与此比对（不含趋势版本）。 */
+  detailViewVersion?: number;
+  /** 读取时的访问上下文版本；展示确认按此校验，跨上下文确认必须忽略。 */
+  accessContextRevision?: number;
+  /** 有界读取被截断时，各范围可继续读取的游标。 */
+  cursors?: Partial<Record<DetailScope, PaginationCursor>>;
+  /** 有界读取是否被截断；成功返回详情时必须提供该事实。 */
+  truncated?: boolean;
+  /** 最近一次真实摘要检查时间（ISO 字符串）；失败或未检查为 null。 */
+  summaryFetchedAt?: string | null;
+  /** 最近一次完整详情成功提交时间（ISO 字符串）；构建独立更新与缓存读不改变它。 */
+  detailFetchedAt?: string | null;
   /** 范围级同步状态（打开用例返回；与 detail 可以同时成立）。 */
   syncState?: Partial<Record<DetailScope, ScopeSyncState>>;
   /** 打开后存在的后台任务快照；无任务为 null。 */
@@ -117,29 +129,38 @@ export { LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT } from '../domain/types'
 /** 只读本地读取结果：无网络副作用，不启动抓取。 */
 export interface LocalReadResult {
   repositoryId: number;
+  /** 组合展示版本：详情或趋势任一变化都会改变（保持既有语义）。 */
   viewVersion: number;
+  /** 权威详情视图版本；status 与 view 读取统一填入，展示确认的 detailViewVersion 与此比对。 */
+  detailViewVersion: number;
   /** 读取时的访问上下文版本；展示确认按此校验，跨上下文确认必须忽略。 */
   accessContextRevision: number;
   detail: Detail | null;
+  /** 栏目状态元信息（不含 value）；status 读取同样提供，不携带完整栏目 payload。 */
+  columns: Partial<Record<ColumnName, ColumnResult>>;
   syncState: Partial<Record<DetailScope, ScopeSyncState>>;
   task: TaskSnapshot | null;
   /** 各范围的续读游标；null 表示该范围没有更多。 */
   cursors?: Partial<Record<DetailScope, PaginationCursor>>;
   /** 有界读取被截断时为 true（可继续用 cursors 或更大的 itemLimit）。 */
   truncated: boolean;
+  /** 最近一次真实摘要检查时间（ISO 字符串）；失败或未检查为 null。 */
+  summaryFetchedAt: string | null;
+  /** 最近一次完整详情成功提交时间（ISO 字符串）；构建独立更新与缓存读不改变它。 */
+  detailFetchedAt: string | null;
   error: NormalizedError | null;
 }
 
-/** 展示确认输入：renderer 上报实际展示到的本地数据版本、范围与访问上下文。 */
+/** 展示确认输入：renderer 上报实际展示到的权威详情版本、范围与访问上下文。 */
 export interface DisplayAcknowledgment {
-  viewVersion: number;
-  scopes: readonly DetailScope[];
+  detailViewVersion: number;
   accessContextRevision: number;
+  scopes: readonly DetailScope[];
 }
 
 export interface AcknowledgeResult {
   ok: boolean;
-  /** 确认后仍未查看的重要版本号（0 = 全部已看）。 */
+  /** 确认后仍未查看的重要版本（没有则 0）；是"仍未查看"的剩余量，不是本次确认的版本。 */
   seenRevision: number;
 }
 
@@ -178,11 +199,10 @@ export interface BluebirdCourierFacade {
   fetchDetail(repositoryId: number): Promise<DetailResult>;
   /** 只读本地视图与任务状态：无网络副作用，不启动抓取、不发 GitHub 请求。 */
   readLocalDetail(repositoryId: number, request?: LocalReadRequest): Promise<LocalReadResult>;
-  /** 展示确认：上报实际展示到的本地数据版本与范围。 */
+  /** 展示确认：上报实际展示到的权威详情版本与范围；无网络副作用，无 Token 也可确认。 */
   acknowledgeRepositoryViewed(repositoryId: number, acknowledgment: DisplayAcknowledgment): Promise<AcknowledgeResult>;
   loadHistory?(repositoryId: number, kind: HistoryKind, cursor?: string): Promise<HistoryPage>;
   trend?(repositoryId: number): Promise<TrendResult>;
-  openGitHubExternal(target: GitHubExternalTarget): Promise<OpenExternalResult>;
 }
 
 export type SettingsView = SettingsState;
@@ -190,5 +210,9 @@ export type SettingsView = SettingsState;
 export interface ThemeAppearanceBridge {
   setThemePreference(preference: ThemePreference): Promise<void>;
 }
+/** 平台外链出口由 IPC 层注入的处理器承接（组合根接线），不属业务门面实现。 */
+export interface ShellLinkBridge {
+  openGitHubExternal(target: GitHubExternalTarget): Promise<OpenExternalResult>;
+}
 
-export type BluebirdCourierBridge = BluebirdCourierFacade & ThemeAppearanceBridge;
+export type BluebirdCourierBridge = BluebirdCourierFacade & ThemeAppearanceBridge & ShellLinkBridge;

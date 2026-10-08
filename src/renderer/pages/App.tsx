@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Glance, AccessTokenState } from '../../shared/types';
@@ -85,14 +85,24 @@ export function App() {
   const accessTokenStateQuery = useQuery({
     queryKey: ['accessTokenState'],
     queryFn: () => getApi().accessTokenState(),
+    networkMode: 'always',
   });
   const configured = accessTokenStateQuery.data?.configured ?? false;
-
-  useEffect(() => {
-    const state = accessTokenStateQuery.data;
-    // 启动闸门不是用户导航：只改视图，不设置方向，避免首屏解析出令牌时播一次切换动画
-    if (state && !state.configured) setView('settings');
-  }, [accessTokenStateQuery.data]);
+  /**
+   * 无访问令牌不等于没有本地资料：本地清单有内容时仍允许清单 / 详情 / 趋势导航。
+   * 这里只读本地清单（无网络副作用，且与清单页共用同一个 Query 缓存）。
+   */
+  const localListQuery = useQuery({
+    queryKey: ['repositories'],
+    queryFn: () => getApi().listRepositories(),
+    networkMode: 'always',
+  });
+  const localEntry: 'available' | 'none' | 'unknown' = localListQuery.data !== undefined
+    ? localListQuery.data.length > 0 ? 'available' : 'none'
+    : localListQuery.isError ? 'none' : 'unknown';
+  const localDataAllowed = configured || localEntry === 'available';
+  /** 无令牌且本地清单还没读出来：先等本地结论，避免先闪到设置页再跳回清单。 */
+  const gatePending = !configured && localEntry === 'unknown';
 
   /**
    * 用户导航的唯一入口：方向与视图在同一次批处理里落地，新内容才拿得到正确的层级动画。
@@ -126,9 +136,9 @@ export function App() {
     navigate('detail');
   }
 
-  const activeView: View = configured ? view : 'settings';
+  const activeView: View = localDataAllowed ? view : 'settings';
   const destination = activeView === 'settings'
-    ? { label: '监控清单', view: 'watchlist' as const, disabled: !configured }
+    ? { label: '监控清单', view: 'watchlist' as const, disabled: !localDataAllowed }
     : { label: '设置', view: 'settings' as const, disabled: false };
   // 读不到任何状态才整页阻断；已有缓存时后台刷新失败不应把界面清空
   const tokenStateFailed = accessTokenStateQuery.isError;
@@ -148,8 +158,8 @@ export function App() {
    * 这里写的是确切的 scrollY，不用 scrollIntoView（那会把目标卡片贴顶或重新居中）。
    */
   useLayoutEffect(() => {
-    // 令牌状态还没到：这一屏只是启动占位，不是用户导航出来的视图，不能当成"从设置页回来"
-    if (!hasTokenState) return;
+    // 令牌状态或本地清单结论还没到：这一屏只是启动占位，不是用户导航出来的视图，不能当成"从设置页回来"
+    if (!hasTokenState || gatePending) return;
     const previous = previousViewRef.current;
     previousViewRef.current = activeView;
     const layoutChanged = previousLayoutModeRef.current !== layoutMode;
@@ -169,7 +179,7 @@ export function App() {
       top: activeView === 'watchlist' ? narrowWatchlistScrollPositionRef.current : 0,
       behavior: 'auto',
     });
-  }, [activeView, hasTokenState, layoutMode, watchlistHost]);
+  }, [activeView, hasTokenState, gatePending, layoutMode, watchlistHost]);
 
   // 仅导航或换仓库时重置工作区；侧栏节点与其 scrollTop 保持不动。
   useLayoutEffect(() => {
@@ -212,7 +222,7 @@ export function App() {
   }, [layoutMode]);
 
   let content;
-  if (accessTokenStateQuery.isPending) {
+  if (accessTokenStateQuery.isPending || gatePending) {
     content = (
       <Loading label="正在启动…" />
     );
@@ -223,7 +233,7 @@ export function App() {
       </WorkspaceMessage>
     );
   } else if (activeView === 'settings') {
-    // 未配置访问令牌时 activeView 恒为设置页（启动闸门）
+    // 无访问令牌且没有任何本地资料时才停留在设置页（启动闸门）
     content = <SettingsPage onSaved={handleAccessTokenSaved} />;
   } else if (activeView === 'detail' && selected) {
     content = (
@@ -259,7 +269,7 @@ export function App() {
         settingsActive={activeView === 'settings'}
         onGoSettings={() => navigate('settings')}
         workspaceScrollRootRef={workspaceScrollRootRef}
-        sidebar={configured ? <PageSlot host={watchlistHost} /> : null}
+        sidebar={localDataAllowed ? <PageSlot host={watchlistHost} /> : null}
         workspace={<>{tokenRefreshError}<PageSlot host={workspaceHost} /></>}
       />
     ) : (
@@ -273,11 +283,11 @@ export function App() {
         {tokenRefreshError}
         {/* key follows navigation only; the portals below never belong to a Shell. */}
         <PageTransition key={activeView} motion={motion}>
-          <PageSlot host={configured && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
+          <PageSlot host={localDataAllowed && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
         </PageTransition>
       </NarrowAppShell>
     )}
-    {configured ? createPortal(
+    {localDataAllowed ? createPortal(
       <WatchlistPage
         sidebar={layoutMode === 'desktop'}
         active={layoutMode === 'desktop' || activeView === 'watchlist'}

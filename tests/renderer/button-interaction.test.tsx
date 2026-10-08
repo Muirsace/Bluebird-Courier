@@ -66,18 +66,18 @@ describe('公共按钮交互层 · 禁用与 Loading', () => {
     const release = handle.holdNextRefresh();
     const before = { ...handle.calls };
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
     expect(handle.calls.refreshGlance - before.refreshGlance).toBe(1);
-    expect(buttonByText('刷新中…')?.disabled).toBe(true);
+    expect(buttonByText('检查中…')?.disabled).toBe(true);
 
-    await click(buttonByText('刷新中…'));
+    await click(buttonByText('检查中…'));
     await settle();
     expect(handle.calls.refreshGlance - before.refreshGlance).toBe(1);
 
     release();
     await settle();
-    expect(buttonByText('全部刷新')?.disabled).toBe(false);
+    expect(buttonByText('检查更新')?.disabled).toBe(false);
   });
 });
 
@@ -175,7 +175,7 @@ describe('公共按钮交互层 · 键盘可达性', () => {
   it('可按下控件都是真 button、可聚焦、未退出无障碍路径', async () => {    await mount();
     const controls = [
       buttonByLabel('新增仓库'),
-      buttonByText('全部刷新'),
+      buttonByText('检查更新'),
       repoActionsButton('octocat/Hello-World'),
     ];
     for (const control of controls) {

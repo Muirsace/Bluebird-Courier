@@ -74,7 +74,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     const page = document.querySelector('.watchlist-page');
     const toolbar = document.querySelector('.watchlist-page-toolbar');
     const addForm = document.querySelector('.watchlist-add-form');
-    const refresh = buttonByText('全部刷新');
+    const refresh = buttonByText('检查更新');
     expect(toolbar?.closest('.watchlist-page')).toBe(page);
     expect(toolbar?.previousElementSibling?.querySelector('h1')?.textContent).toBe('监控清单');
     expect(toolbar?.contains(addForm)).toBe(true);
@@ -83,7 +83,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     expect(document.querySelectorAll('.watchlist-add-form')).toHaveLength(1);
     expect(
       [...document.querySelectorAll('button')].filter(
-        (button) => button.textContent?.trim() === '全部刷新',
+        (button) => button.textContent?.trim() === '检查更新',
       ),
     ).toHaveLength(1);
 
@@ -98,7 +98,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
     window.dispatchEvent(new Event('scroll'));
     expect(document.querySelector('.watchlist-page-toolbar')).toBe(toolbar);
     expect(document.querySelector('.watchlist-add-form')).toBe(addForm);
-    expect(buttonByText('全部刷新')).toBe(refresh);
+    expect(buttonByText('检查更新')).toBe(refresh);
     expect(document.activeElement).toBe(input);
     expect(document.querySelectorAll('.watchlist-page-toolbar')).toHaveLength(1);
     expect(document.querySelectorAll('.watchlist-add-form')).toHaveLength(1);
@@ -188,7 +188,7 @@ describe('Watchlist 页面工具栏 · 唯一 DOM 与吸附结构', () => {
       );
       const controlRow = toolbar?.querySelector('.watchlist-add-control-row');
       const action = toolbar?.querySelector('.watchlist-add-action');
-      const refresh = buttonByText('全部刷新');
+      const refresh = buttonByText('检查更新');
       expect(message).not.toBeNull();
       expect(message?.parentElement).toBe(input?.form);
       expect(controlRow?.parentElement).toBe(input?.form);

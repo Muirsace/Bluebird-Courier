@@ -433,7 +433,7 @@ describe('Watchlist 新增位置', () => {
     handle.setRepositories(Array.from({ length: 8 }, (_, index) =>
       makeGlance(index + 1, `octo/repo-${index + 1}`),
     ));
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
     await settleMotion(250);
     expect(watchlistSlotIds()).not.toContain('9');
@@ -460,7 +460,7 @@ describe('Watchlist 新增位置', () => {
     handle.setRepositories(Array.from({ length: 8 }, (_, index) =>
       makeGlance(index + 1, `octo/repo-${index + 1}`),
     ));
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
     await settleMotion(250);
     expect(watchlistSlotIds()).not.toContain('9');
@@ -474,7 +474,7 @@ describe('Watchlist 新增位置', () => {
     handle.setRepositories([newlyAdded, ...Array.from({ length: 8 }, (_, index) =>
       makeGlance(index + 1, `octo/repo-${index + 1}`),
     )]);
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
 
     const newCard = document.querySelector<HTMLElement>(

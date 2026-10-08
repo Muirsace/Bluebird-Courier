@@ -123,36 +123,36 @@ describe('监控清单 · 数量与状态', () => {
   });
 });
 
-describe('监控清单 · 全部刷新', () => {
+describe('监控清单 · 检查更新', () => {
   it('刷新期间卡片保持可读，只有按钮与行内文案提示正在更新', async () => {
     await mount({ repositories: [makeGlance(1, 'octocat/Hello-World'), makeGlance(2, 'facebook/react')] });
     const before = { ...handle.calls };
     const release = handle.holdNextRefresh();
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
 
     expect(handle.calls.refreshGlance - before.refreshGlance).toBe(1);
-    expect(buttonByText('刷新中…')).not.toBeNull();
+    expect(buttonByText('检查中…')).not.toBeNull();
     expect(bodyText()).toContain('正在更新…');
     expect(repoRows()).toHaveLength(2);
     expect(bodyText()).not.toContain('还没有监控仓库');
 
     release();
     await settle();
-    expect(buttonByText('全部刷新')).not.toBeNull();
+    expect(buttonByText('检查更新')).not.toBeNull();
     expect(bodyText()).not.toContain('正在更新…');
     expect(repoRows()).toHaveLength(2);
   });
 
-  it('点击全部刷新只触发一次 refreshGlance（刷新中再点无效）', async () => {
+  it('点击检查更新只触发一次 refreshGlance（检查中再点无效）', async () => {
     await mount({ repositories: [makeGlance(1, 'octocat/Hello-World')] });
     const before = { ...handle.calls };
     const release = handle.holdNextRefresh();
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
-    await click(buttonByText('刷新中…'));
+    await click(buttonByText('检查中…'));
     await settle();
 
     expect(handle.calls.refreshGlance - before.refreshGlance).toBe(1);
@@ -164,7 +164,7 @@ describe('监控清单 · 全部刷新', () => {
   it('刷新失败：缓存清单继续显示，只多一条错误条', async () => {
     await mount({ repositories: [makeGlance(1, 'octocat/Hello-World')], refreshGlanceFails: true });
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
 
     expect(alertTexts().join(' ')).toContain('抓取失败');
@@ -199,10 +199,10 @@ describe('监控清单 · 打开详情', () => {
 });
 
 describe('监控清单 · 添加仓库', () => {
-  it('默认折叠：只显示新增仓库和全部刷新操作', async () => {
+  it('默认折叠：只显示新增仓库和检查更新操作', async () => {
     await mount({ repositories: [] });
     expect(buttonByLabel('新增仓库')).not.toBeNull();
-    expect(buttonByText('全部刷新')).not.toBeNull();
+    expect(buttonByText('检查更新')).not.toBeNull();
     expect(addSubmitButton().getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -367,7 +367,7 @@ describe('监控清单 · 添加仓库', () => {
     expect(handle.calls.addRepository).toBe(0);
     expect(addStatus()?.textContent).toContain('已在监控清单中');
     expect(addStatus()?.textContent).toContain('打开详情');
-    await pointerDown(buttonByText('全部刷新')!);
+    await pointerDown(buttonByText('检查更新')!);
     expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -566,7 +566,7 @@ describe('监控清单 · 添加仓库', () => {
     expect(addStatus()?.textContent).toContain('facebook/react 已加入监控清单');
     expect(document.querySelector('.watchlist-added-notice')).toBeNull();
     expect(buttonByText('查看位置')).toBeNull();
-    await pointerDown(buttonByText('全部刷新')!);
+    await pointerDown(buttonByText('检查更新')!);
     expect(buttonByLabel('新增仓库')?.getAttribute('aria-expanded')).toBe('true');
     await click(addSubmitButton());
     expect(activeAddButtonLabel()).toBe('clear');
@@ -715,19 +715,19 @@ describe('监控清单 · 添加仓库', () => {
   it('空输入点击外部收起，非空输入点击外部保留内容', async () => {
     await mount({ repositories: [] });
     let input = await expandAddForm();
-    await pointerDown(buttonByText('全部刷新')!);
+    await pointerDown(buttonByText('检查更新')!);
     expect(addInput().disabled).toBe(true);
     input = await expandAddForm();
     await typeInto(input, 'facebook/react');
-    await pointerDown(buttonByText('全部刷新')!);
+    await pointerDown(buttonByText('检查更新')!);
     expect(addInput().value).toBe('facebook/react');
   });
 
   it('空输入外部点击收起时不抢回新目标的焦点', async () => {
     await mount({ repositories: [] });
     await expandAddForm();
-    const refresh = buttonByText('全部刷新');
-    if (!refresh) throw new Error('未找到全部刷新');
+    const refresh = buttonByText('检查更新');
+    if (!refresh) throw new Error('未找到检查更新');
     await act(async () => {
       refresh.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
       refresh.focus();
@@ -755,7 +755,7 @@ describe('监控清单 · 添加仓库', () => {
     const release = handle.holdNextAdd();
     await submitForm(input.form!);
     await settle();
-    await pointerDown(buttonByText('全部刷新')!);
+    await pointerDown(buttonByText('检查更新')!);
     expect(addInput().value).toBe('facebook/react');
     release();
     await settle();
@@ -800,14 +800,14 @@ describe('监控清单 · 添加仓库', () => {
     await mount({ repositories: [] });
     const input = await expandAddForm();
     await typeInto(input, 'facebook/react');
-    await pointerDown(buttonByText('全部刷新')!);
-    await click(buttonByText('全部刷新'));
+    await pointerDown(buttonByText('检查更新')!);
+    await click(buttonByText('检查更新'));
     await settle();
     expect(input.disabled).toBe(false);
     expect(input.value).toBe('facebook/react');
   });
 
-  it('展开后的 Tab 顺序是 Input、加入、全部刷新、仓库卡片', async () => {
+  it('展开后的 Tab 顺序是 Input、加入、检查更新、仓库卡片', async () => {
     await mount({ repositories: [makeGlance(1, 'octocat/Hello-World')] });
     const input = await expandAddForm();
     await typeInto(input, 'facebook/react');
@@ -818,7 +818,31 @@ describe('监控清单 · 添加仓库', () => {
       .map((control) => control.getAttribute('aria-label') ?? control.textContent?.trim());
     expect(controls[0]).toContain('监控仓库');
     expect(controls[1]).toBe('添加仓库');
-    expect(controls[2]).toBe('全部刷新');
+    expect(controls[2]).toBe('检查更新');
     expect(repoOpenButton('octocat/Hello-World')).not.toBeNull();
+  });
+});
+
+describe('监控清单 · 活动时间展示', () => {
+  it('卡片只格式化主进程 activityAt：两者不同取活动时间，缺失时不退回 pushedAt', async () => {
+    const now = Date.now();
+    const pushedAt = new Date(now - 5 * 60_000).toISOString();
+    const activityAt = new Date(now - 2 * 3_600_000).toISOString();
+    await mount({
+      repositories: [{ ...makeGlance(1, 'octocat/Hello-World'), pushedAt, activityAt, activityKind: 'code' }],
+    });
+    const fact = (): HTMLElement | null => document.querySelector('[title^="最近代码更新"]');
+    expect(fact()?.textContent?.trim()).toBe('2 小时前');
+    expect(fact()?.getAttribute('title')).toContain('上次检查摘要：');
+
+    // 夹具带上 pushedAt 但没有主进程活动：显示不可用，不能用 pushedAt 伪装"最近活动"。
+    await view?.unmount();
+    view = null;
+    await mount({
+      repositories: [{ ...makeGlance(1, 'octocat/Hello-World'), pushedAt, activityAt: null, activityKind: null }],
+    });
+    expect(document.querySelector('[title^="最近代码更新"]')).toBeNull();
+    expect(document.querySelector('[title^="上次检查摘要"]')?.textContent?.trim()).toBe('—');
+    expect(document.body.textContent).not.toContain('5 分钟前');
   });
 });

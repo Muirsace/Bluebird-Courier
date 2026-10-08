@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from 'react';
-import { formatRelativeTime } from '../../lib/time';
+import { formatActivityTooltip, formatRelativeTime } from '../../lib/time';
+import { useDisplayNow } from '../../lib/display-clock';
 import { RepositoryActions } from './RepositoryActions';
 import { RepositoryMotionItem } from './RepositoryMotionItem';
 import type { RepositoryItemProps } from './RepositoryMotionItem';
@@ -13,6 +14,7 @@ export const RepositorySidebarRow = forwardRef<HTMLLIElement, RepositorySidebarR
   selected, ...props
 }, forwardedRef) {
   const { repo, onOpen, onRemove } = props;
+  const now = useDisplayNow();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [press, setPress] = useState<'idle' | 'pressed' | 'released'>('idle');
   const releasePress = (): void => setPress((current) => current === 'pressed' ? 'released' : current);
@@ -37,6 +39,9 @@ export const RepositorySidebarRow = forwardRef<HTMLLIElement, RepositorySidebarR
     };
   }, [press]);
   const release = repo.latestReleaseTag ?? '无发版';
+  // 只格式化主进程聚合的 activityAt；pushedAt 等原始字段不在这里重新选取。
+  const activityText = formatRelativeTime(repo.activityAt, now);
+  const activityTitle = formatActivityTooltip(repo.activityAt, repo.activityKind, repo.fetchedAt, now);
   return (
     <RepositoryMotionItem ref={forwardedRef} {...props}>
       {(exiting) => (
@@ -85,8 +90,8 @@ export const RepositorySidebarRow = forwardRef<HTMLLIElement, RepositorySidebarR
                   <span aria-hidden="true">·</span>
                   <span className="repository-sidebar-release font-mono" title={release}>{release}</span>
                 </span>
-                <span className="repository-sidebar-activity" aria-label={`最近活动 ${formatRelativeTime(repo.pushedAt)}`}>
-                  {formatRelativeTime(repo.pushedAt)}
+                <span className="repository-sidebar-activity" aria-label={`最近活动 ${activityText}`} title={activityTitle}>
+                  {activityText}
                 </span>
               </span>
             </button>

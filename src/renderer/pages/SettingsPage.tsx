@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, TransitionEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { NormalizedError, AccessTokenResult } from '../../shared/types';
+import type { NormalizedError, AccessTokenResult, TokenOperationResult } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { prefersReducedMotion } from '../lib/motion';
 import { SettingSection } from '../components/SettingSection';
@@ -10,14 +10,42 @@ import { ThemeSelector } from '../components/ThemeSelector';
 import { InlineFeedback } from '../components/StateMessage';
 
 interface SettingsPageProps {
-  /** 令牌保存并验证成功后调用（App 负责跳转到监控清单）。 */
+  /** 令牌保存或更换成功后调用（App 负责跳转到监控清单）。 */
   onSaved: () => void;
 }
 
 const SUCCESS_SAVED = '令牌已保存并验证';
+const SUCCESS_REPLACED = '令牌已更换并验证';
 const SUCCESS_VALIDATED = 'GitHub 连接正常';
 
 type TokenFeedback = { kind: 'success' | 'error'; message: string };
+/** saving / validating 是首次保存与测试连接；更换流程有独立生命周期，不在这里表达。 */
+type PendingOperation = 'saving' | 'validating' | null;
+/** 更换生命周期阶段：starting 主进程登记中，awaiting 等待用户确认，verifying 确认请求在途。 */
+type ReplacementStage = 'starting' | 'awaiting' | 'verifying';
+/** 开始登记到完成/取消全过程：代号唯一标识一次更换，异步续跑按它判断是否仍属于自己。 */
+interface ReplacementLifecycle {
+  generation: number;
+  stage: ReplacementStage;
+  token: string;
+}
+
+interface ReplacementApi {
+  begin(): Promise<TokenOperationResult>;
+  confirm(token: string): Promise<TokenOperationResult>;
+  cancel(): Promise<TokenOperationResult>;
+}
+
+/** 更换流程使用主进程的三个命名桥接方法；缺少任一方法时流程整体不可用。 */
+function replacementApi(): ReplacementApi | null {
+  const { beginTokenReplacement, confirmTokenReplacement, cancelTokenReplacement } = getApi();
+  if (!beginTokenReplacement || !confirmTokenReplacement || !cancelTokenReplacement) return null;
+  return {
+    begin: () => beginTokenReplacement(),
+    confirm: (token) => confirmTokenReplacement(token),
+    cancel: () => cancelTokenReplacement(),
+  };
+}
 
 function tokenErrorMessage(error: NormalizedError): string {
   switch (error.kind) {
@@ -56,17 +84,30 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   const [revealed, setRevealed] = useState(false);
   const [feedback, setFeedback] = useState<TokenFeedback | null>(null);
   const [renderedFeedback, setRenderedFeedback] = useState<TokenFeedback | null>(null);
-  const [pendingOperation, setPendingOperation] = useState<'saving' | 'validating' | null>(null);
+  const [pendingOperation, setPendingOperation] = useState<PendingOperation>(null);
+  /** 更换流程的渲染镜像；权威值始终在 replacementRef，避免异步续跑读到过期闭包。 */
+  const [replacement, setReplacement] = useState<{ stage: ReplacementStage; token: string } | null>(null);
   const accessTokenValueRef = useRef('');
+  /** 当前更换生命周期（含 starting 阶段）；null 表示没有未收尾的更换。 */
+  const replacementRef = useRef<ReplacementLifecycle | null>(null);
+  const replacementSeqRef = useRef(0);
+  const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
   const savedTimerRef = useRef<number | null>(null);
   const onSavedRef = useRef(onSaved);
   useLayoutEffect(() => { onSavedRef.current = onSaved; }, [onSaved]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       requestIdRef.current += 1;
       if (savedTimerRef.current !== null) window.clearTimeout(savedTimerRef.current);
+      // 离开页面即回收未收尾的更换（含登记中的）：作废在途续跑并让主进程清掉 awaiting。
+      if (replacementRef.current !== null) {
+        replacementRef.current = null;
+        void replacementApi()?.cancel().catch(() => {});
+      }
     };
   }, []);
 
@@ -98,6 +139,18 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     return requestIdRef.current === requestId && accessTokenValueRef.current.trim() === value;
   }
 
+  /** 异步续跑是否仍属于当前这次更换；被取代、被回收或已卸载都会返回 false。 */
+  function isCurrentReplacement(generation: number): boolean {
+    return replacementRef.current?.generation === generation;
+  }
+
+  /** 真实回收当前更换意图：作废所有在途续跑，并让主进程清掉已登记的 awaiting。 */
+  function reclaimReplacement(): void {
+    replacementRef.current = null;
+    setReplacement(null);
+    void replacementApi()?.cancel().catch(() => {});
+  }
+
   function handleTokenChange(value: string): void {
     accessTokenValueRef.current = value;
     requestIdRef.current += 1;
@@ -105,16 +158,12 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     updateFeedback(null);
     // 验证当前输入时允许继续编辑；一旦输入变化，旧请求的结果与 loading 状态都失效。
     if (pendingOperation === 'validating') setPendingOperation(null);
+    // 输入的令牌已改变：登记中/待确认/确认在途的更换都不再对应当前输入，真实回收并恢复可操作状态。
+    if (replacementRef.current !== null) reclaimReplacement();
   }
 
-  async function handleSave(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    if (pendingOperation !== null) return;
-    const value = accessToken.trim();
-    if (!value) {
-      showError('请输入访问令牌');
-      return;
-    }
+  /** 首次配置：验证并保存，不做任何清理（本地不存在旧资料）。 */
+  async function handleFirstSave(value: string): Promise<void> {
     const requestId = ++requestIdRef.current;
     setPendingOperation('saving');
     updateFeedback(null);
@@ -128,12 +177,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         setRevealed(false);
         queryClient.setQueryData(['accessTokenState'], { configured: true });
         void queryClient.invalidateQueries({ queryKey: ['accessTokenState'] });
-        // 让成功提示可见后再跳转
-        if (savedTimerRef.current !== null) window.clearTimeout(savedTimerRef.current);
-        savedTimerRef.current = window.setTimeout(() => {
-          savedTimerRef.current = null;
-          onSavedRef.current();
-        }, 900);
+        scheduleOnSaved();
       } else {
         updateFeedback({ kind: 'error', message: tokenErrorMessage(errorFrom(result)) });
       }
@@ -144,8 +188,132 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     }
   }
 
+  /** 已配置令牌：先向后端登记更换意图，由用户确认后才会真正验证与提交。 */
+  async function beginReplacement(value: string): Promise<void> {
+    const api = replacementApi();
+    if (!api) {
+      showError('当前应用不支持更换访问令牌，请重启后再试');
+      return;
+    }
+    // 登记先于 await：登记中的编辑或离开也回收得到这次意图。
+    const generation = ++replacementSeqRef.current;
+    replacementRef.current = { generation, stage: 'starting', token: value };
+    setReplacement({ stage: 'starting', token: value });
+    updateFeedback(null);
+    try {
+      const begun = await api.begin();
+      // 已被取消、被输入变化回收或被更新的操作取代：不改变任何界面状态，也不去取消更新的操作。
+      if (!isCurrentReplacement(generation)) return;
+      if (!begun.ok) {
+        replacementRef.current = null;
+        setReplacement(null);
+        showError(tokenErrorMessage(errorFrom(begun)));
+        return;
+      }
+      replacementRef.current = { generation, stage: 'awaiting', token: value };
+      setReplacement({ stage: 'awaiting', token: value });
+    } catch {
+      if (!isCurrentReplacement(generation)) return;
+      replacementRef.current = null;
+      setReplacement(null);
+      showError('无法开始更换流程，请稍后重试');
+    }
+  }
+
+  async function handleSave(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    if (pendingOperation !== null || replacement !== null) return;
+    const value = accessToken.trim();
+    if (!value) {
+      showError('请输入访问令牌');
+      return;
+    }
+    if (configured) {
+      await beginReplacement(value);
+      return;
+    }
+    await handleFirstSave(value);
+  }
+
+  /** 用户确认更换：后端先网络验证，成功后在同步事务里保存新令牌并推进访问上下文。 */
+  async function handleConfirmReplace(): Promise<void> {
+    const current = replacementRef.current;
+    if (!current || current.stage !== 'awaiting') return;
+    const api = replacementApi();
+    if (!api) return;
+    const { generation, token } = current;
+    const interactionVersion = requestIdRef.current;
+    replacementRef.current = { generation, stage: 'verifying', token };
+    setReplacement({ stage: 'verifying', token });
+    updateFeedback(null);
+    try {
+      const result = await api.confirm(token);
+      if (result.ok) {
+        // 已提交成功是不可逆事实：与表单是否还有效、页面是否还在无关，一律先按事实收尾。
+        const mine = isCurrentReplacement(generation);
+        if (mountedRef.current) {
+          if (mine) {
+            replacementRef.current = null;
+            setReplacement(null);
+            accessTokenValueRef.current = '';
+            setAccessToken('');
+            setRevealed(false);
+          }
+          // 表单已被取消/改动/离开时也要如实告知：更换已经生效，旧资料已清理。
+          updateFeedback({ kind: 'success', message: SUCCESS_REPLACED });
+        }
+        await applyCommittedReplacement();
+        if (mine && mountedRef.current && replacementSeqRef.current === generation && requestIdRef.current === interactionVersion) scheduleOnSaved();
+        return;
+      }
+      // 失败（含验证被取消/被取代）：原令牌与本地资料保留，只有仍属于当前操作时才回到可重试状态。
+      if (!isCurrentReplacement(generation)) return;
+      replacementRef.current = { generation, stage: 'awaiting', token };
+      setReplacement({ stage: 'awaiting', token });
+      updateFeedback({ kind: 'error', message: tokenErrorMessage(errorFrom(result)) });
+    } catch {
+      if (!isCurrentReplacement(generation)) return;
+      replacementRef.current = { generation, stage: 'awaiting', token };
+      setReplacement({ stage: 'awaiting', token });
+      showError('更换失败，请稍后重试');
+    }
+  }
+
+  function handleCancelReplace(): void {
+    requestIdRef.current += 1;
+    reclaimReplacement();
+    updateFeedback(null);
+  }
+
+  /**
+   * 更换成功的渲染层协调：清掉旧访问上下文的展示数据，在途旧 Promise 一并作废。
+   * 与组件状态无关，因此卸载后迟到的成功回包同样执行。
+   */
+  async function applyCommittedReplacement(): Promise<void> {
+    queryClient.setQueryData(['accessTokenState'], { configured: true });
+    void queryClient.invalidateQueries({ queryKey: ['accessTokenState'] });
+    // 先取消在途请求，再重置缓存：旧数据立即退出展示，挂载中的视图随即按新上下文重读，
+    // 不等下一次无关重渲染（移除查询会让已挂载观察者继续显示已销毁查询里的旧数据）。
+    await queryClient.cancelQueries({ queryKey: ['repositories'] });
+    await queryClient.cancelQueries({ queryKey: ['detail'] });
+    await queryClient.resetQueries({ queryKey: ['repositories'] });
+    await queryClient.resetQueries({ queryKey: ['detail'] });
+  }
+
+  /** 让成功提示可见后再跳转。 */
+  function scheduleOnSaved(): void {
+    if (savedTimerRef.current !== null) window.clearTimeout(savedTimerRef.current);
+    const interactionVersion = requestIdRef.current;
+    const replacementGeneration = replacementSeqRef.current;
+    savedTimerRef.current = window.setTimeout(() => {
+      savedTimerRef.current = null;
+      // 成功提示等待期间仍可编辑或发起新操作，旧定时器不能把更新的意图带离页面。
+      if (mountedRef.current && requestIdRef.current === interactionVersion && replacementSeqRef.current === replacementGeneration) onSavedRef.current();
+    }, 900);
+  }
+
   async function handleValidate(): Promise<void> {
-    if (pendingOperation !== null) return;
+    if (pendingOperation !== null || replacement !== null) return;
     const value = accessToken.trim();
     if (!value) {
       showError('请输入访问令牌');
@@ -171,7 +339,8 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     }
   }
 
-  const busy = pendingOperation !== null;
+  const replacing = replacement !== null && replacement.stage !== 'starting' ? replacement : null;
+  const busy = pendingOperation !== null || replacement !== null;
 
   return (
     <div className="settings-page max-w-[840px]">
@@ -304,6 +473,41 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                 {pendingOperation === 'validating' ? '测试中…' : '测试连接'}
               </button>
             </div>
+
+            {replacing !== null ? (
+              <div
+                role="group"
+                aria-label="确认更换访问令牌"
+                className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2.5"
+              >
+                <p className="text-sm text-secondary">
+                  更换访问令牌会连接新的 GitHub 账号。成功更换后会清理本机已保存的仓库资料（监控清单、详情与趋势），需要重新添加仓库。
+                </p>
+                <div className="mt-2.5 flex flex-wrap items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmReplace()}
+                    disabled={replacing.stage === 'verifying'}
+                    aria-busy={replacing.stage === 'verifying'}
+                    className="flex h-9 min-w-[8rem] shrink-0 items-center justify-center gap-2 rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast transition-colors duration-150 ease-out hover:bg-accent-solid-hover active:bg-accent-solid-pressed disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {replacing.stage === 'verifying' ? (
+                      <span aria-hidden="true">
+                        <Spinner className="h-3.5 w-3.5" />
+                      </span>
+                    ) : null}
+                    {replacing.stage === 'verifying' ? '验证中…' : '确认更换'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelReplace}
+                    className="flex h-9 min-w-[6rem] shrink-0 items-center justify-center rounded-md border border-default px-4 text-sm text-primary transition-colors duration-150 ease-out hover:bg-surface-hover active:bg-surface-active"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div

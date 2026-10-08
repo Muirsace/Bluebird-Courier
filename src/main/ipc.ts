@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc';
-import type { BluebirdCourierFacade, LocalReadRequest, OpenExternalResult, ThemePreference } from '../shared/types';
+import type { BluebirdCourierFacade, DisplayAcknowledgment, LocalReadRequest, OpenExternalResult, ThemePreference } from '../shared/types';
 
 export interface IpcHandlers {
   /** 外链属于主进程平台出口，IPC 只把目标转发给已注入的出口。 */
@@ -30,6 +30,7 @@ export function registerIpc(facade: BluebirdCourierFacade, handlers: IpcHandlers
   ipcMain.handle(IPC_CHANNELS.refreshRepository, (_event, repositoryId: unknown, force: unknown) => facade.refreshRepository!(repositoryId as number, force as boolean | undefined));
   ipcMain.handle(IPC_CHANNELS.fetchDetail, (_event, repositoryId: unknown) => facade.fetchDetail(repositoryId as number));
   ipcMain.handle(IPC_CHANNELS.readLocalDetail, (_event, repositoryId: unknown, request: unknown) => facade.readLocalDetail(repositoryId as number, request as LocalReadRequest | undefined));
+  ipcMain.handle(IPC_CHANNELS.acknowledgeRepositoryViewed, (_event, repositoryId: unknown, acknowledgment: unknown) => facade.acknowledgeRepositoryViewed(repositoryId as number, acknowledgment as DisplayAcknowledgment));
   ipcMain.handle(IPC_CHANNELS.loadHistory, (_event, repositoryId: unknown, kind: unknown, cursor: unknown) => facade.loadHistory!(repositoryId as number, kind as 'commits' | 'issues' | 'pullRequests', cursor as string | undefined));
   ipcMain.handle(IPC_CHANNELS.trend, (_event, repositoryId: unknown) => facade.trend!(repositoryId as number));
   ipcMain.handle(IPC_CHANNELS.openGitHubExternal, (_event, target: unknown) => handlers.openGitHubExternal(target));

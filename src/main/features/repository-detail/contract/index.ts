@@ -1,4 +1,5 @@
 export type {
+  AcknowledgeOutcome,
   ColumnName,
   ColumnResult,
   ColumnStatus,
@@ -12,5 +13,6 @@ export type {
   ScopeSyncOutcome,
   ScopeSyncRequest,
   SyncTaskState,
+  ViewAcknowledgment,
 } from './types';
 export type { RepositoryDetailService as RepositoryDetailContract } from './service';

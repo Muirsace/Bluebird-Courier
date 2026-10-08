@@ -234,14 +234,43 @@ describe('Inline feedback and gate', () => {
     expect(repoOpenButton(repo.fullName)).not.toBeNull();
   });
 
-  it('missing token keeps the original Settings gate and privacy copy', async () => {
+  it('无令牌但有本地资料：允许本地清单与详情导航，并提示配置入口', async () => {
     setViewportWidth(900); stub = createStub({ repositories: [repo] });
+    stub.api.accessTokenState = async () => ({ configured: false });
+    // 主进程在无令牌时跳过网络：启动检查以令牌错误提示配置入口
+    stub.api.refreshGlance = async () => ({ repositories: [repo], errors: [{ kind: 'access_token_invalid', message: '请先在设置页配置访问令牌' }] });
+    view = await renderApp(stub); await settle();
+
+    expect(document.querySelector('.watchlist-page')).not.toBeNull();
+    expect(document.querySelector('.settings-page')).toBeNull();
+    expect(stub.calls.fetchDetail).toBe(0);
+    // 无令牌时主进程跳过网络，检查以令牌错误回流，清单给出配置入口
+    await click(refreshAllButton());
+    await settle();
+    expect(buttonByText('去设置')).not.toBeNull();
+
+    await open();
+    expect(detailPage().querySelector('[role="tabpanel"]')).not.toBeNull();
+    await click(tab('趋势'));
+    expect(sectionByTitle('趋势')).not.toBeNull();
+    const entry = buttonByText('去设置');
+    expect(entry).not.toBeNull();
+    await click(entry!);
+    await settle();
+    expect(document.querySelector('.settings-page')).not.toBeNull();
+  });
+
+  it('无令牌且没有本地资料：停留在设置闸门并保留隐私说明', async () => {
+    setViewportWidth(900); stub = createStub({ repositories: [] });
     stub.api.accessTokenState = async () => ({ configured: false });
     view = await renderApp(stub); await settle();
     expect(document.querySelector('.settings-page')?.textContent).toContain('未配置');
     expect(document.querySelector('.settings-page')?.textContent).toContain('令牌仅保存在本机');
     expect(document.querySelector('#accessToken-input')).not.toBeNull();
-    expect(document.querySelector('.watchlist-page')).toBeNull(); expect(stub.calls.fetchDetail).toBe(0);
+    expect(document.querySelector('.watchlist-page')).toBeNull();
+    // 只读一次本地资料判定入口；没有清单页，也就没有启动检查与详情抓取
+    expect(stub.calls.listRepositories).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(0);
   });
 
   it('startup token state loading/failure has one signal and existing retry recovers', async () => {

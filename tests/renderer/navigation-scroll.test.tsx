@@ -210,12 +210,12 @@ describe('导航滚动 · 与导航无关的变化一律不动滚动', () => {
     expect(scrollCalls).toHaveLength(before);
   });
 
-  it('清单的查询更新（全部刷新）不把用户拽回顶部', async () => {
+  it('清单的查询更新（检查更新）不把用户拽回顶部', async () => {
     await mount();
     const before = scrollCalls.length;
     setScrollY(260);
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
 
     expect(scrollY()).toBe(260);

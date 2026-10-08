@@ -156,13 +156,13 @@ describe('卡片动画 · 新增进场', () => {
     }
   });
 
-  it('列表刷新（全部刷新）不会让旧卡片重播进场', async () => {
+  it('列表刷新（检查更新）不会让旧卡片重播进场', async () => {
     await mount();
     await addRepository('vercel/next.js');
     await settleMotion(ENTER_BUDGET + 20);
     expect(repoMotion('vercel/next.js')).toBe('idle');
 
-    await click(buttonByText('全部刷新'));
+    await click(buttonByText('检查更新'));
     await settle();
 
     for (const fullName of [FIRST, SECOND, THIRD, 'vercel/next.js']) {

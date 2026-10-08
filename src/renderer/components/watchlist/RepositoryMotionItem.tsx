@@ -10,7 +10,7 @@ export interface RepositoryItemProps {
   onOpen: (repo: Glance) => void;
   /** 移除失败时必须 reject（Popover 就地提示并允许重试）。 */
   onRemove: (repositoryId: number) => Promise<void>;
-  /** 全局「全部刷新」进行中：在抓取时间后加一句轻量提示，卡片本身保持可读。 */
+  /** 全局「检查更新」进行中：在抓取时间后加一句轻量提示，卡片本身保持可读。 */
   refreshing: boolean;
   /** 刚加入清单：只这一张播放一次进场（含轻量高亮），其它卡片不跟着动。 */
   justAdded?: boolean;
