@@ -115,7 +115,8 @@ describe('Repository Workspace Header', () => {
   it('keeps repo identity, fetched time, four metrics and existing tabs', async () => {
     await mount();
     await open();
-    expect(header()?.textContent).toContain('抓取于');
+    expect(header()?.textContent).toContain('摘要检查于');
+    expect(header()?.querySelector('.repository-header-detail-time')?.textContent).toContain('详情同步于');
     const metrics = header()?.querySelector('.repository-header-metrics')!;
     expect([...metrics.children].map((node) => node.querySelector('span')?.textContent))
       .toEqual(['Stars', 'Forks', '最近活动', '最新版本']);
@@ -161,7 +162,7 @@ describe('Repository Workspace Header', () => {
     const before = { header: header(), heading: heading(), tabs: tab('概览') };
     workspace().scrollTop = 360;
     sidebar().scrollTop = 240;
-    const release = stub.holdNextDetail();
+    const release = stub.holdNextForce();
     await click(buttonByText('重新抓取'));
     await settle();
     const busy = buttonByText('抓取中…')!;
@@ -169,11 +170,13 @@ describe('Repository Workspace Header', () => {
     expect(busy.getAttribute('aria-busy')).toBe('true');
     expect(header()?.textContent).toContain('正在更新');
     await click(busy);
-    expect(stub.calls.fetchDetail).toBe(2);
+    // 强制命令独立计数；打开意图仍是进入详情的那一次
+    expect(stub.calls.refreshRepository).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(1);
     await act(async () => release());
     await settle();
     expect(buttonByText('重新抓取')?.disabled).toBe(false);
-    stub.api.fetchDetail = async () => ({ detail: null, error: { kind: 'unknown', message: 'fixture refresh error' } });
+    stub.nextForceResult({ detail: null, error: { kind: 'unknown', message: 'fixture refresh error' } });
     await click(buttonByText('重新抓取'));
     await settle();
     expect(document.body.textContent).toContain('fixture refresh error');
@@ -207,7 +210,7 @@ describe('Workspace selection and lifecycle', () => {
     const slot = sidebar(), list = slot.querySelector('.repo-list');
     sidebar().scrollTop = 400;
     workspace().scrollTop = 700;
-    const release = stub.holdNextDetail();
+    const release = stub.holdNextOpen();
     await open('owner/B');
     expect(heading()?.textContent).toBe('B');
     expect(header()?.textContent).not.toContain('v1.0.1');
@@ -248,7 +251,9 @@ describe('Workspace selection and lifecycle', () => {
       expect(heading()?.textContent).toBe(name.split('/').pop());
       expect(document.querySelector('.view-transition')).toBeNull();
     }
-    expect(stub.calls.fetchDetail).toBe(4);
+    // 每次实际导航都表达一次打开意图（含回到已缓存的 A），但没有强制命令
+    expect(stub.calls.fetchDetail).toBe(5);
+    expect(stub.calls.refreshRepository).toBe(0);
     expect(sidebar()).toBe(slot);
     expect(sidebar().scrollTop).toBe(480);
     expect(repositories.map((repo) => repoSlot(repo.fullName))).toEqual(nodes);

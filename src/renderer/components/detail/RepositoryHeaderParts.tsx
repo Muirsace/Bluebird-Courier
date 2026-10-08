@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import type { Glance } from '../../../shared/types';
 import { formatCount } from '../../lib/format';
-import { formatRelativeTime } from '../../lib/time';
+import { useDisplayNow } from '../../lib/display-clock';
+import { formatActivityTooltip, formatRelativeTime } from '../../lib/time';
 import { ExternalLinkButton } from '../ExternalLinkButton';
 import { GlanceFact } from '../GlanceFact';
 import { Spinner } from '../Spinner';
@@ -17,20 +18,32 @@ interface RepositoryIdentityProps {
   owner: string;
   name: string;
   headingLevel: 'h1' | 'h2';
-  fetchedAt: Glance['fetchedAt'] | undefined;
-  fetching: boolean;
+  /** 最近一次真实摘要检查时间；null 表示未检查，不冒充刚刚。 */
+  summaryFetchedAt: string | null;
+  /** 最近一次完整详情成功提交时间；null 表示尚未完整同步（首次部分成功或旧库未知）。 */
+  detailFetchedAt: string | null;
+  /** 强制同步或后台任务进行中。 */
+  busy: boolean;
 }
 
-export function RepositoryIdentity({ displayName, owner, name, headingLevel: Heading, fetchedAt, fetching }: RepositoryIdentityProps) {
+export function RepositoryIdentity({ displayName, owner, name, headingLevel: Heading, summaryFetchedAt, detailFetchedAt, busy }: RepositoryIdentityProps) {
+  const now = useDisplayNow();
   return (
     <div className="repository-header-identity min-w-0">
       <Heading className="repository-header-name break-all font-mono text-lg font-semibold text-primary" title={displayName} aria-label={displayName}>
         {name}
       </Heading>
       <div className="repository-header-owner mt-1 truncate text-sm text-secondary" title={owner}>{owner}</div>
+      {/* 摘要检查时间与完整详情同步时间分开表达：未知 / null 只说未知，不借用"刚刚"。 */}
       <div className="repository-header-fetched mt-1 text-xs text-muted">
-        抓取于 {fetchedAt ? formatRelativeTime(fetchedAt) : '尚未抓取'}
-        {fetching ? <span className="text-secondary"> · 正在更新…</span> : null}
+        <span className="repository-header-summary-time">
+          摘要检查于 {summaryFetchedAt ? formatRelativeTime(summaryFetchedAt, now) : '尚未检查'}
+        </span>
+        <span aria-hidden="true"> · </span>
+        <span className="repository-header-detail-time">
+          详情同步于 {detailFetchedAt ? formatRelativeTime(detailFetchedAt, now) : '尚未完整同步'}
+        </span>
+        {busy ? <span className="text-secondary"> · 正在更新…</span> : null}
       </div>
     </div>
   );
@@ -40,11 +53,12 @@ interface RepositoryActionsProps {
   displayName: string;
   owner: string;
   name: string;
-  fetching: boolean;
+  /** 强制同步或后台任务进行中：按钮禁用并显示进行中文案。 */
+  busy: boolean;
   onRefetch: () => void;
 }
 
-export function RepositoryActions({ displayName, owner, name, fetching, onRefetch }: RepositoryActionsProps) {
+export function RepositoryActions({ displayName, owner, name, busy, onRefetch }: RepositoryActionsProps) {
   return (
     <div className="repository-header-actions flex shrink-0 flex-wrap items-center gap-2">
       <ExternalLinkButton
@@ -57,27 +71,36 @@ export function RepositoryActions({ displayName, owner, name, fetching, onRefetc
       <button
         type="button"
         onClick={onRefetch}
-        disabled={fetching}
-        aria-busy={fetching}
+        disabled={busy}
+        aria-busy={busy}
         className="flex h-9 min-w-[6.5rem] shrink-0 items-center justify-center gap-2 rounded-md border border-accent-border bg-accent-soft px-3 text-sm text-accent transition-colors duration-150 ease-out hover:border-accent hover:bg-accent-soft/70 active:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
       >
         {/* min-width 保持按钮宽度，沿用抓取状态文案与原有 Motion。 */}
-        <span key={fetching ? 'busy' : 'idle'} className="detail-refetch-label flex items-center gap-2">
-          {fetching ? <Spinner className="h-3.5 w-3.5" /> : null}
-          {fetching ? '抓取中…' : '重新抓取'}
+        <span key={busy ? 'busy' : 'idle'} className="detail-refetch-label flex items-center gap-2">
+          {busy ? <Spinner className="h-3.5 w-3.5" /> : null}
+          {busy ? '抓取中…' : '重新抓取'}
         </span>
       </button>
     </div>
   );
 }
 
-export function RepositoryMetrics({ repository, revealing }: { repository: Glance | undefined; revealing: boolean }) {
+export function RepositoryMetrics({ repository, revealing, summaryFetchedAt }: { repository: Glance | undefined; revealing: boolean; summaryFetchedAt: string | null }) {
+  const now = useDisplayNow();
   const placeholder = revealing ? '—' : undefined;
+  const activityAt = repository?.activityAt ?? null;
+  const activityKind = repository?.activityKind ?? null;
   return (
     <div className="repository-header-metrics mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-2">
       <GlanceFact label="Stars" value={formatCount(repository?.stars)} crossfadeFrom={placeholder} />
       <GlanceFact label="Forks" value={formatCount(repository?.forks)} crossfadeFrom={placeholder} />
-      <GlanceFact label="最近活动" value={repository?.pushedAt ? formatRelativeTime(repository.pushedAt) : '—'} crossfadeFrom={placeholder} />
+      {/* 最近活动只格式化主进程聚合的 activityAt / activityKind，不退回 pushedAt。 */}
+      <GlanceFact
+        label="最近活动"
+        value={activityAt ? formatRelativeTime(activityAt, now) : '—'}
+        crossfadeFrom={placeholder}
+        title={formatActivityTooltip(activityAt, activityKind, summaryFetchedAt, now)}
+      />
       <div className="repository-header-release min-w-0" title={repository?.latestReleaseTag ?? undefined}>
         <GlanceFact label="最新版本" value={repository ? repository.latestReleaseTag ?? '无发版' : '—'}
           mono muted={!repository?.latestReleaseTag} crossfadeFrom={placeholder} />

@@ -26,7 +26,7 @@ export interface ReplaceTokenDependencies {
 export function createReplaceTokenController({ verify, commit }: ReplaceTokenDependencies): ReplaceTokenController {
   let state: TokenChangeState = 'idle';
   let generation = 0;
-  const result = (ok: boolean, error: NormalizedError | null = null): TokenOperationResult => ({ ok, state, error });
+  const result = (ok: boolean, error: NormalizedError | null = null, tokenCommitted = false): TokenOperationResult => ({ ok, state, error, tokenCommitted });
 
   const begin = (): TokenOperationResult => {
     generation += 1;
@@ -53,7 +53,8 @@ export function createReplaceTokenController({ verify, commit }: ReplaceTokenDep
       return result(false, normalizeTokenError(error));
     }
     state = 'completed';
-    return result(true);
+    // 令牌、访问上下文与持久清理意图已经同一事务提交；清理是否完成由 facade 组装事实。
+    return result(true, null, true);
   };
 
   const cancel = (): TokenOperationResult => {

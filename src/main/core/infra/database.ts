@@ -245,8 +245,70 @@ function migrationV6(database: MigrationDatabase): void {
   });
 }
 
+/**
+ * 真实采样意图存储：只追加，不改写 V1～V6。
+ *
+ * 一次真实观察先在此登记"待写入的快照事实"（稳定身份 = 仓库 + 观察时间），再把快照真正写进
+ * `snapshot` 并在同一事务内删除该意图；写入失败时意图保留，供重启后补偿。意图只保存观察值、
+ * 观察时间与访问上下文，不含访问令牌，也不承载任何业务淘汰规则。
+ */
+function migrationV7(database: MigrationDatabase): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS snapshot_pending (
+      identity TEXT PRIMARY KEY,
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      access_context_revision INTEGER NOT NULL,
+      observed_at TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_snapshot_pending_created ON snapshot_pending(created_at);
+  `);
+}
+
+/**
+ * 有界恢复的公平性与隔离：只追加，不改写 V1～V7。
+ *
+ * - `observation_handoff.quarantined_at`：隔离结构中不可修复的交接记录，避免坏前缀每次重放都
+ *   从头占用预算、永久饿死其后的有效观察；可重试失败不写此列，仍保持待交接。
+ * - `snapshot_pending_cursor`：记录采样补偿已处理到的行位置，使有界补偿可以越过瞬时失败前缀、
+ *   并在走到队尾后回到起点重试此前失败的意图；不含任何业务规则。
+ */
+function migrationV8(database: MigrationDatabase): void {
+  ensureColumns(database, 'observation_handoff', {
+    quarantined_at: 'TEXT',
+  });
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS snapshot_pending_cursor (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      last_rowid INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT OR IGNORE INTO snapshot_pending_cursor (id, last_rowid) VALUES (1, 0);
+  `);
+}
+
+/** 来源身份与持久排序、交接恢复进度；只追加，不改写 V1～V8。 */
+function migrationV9(database: MigrationDatabase): void {
+  database.exec(`
+    CREATE TABLE snapshot_observation (
+      sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      identity TEXT NOT NULL UNIQUE,
+      repository_id INTEGER NOT NULL REFERENCES repository(id) ON DELETE CASCADE,
+      observed_at TEXT NOT NULL
+    );
+    ALTER TABLE snapshot ADD COLUMN observation_sequence INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE snapshot ADD COLUMN observation_at TEXT;
+    UPDATE snapshot SET observation_at = captured_at;
+    ALTER TABLE snapshot_pending ADD COLUMN observation_sequence INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE observation_replay_cursor (
+      queue_key INTEGER PRIMARY KEY,
+      last_rowid INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+}
+
 /** 按版本递增，保持旧数据库可重复打开。 */
-export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5, migrationV6] as const;
+export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5, migrationV6, migrationV7, migrationV8, migrationV9] as const;
 export const migrationRunner = createMigrationRunner(MIGRATIONS);
 
 /** 生产唯一入口：委托给迁移执行器，内容与 user_version 的原子提交由 runner 保证。 */

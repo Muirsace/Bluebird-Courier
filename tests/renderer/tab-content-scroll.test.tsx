@@ -450,7 +450,7 @@ describe('切 Tab 之外的变化一律不落位', () => {
     installFakeObserver();
     try {
       const handle = createStub({ repositories: [makeGlance(1, 'octocat/Hello-World')] });
-      const release = handle.holdNextDetail();
+      const release = handle.holdNextOpen();
       view = await renderApp(handle);
       await settle();
 

@@ -36,10 +36,11 @@ export interface ObservationCheckDependencies {
   logger?: Logger;
   accessContext: AccessContextPort;
   nextObservationId: () => string;
+  onObserved?(observation: ObservedSummaryRecord): void;
 }
 
 /** 清单 feature 的轻量检查：归一化观察、变化比较、原子保存与待交接记录。 */
-export function createObservationCheck({ db, clock, github, logger, accessContext, nextObservationId }: ObservationCheckDependencies) {
+export function createObservationCheck({ db, clock, github, logger, accessContext, nextObservationId, onObserved }: ObservationCheckDependencies) {
   // 去重登记：启动检查 / 手动检查 / 单仓库重试共用；键包含仓库与访问上下文。
   const inFlight = new Map<string, Promise<RepositorySingleCheckOutcome>>();
   const batches = new Map<number, Promise<RepositoryCheckOutcome>>();
@@ -131,6 +132,7 @@ export function createObservationCheck({ db, clock, github, logger, accessContex
       ? { at: row.activity_at ?? null, kind: row.activity_kind as ActivityCandidate['kind'] | null } : undefined;
     const resolved = resolveActivity([...retained, judgedActivity.code, judgedActivity.release, judgedActivity.collaboration], observedAt, undefined, previousActivity);
     const changeSet = detectChanges(previous, { ...merged, repoId: repository.id });
+    const observationId = nextObservationId();
 
     // Summary、观察信号与待交接记录同事务保存；失败一起回滚（保留旧值并记录失败）。
     try {
@@ -145,7 +147,7 @@ export function createObservationCheck({ db, clock, github, logger, accessContex
         });
         if (changeSet.affectedScopes.length > 0) {
           insertObservationHandoff(db, {
-            observationId: nextObservationId(),
+            observationId,
             repositoryId: repository.id,
             detectedAt: changeSet.detectedAt,
             accessContextRevision,
@@ -164,10 +166,13 @@ export function createObservationCheck({ db, clock, github, logger, accessContex
     const partialError = observation.errors?.find(error => error.kind === 'access_token_invalid' || error.kind === 'rate_limited') ?? observation.errors?.[0] ?? null;
     if (partialError) markRepositoryFailure(db, clock, repository.id, partialError);
     const updated = readRow(db, repository.id)!;
+    const observed = { observationId, repositoryId: repository.id, accessContextRevision, observedAt, values: merged.values };
+    // 真实观察已经提交，立即同步通知；批次等待其他仓库不能倒置与详情来源的先后。
+    try { onObserved?.(observed); } catch (error) { logger?.error('真实清单观察通知失败', error); }
     return {
       repository: rowToGlance(updated),
       error: partialError,
-      observed: { repositoryId: repository.id, accessContextRevision, observedAt, values: merged.values },
+      observed,
     };
   }
 

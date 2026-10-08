@@ -167,7 +167,9 @@ describe('Content readability contracts', () => {
     await click(tab('趋势'));
     const trend = sectionByTitle('趋势')!;
     expect([...trend.querySelectorAll('[data-metric]')].map(el => el.getAttribute('data-metric'))).toEqual(['stars', 'forks']);
-    expect([...trend.querySelectorAll('[role="group"] button')].map(el => el.textContent)).toEqual(['7D', '30D', '90D']);
+    // 只提供有数据支撑的范围：90D 不提供（当前保留期 30 天）
+    expect([...trend.querySelectorAll('[role="group"] button')].map(el => el.textContent)).toEqual(['7D', '30D']);
+    expect(trend.textContent).toContain('趋势按自然日保留最近 30 天记录。');
     expect(stub.calls.fetchDetail).toBe(1);
   });
 

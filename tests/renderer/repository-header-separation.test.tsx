@@ -126,29 +126,31 @@ describe('Repository Header presentation separation', () => {
     expect(stub.externalTargets).toEqual([{ kind: 'repository', owner: 'owner', name: 'A' }]);
     await click(tab('趋势'));
     const panel = document.querySelector('[role="tabpanel"]');
-    const release = stub.holdNextDetail();
+    const release = stub.holdNextForce();
     await click(buttonByText('重新抓取'));
     await settle();
-    expect(stub.calls.fetchDetail).toBe(2);
+    // 强制命令独立计数；打开意图仍只有进入详情的那一次
+    expect(stub.calls.refreshRepository).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(1);
     await resize(width === 900 ? 899 : 900);
     const busy = buttonByText('抓取中…')!;
     expect(busy.disabled).toBe(true);
     expect(busy.getAttribute('aria-busy')).toBe('true');
     expect(document.querySelector('.repository-header-fetched')?.textContent).toContain('正在更新');
     await click(busy);
-    expect(stub.calls.fetchDetail).toBe(2);
+    expect(stub.calls.refreshRepository).toBe(1);
     await act(async () => release());
     await settle();
     expect(buttonByText('重新抓取')?.disabled).toBe(false);
     expect(document.querySelector('[role="tabpanel"]')).toBe(panel);
     expect(tab('趋势')?.getAttribute('aria-selected')).toBe('true');
 
-    const failure = vi.spyOn(stub.api, 'fetchDetail').mockResolvedValueOnce({
+    const force = vi.spyOn(stub.api, 'refreshRepository').mockResolvedValueOnce({
       detail: null, error: { kind: 'unknown', message: 'fixture refresh error' },
     });
     await click(buttonByText('重新抓取'));
     await settle();
-    expect(failure).toHaveBeenCalledExactlyOnceWith(repo.id);
+    expect(force).toHaveBeenCalledExactlyOnceWith(repo.id, true);
     await resize(width);
     expect(document.body.textContent).toContain('fixture refresh error');
     expect(document.querySelector('.repository-header-metrics')?.textContent).toContain('v1.0.1');

@@ -88,7 +88,7 @@ describe('one product state across two layout shells', () => {
 
   it('resize while Detail is fetching retains one request and the selected identity', async () => {
     await mount();
-    const finish = stub.holdNextDetail();
+    const finish = stub.holdNextOpen();
     await click(repoOpenButton(A));
     for (const width of [899, 1152, 768]) {
       await resize(width);

@@ -35,7 +35,7 @@ function Harness() {
   const points = [makeSnapshot(daysAgoIso(2), 100, 10), makeSnapshot(daysAgoIso(0), value, 12)];
   return <>
     <button onClick={() => setScope('30d')}>range</button>
-    <button onClick={() => setScope('90d')}>range90</button>
+    <button onClick={() => setScope('7d')}>range7</button>
     <button onClick={() => setValue(150)}>data</button>
     <button onClick={() => rerender(n => n + 1)}>unrelated</button>
     <button onClick={() => theme.setPreference('dark')}>theme</button>
@@ -54,9 +54,9 @@ describe('Trend native animation boundary', () => {
   it('first 2+ snapshot reveal uses 300ms with unchanged values', async () => {
     await mount(); expect(capture.updates[0]?.duration).toBe(300); expect(capture.updates[0]?.values).toEqual([100, 120]);
   });
-  it('range switches request animation even when 30D/90D contain the same points', async () => {
+  it('range switches request animation even when 7D/30D contain the same points', async () => {
     await mount(); await trigger('range'); expect(capture.updates.at(-1)?.duration).toBe(300);
-    await trigger('range90'); expect(capture.updates.at(-1)?.duration).toBe(300);
+    await trigger('range7'); expect(capture.updates.at(-1)?.duration).toBe(300);
   });
   it('actual dataset change animates on the same Canvas', async () => {
     await mount(); const canvas = document.querySelector('canvas'); await trigger('data');

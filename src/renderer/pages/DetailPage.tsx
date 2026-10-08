@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Detail, DetailResult } from '../../shared/types';
+import type { Detail, Glance } from '../../shared/types';
 import { getApi } from '../lib/api';
 import { resolveAppScrollRoot } from '../lib/app-scroll-root';
 import { useDetailReveal } from '../lib/detail-reveal';
+import { mergeSummary, useDetailView } from '../lib/detail-view';
 import { DETAIL_REVEAL_MOTION, DETAIL_REVEAL_TOTAL_MS } from '../lib/motion';
 import { ErrorBar } from '../components/ErrorBar';
 import { CompactRepositoryContext } from '../components/CompactRepositoryContext';
@@ -12,14 +13,16 @@ import { WorkspaceMessage } from '../components/StateMessage';
 import { describeError } from '../lib/errors';
 import { BuildTab } from '../components/detail/BuildTab';
 import { CommitTab } from '../components/detail/CommitTab';
-import { DetailTabs } from '../components/detail/DetailTabs';
+import { DetailTabs, TAB_DISPLAY_SCOPES, TAB_READ_SCOPES } from '../components/detail/DetailTabs';
 import type { DetailTabId } from '../components/detail/DetailTabs';
 import { IssuesTab } from '../components/detail/IssuesTab';
+import { LocalReadMore } from '../components/detail/LocalReadMore';
 import { OverviewTab } from '../components/detail/OverviewTab';
 import { ReleaseTab } from '../components/detail/ReleaseTab';
 import { RepositoryHeader } from '../components/detail/RepositoryHeader';
 import { RevealItem } from '../components/detail/RevealItem';
 import { TrendTab } from '../components/detail/TrendTab';
+import type { ScopePaging } from '../lib/detail-view';
 
 interface DetailPageProps {
   /** Presentation/lifecycle from App; Sticky observer roots follow actual DOM ownership. */
@@ -41,7 +44,31 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
 }
 
-function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
+/**
+ * 最新主进程 Summary：详情自带 Glance 与清单 Query 的 L1 取 fetchedAt 较新的一个。
+ * 后台采样或详情提交后主进程会给出更新的摘要，较旧的 L1 不能把它覆盖回去；
+ * 首屏还没有任何详情内容时保持 undefined，表头继续用占位符（揭示语义不变）。
+ */
+function newerSummary(detailRepo: Glance | null, listEntry: Glance | undefined): Glance | null {
+  if (!detailRepo) return null;
+  if (!listEntry) return detailRepo;
+  const detailAt = detailRepo.fetchedAt ? Date.parse(detailRepo.fetchedAt) : Number.NaN;
+  const listAt = listEntry.fetchedAt ? Date.parse(listEntry.fetchedAt) : Number.NaN;
+  if (Number.isNaN(listAt)) return Number.isNaN(detailAt) ? mergeSummary(detailRepo, listEntry) : mergeSummary(listEntry, detailRepo);
+  if (Number.isNaN(detailAt)) return mergeSummary(detailRepo, listEntry);
+  // 同毫秒以最新清单查询事实为准，明确 null 不会被旧详情 tag 盖回。
+  return detailAt > listAt ? mergeSummary(listEntry, detailRepo) : mergeSummary(detailRepo, listEntry);
+}
+
+function TabPanel({
+  tab,
+  detail,
+  incompleteIssueScope,
+}: {
+  tab: DetailTabId;
+  detail: Detail;
+  incompleteIssueScope: boolean;
+}) {
   // 外链目标只需要 owner/name，一律取自接口回来的规范值
   const { owner, name } = detail.repository;
   switch (tab) {
@@ -50,13 +77,16 @@ function TabPanel({ tab, detail }: { tab: DetailTabId; detail: Detail }) {
     case 'commits':
       return <CommitTab commits={detail.commits} owner={owner} name={name} />;
     case 'issues':
-      return <IssuesTab issues={detail.issues} pullRequests={detail.pullRequests} owner={owner} name={name} />;
+      return (
+        <IssuesTab issues={detail.issues} pullRequests={detail.pullRequests} owner={owner} name={name}
+          incomplete={incompleteIssueScope} />
+      );
     case 'build':
       return <BuildTab build={detail.build} owner={owner} name={name} />;
     case 'trend':
       return <TrendTab trend={detail.trend} />;
     default:
-      return <OverviewTab detail={detail} />;
+      return <OverviewTab detail={detail} incompleteIssueScope={incompleteIssueScope} />;
   }
 }
 
@@ -70,35 +100,29 @@ export function DetailPage({
   onBack,
   onGoSettings,
 }: DetailPageProps) {
-  const detailQuery = useQuery({
-    queryKey: ['detail', repositoryId],
-    queryFn: async (): Promise<DetailResult> => {
-      try {
-        return await getApi().fetchDetail(repositoryId);
-      } catch {
-        return { detail: null, error: { kind: 'unknown', message: '抓取全量信息失败，请稍后重试' } };
-      }
-    },
-    // 详情是全应用唯一会打 GitHub 网络、且带副作用的查询（一次抓取 = 4 次 API 调用 + 写当日快照）。
-    // 所以它不进任何自动重取通道：只有首次进入（无缓存）和用户点「重新抓取」才真正请求。
-    // gcTime 必须一并放开，否则缓存 5 分钟被回收后再进入会被当成"首次进入"而重抓。
-    // 切 Tab 只是同一个查询实例内的本地状态，不产生任何请求。
-    staleTime: Infinity,
-    gcTime: Infinity,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  // 抓取失败时保留上一次成功加载的全量信息（按仓库归属，切换仓库时不串数据）
-  const [lastDetail, setLastDetail] = useState<{ id: number; detail: Detail } | null>(null);
-  useEffect(() => {
-    const detail = detailQuery.data?.detail;
-    if (detail) setLastDetail({ id: repositoryId, detail });
-  }, [detailQuery.data, repositoryId]);
-
   // 详情内部导航：默认概览
   const [activeTab, setActiveTab] = useState<DetailTabId>('overview');
+  const confirmScopes = TAB_DISPLAY_SCOPES[activeTab];
+  /** 当前 Tab 需要读取的本地范围：内容版本变化与换 Tab 都只读这些，其他范围的有效窗口原样保留。 */
+  const readScopes = TAB_READ_SCOPES[activeTab];
+
+  /**
+   * 最新主进程 Summary：只读清单 Query 的 L1（enabled:false 只订阅、不自行触发读取），
+   * 与详情自带的 Glance 取较新的一个——Stars / Forks 靠它更新，不依赖强制抓取详情。
+   */
+  const listQuery = useQuery({
+    queryKey: ['repositories'],
+    queryFn: () => getApi().listRepositories(),
+    enabled: false,
+    networkMode: 'always',
+  });
+  const listEntry = listQuery.data?.find((item) => item.id === repositoryId);
+  const view = useDetailView({ repositoryId, readScopes, confirmScopes });
+  const repository = useMemo(
+    () => newerSummary(view.detail?.repository ?? null, listEntry) ?? undefined,
+    [listEntry, view.detail],
+  );
+  const summaryFetchedAt = repository?.fetchedAt ?? view.summaryFetchedAt;
 
   /**
    * Repository Header 是否已经滚出视口 → 顶部栏要不要接管"当前仓库"。
@@ -233,24 +257,23 @@ export function DetailPage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onBack, workspace]);
 
-  const fetchedDetail = detailQuery.data?.detail ?? null;
-  const keptDetail = lastDetail && lastDetail.id === repositoryId ? lastDetail.detail : null;
-  const detail = fetchedDetail ?? keptDetail;
-  const fetchError = detailQuery.data?.error ?? null;
-  const detailError = fetchError ?? (detailQuery.isError
-    ? { kind: 'unknown' as const, message: '全量信息加载失败，请稍后重试' }
-    : null);
-  const repository = detail?.repository;
+  const detail = view.detail;
+  const detailError = view.error;
+  /** 当前 Tab 里已按页读取、需要给出翻页入口的范围（概览元数据不可翻页）。 */
+  const paging = readScopes
+    .filter((scope) => scope !== 'overview')
+    .map((scope) => view.paging[scope])
+    .filter((item): item is ScopePaging => item !== undefined);
 
   // 首次抓取的揭示窗口。首帧就有数据（缓存命中）直接算 ready，所以只播一次；
-  // 手动重新抓取时旧数据一直都在，阶段早已离开 loading，也不会重播。
+  // 强制重新抓取时旧数据一直都在，阶段早已离开 loading，也不会重播。
   const reveal = useDetailReveal(detail !== null, DETAIL_REVEAL_TOTAL_MS, workspace);
   // App 按 repositoryId 重挂详情。只在挂载首帧已有全量缓存时播工作区切换；
   // 冷缓存的数据到达继续走原有揭示，不能在 loading → ready 时补整页入场、带着表头再动一次。
   const [hasDetailOnMount] = useState(() => detail !== null);
   const cachedWorkspaceSwitch = workspace && workspaceRepoSwitch && hasDetailOnMount;
-  /** 真·抓取中：刷新时旧数据仍在，这里不算 pending，表头与内容都保持原样。 */
-  const pending = detailQuery.isPending && !detail;
+  /** 真·首次加载中：没有任何可展示内容时才是整页 Loading。 */
+  const pending = view.loading;
 
   return (
     <div className="detail-page space-y-4" data-workspace={workspace}
@@ -265,10 +288,12 @@ export function DetailPage({
           presentation={workspace ? 'desktop' : 'narrow'}
           fullName={fullName}
           repository={repository}
-          fetching={detailQuery.isFetching}
+          summaryFetchedAt={summaryFetchedAt}
+          detailFetchedAt={view.detailFetchedAt}
+          busy={view.busy}
           revealing={reveal === 'revealing'}
           onBack={onBack}
-          onRefetch={() => void detailQuery.refetch()}
+          onRefetch={view.forceRefresh}
         />
         <span ref={repoContextSentinelRef} aria-hidden="true" className="repo-context-sentinel" />
       </div>
@@ -278,7 +303,7 @@ export function DetailPage({
           error={detailError}
           summary="重新抓取失败"
           onGoSettings={onGoSettings}
-          action={{ label: '重试', onClick: () => void detailQuery.refetch(), disabled: detailQuery.isFetching }}
+          action={{ label: '重试', onClick: view.forceRefresh, disabled: view.busy }}
         />
       ) : null}
 
@@ -321,7 +346,7 @@ export function DetailPage({
             */}
             <div ref={tabContentTopRef} className="detail-tab-content-anchor detail-content-responsive">
               {/*
-                刷新期间旧数据仍然有效：不灰化、不遮罩，只由表头的按钮与「正在更新…」表态。
+                后台内容替换期间旧数据仍然有效：不灰化、不遮罩，只由表头的按钮与「正在更新…」表态。
                 key 只认 activeTab：数据更新不会换节点，也就不会把这一屏内容重新播一遍进场；
                 内容进场动画也只属于真正切过 Tab 的那一屏（见 selectTab）。
               */}
@@ -332,8 +357,14 @@ export function DetailPage({
                 aria-labelledby={`detail-tab-${activeTab}`}
                 className={tabContentSwitched === activeTab ? 'tab-panel-enter' : undefined}
               >
-                <TabPanel tab={activeTab} detail={detail} />
+                <TabPanel tab={activeTab} detail={detail} incompleteIssueScope={view.partial.issuesAndPr === true} />
               </div>
+              {/* 有界本地读取只覆盖了若干页：给出上一页 / 下一页，不把当前一页当成完整列表。 */}
+              {paging.length > 0 ? (
+                <div className="mt-3">
+                  <LocalReadMore pages={paging} onPage={view.goPage} />
+                </div>
+              ) : null}
             </div>
           </div>
         ) : pending ? null : (
@@ -341,7 +372,7 @@ export function DetailPage({
             description={detailError ? describeError(detailError) : '请点击「重新抓取」'}
             announcement={detailError ? 'alert' : undefined}>
             <button type="button" className="state-action" aria-label="重新抓取仓库详情"
-              onClick={() => void detailQuery.refetch()} disabled={detailQuery.isFetching}>重新抓取</button>
+              onClick={view.forceRefresh} disabled={view.busy}>重新抓取</button>
             {detailError?.kind === 'access_token_invalid' ? (
               <button type="button" className="state-action" onClick={onGoSettings}>去设置</button>
             ) : null}

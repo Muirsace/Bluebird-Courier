@@ -57,7 +57,7 @@ async function mount(options: StubOptions = {}): Promise<void> {
 
 /** 点开详情。返回值用来放行被挂起的抓取（模拟"数据到达"）。 */
 async function openDetail(): Promise<() => void> {
-  const release = handle.holdNextDetail();
+  const release = handle.holdNextOpen();
   await click(repoOpenButton(FIRST));
   await settle();
   return release;
@@ -178,7 +178,7 @@ describe('详情揭示 · 只播一次', () => {
     expect(revealPhase()).toBe('ready');
 
     const panel = document.querySelector('[role="tabpanel"]');
-    const release = handle.holdNextDetail();
+    const release = handle.holdNextForce();
     await click(buttonByText('重新抓取'));
     await settle();
 
@@ -192,7 +192,9 @@ describe('详情揭示 · 只播一次', () => {
 
     expect(revealPhase()).toBe('ready');
     expect(loadingSlot()).toBeNull();
-    expect(handle.calls.fetchDetail).toBe(2);
+    // 重新抓取是强制命令；打开意图仍然只有进入详情的那一次
+    expect(handle.calls.refreshRepository).toBe(1);
+    expect(handle.calls.fetchDetail).toBe(1);
   });
 
   it('切 Tab 不重播揭示', async () => {
@@ -241,7 +243,9 @@ describe('详情揭示 · 只播一次', () => {
     expect(loadingSlot()).toBeNull();
     expect(factSwaps()).toHaveLength(0);
     expect(document.querySelector('[role="tabpanel"]')?.id).toBe('detail-panel-overview');
-    expect(handle.calls.fetchDetail).toBe(1);
+    // 缓存命中也要表达打开意图：重进是第二次打开，但没有强制命令
+    expect(handle.calls.fetchDetail).toBe(2);
+    expect(handle.calls.refreshRepository).toBe(0);
   });
 });
 
@@ -317,7 +321,9 @@ describe('详情揭示 · 表头细节', () => {
         presentation="narrow"
         fullName={FIRST}
         repository={makeGlance(1, FIRST)}
-        fetching={false}
+        summaryFetchedAt="2026-09-27T00:00:00.000Z"
+        detailFetchedAt={null}
+        busy={false}
         revealing
         onBack={() => {}}
         onRefetch={() => {}}
@@ -343,7 +349,9 @@ describe('详情揭示 · 表头细节', () => {
         presentation="narrow"
         fullName={FIRST}
         repository={makeGlance(1, FIRST)}
-        fetching={false}
+        summaryFetchedAt="2026-09-27T00:00:00.000Z"
+        detailFetchedAt={null}
+        busy={false}
         revealing={false}
         onBack={() => {}}
         onRefetch={() => {}}

@@ -43,7 +43,7 @@ describe('Workspace state ownership', () => {
 
   it.each([900, 899, 480])('%ipx initial loading retains identity with one live message', async (width) => {
     setViewportWidth(width); stub = createStub({ repositories: [repo] });
-    const release = stub.holdNextDetail();
+    const release = stub.holdNextOpen();
     view = await renderApp(stub); await settle();
     const row = repoOpenButton(repo.fullName)!; row.focus();
     await open();
@@ -73,10 +73,13 @@ describe('Workspace state ownership', () => {
     expect(page.textContent).not.toContain('暂无全量信息');
     expect(page.querySelector('[role="tabpanel"]')).toBeNull();
     if (width >= 900) expect(document.activeElement).toBe(row);
-    stub.api.fetchDetail = async () => ({ detail: makeDetail(repo, content), error: null });
+    // 错误重试表达强制命令，不是再表达一次打开意图
+    stub.nextForceResult({ detail: makeDetail(repo, content), error: null });
     await click(buttonByLabel('重新抓取仓库详情')); await settle();
     expect(page.querySelector('[role="alert"]')).toBeNull();
     expect(page.querySelector('[role="tabpanel"]')?.textContent).toContain('Old release');
+    expect(stub.calls.refreshRepository).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(1);
   });
 
   it('initial token-invalid failure retains the existing Settings action', async () => {
@@ -98,7 +101,8 @@ describe('Workspace state ownership', () => {
     setReducedMotion(true);
     await mount(900, { detail: content }); await open();
     const panel = detailPage().querySelector('[role="tabpanel"]');
-    const release = stub.holdNextDetail();
+    // 用户重新抓取 = 强制命令；打开意图仍是唯一一次
+    const release = stub.holdNextForce();
     await click(buttonByText('重新抓取')); await settle();
     expect(buttonByText('抓取中…')?.getAttribute('aria-busy')).toBe('true');
     expect(detailPage().querySelector('.loading-panel')).toBeNull();
@@ -106,15 +110,20 @@ describe('Workspace state ownership', () => {
     expect(panel?.textContent).toContain('Old release');
     expect(detailPage().querySelector('[role="status"]')).toBeNull();
     await act(async () => release()); await settle();
-    let result: DetailResult = { detail: null, error: { kind: 'network', message: 'private exception' } };
-    stub.api.fetchDetail = async () => result;
+    expect(stub.calls.refreshRepository).toBe(1);
+    expect(stub.calls.fetchDetail).toBe(1);
+    // 强制失败：保留旧内容，只就地给出局部错误
+    stub.nextForceResult({ detail: null, error: { kind: 'network', message: 'private exception' } });
     await click(buttonByText('重新抓取')); await settle();
     expect(detailPage().querySelector('.state-error-bar')?.textContent).toContain('重新抓取失败');
     expect(detailPage().querySelector('.state-error-bar')?.textContent).not.toContain('private exception');
     expect(detailPage().querySelector('[role="tabpanel"]')).toBe(panel);
     expect(detailPage().querySelector('.state-workspace')).toBeNull();
-    result = { detail: makeDetail(repo, content), error: null };
+    // 重试仍走强制命令，成功后仍是同一个面板节点
+    stub.nextForceResult({ detail: makeDetail(repo, content), error: null });
     await click(buttonByText('重试')); await settle();
+    expect(stub.calls.refreshRepository).toBe(3);
+    expect(stub.calls.fetchDetail).toBe(1);
     expect(detailPage().querySelector('[role="alert"]')).toBeNull();
     expect(detailPage().textContent).not.toContain('刷新成功');
     expect(detailPage().querySelector('[role="tabpanel"]')).toBe(panel);
@@ -292,7 +301,7 @@ describe('Inline feedback and gate', () => {
   it.each(['light', 'dark', 'system'] as const)('%s / Reduced Motion keeps neutral state and static decorative loading indicator', async (theme) => {
     setReducedMotion(true); setSystemTheme('dark');
     await mount(900, { preferences: { theme } });
-    const release = stub.holdNextDetail(); await open();
+    const release = stub.holdNextOpen(); await open();
     expect(document.documentElement.dataset.theme).toBe(theme === 'light' ? 'light' : 'dark');
     expect(detailPage().querySelector('.state-spinner[aria-hidden="true"]')).not.toBeNull();
     expect(readRendererStyles()).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.state-spinner,[^}]*animation: none;/);

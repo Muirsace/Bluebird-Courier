@@ -152,7 +152,7 @@ describe('Compact Repository Sidebar', () => {
   });
 
   it('keeps the existing no-release wording and handles missing activity', async () => {
-    await mount([{ ...makeGlance(1, A), latestReleaseTag: null, pushedAt: null }]);
+    await mount([{ ...makeGlance(1, A), latestReleaseTag: null, pushedAt: null, activityAt: null, activityKind: null }]);
     expect(repoOpenButton(A)?.textContent).toContain('无发版');
     expect(repoOpenButton(A)?.querySelector('.repository-sidebar-activity')?.textContent?.trim()).toBe('—');
   });

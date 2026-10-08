@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, TransitionEvent } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { NormalizedError, AccessTokenResult, TokenOperationResult } from '../../shared/types';
+import { useQueryClient } from '@tanstack/react-query';
+import type { AccessTokenState, NormalizedError, AccessTokenResult, TokenOperationResult } from '../../shared/types';
 import { getApi } from '../lib/api';
+import { publishAccessTokenState, useAccessTokenState } from '../lib/access-token-state';
 import { prefersReducedMotion } from '../lib/motion';
 import { SettingSection } from '../components/SettingSection';
 import { Spinner } from '../components/Spinner';
@@ -17,6 +18,9 @@ interface SettingsPageProps {
 const SUCCESS_SAVED = '令牌已保存并验证';
 const SUCCESS_REPLACED = '令牌已更换并验证';
 const SUCCESS_VALIDATED = 'GitHub 连接正常';
+const SUCCESS_CLEANED = '本地资料清理已完成';
+const CLEANUP_PENDING_MESSAGE = '令牌已更换，本地资料清理未完成';
+const CLEANUP_PENDING_HINT = '完成清理前不会展示旧访问上下文的本地资料；恢复清理不需要重新输入令牌。';
 
 type TokenFeedback = { kind: 'success' | 'error'; message: string };
 /** saving / validating 是首次保存与测试连接；更换流程有独立生命周期，不在这里表达。 */
@@ -72,21 +76,37 @@ function errorFrom(result: AccessTokenResult): NormalizedError {
   return result.error ?? { kind: 'unknown', message: '操作失败，请稍后重试' };
 }
 
+/**
+ * 本次确认/清理重试对应的令牌与访问上下文是否已提交。
+ *
+ * 新返回用 tokenCommitted 明确表达“已提交但清理可能失败”；字段缺省的旧返回里，
+ * 只有 ok=true 的确认才算已提交（begin/cancel 的 ok=true 不代表提交）。
+ */
+function isCommitted(result: TokenOperationResult): boolean {
+  return result.tokenCommitted === true || (result.tokenCommitted === undefined && result.ok === true);
+}
+
+/** 令牌已提交但持久清理意图仍未完成；ok=false 的已提交结果也属于待清理。 */
+function isCleanupPending(result: TokenOperationResult): boolean {
+  return isCommitted(result) && (result.cleanupPending === true || result.ok !== true);
+}
+
 export function SettingsPage({ onSaved }: SettingsPageProps) {
   const queryClient = useQueryClient();
-  const accessTokenStateQuery = useQuery({
-    queryKey: ['accessTokenState'],
-    queryFn: () => getApi().accessTokenState(),
-  });
-  const configured = accessTokenStateQuery.data?.configured ?? false;
+  const accessToken = useAccessTokenState();
+  const configured = accessToken.configured;
+  /** 持久清理意图：令牌与上下文已提交但旧资料清理未完成，重启后仍成立。 */
+  const cleanupPending = accessToken.cleanupPending;
 
-  const [accessToken, setAccessToken] = useState('');
+  const [accessTokenValue, setAccessTokenValue] = useState('');
   const [revealed, setRevealed] = useState(false);
   const [feedback, setFeedback] = useState<TokenFeedback | null>(null);
   const [renderedFeedback, setRenderedFeedback] = useState<TokenFeedback | null>(null);
   const [pendingOperation, setPendingOperation] = useState<PendingOperation>(null);
   /** 更换流程的渲染镜像；权威值始终在 replacementRef，避免异步续跑读到过期闭包。 */
   const [replacement, setReplacement] = useState<{ stage: ReplacementStage; token: string } | null>(null);
+  /** 清理恢复入口的请求在途镜像；与更换生命周期分开，重启后没有前一次更换的局部状态。 */
+  const [retryingCleanup, setRetryingCleanup] = useState(false);
   const accessTokenValueRef = useRef('');
   /** 当前更换生命周期（含 starting 阶段）；null 表示没有未收尾的更换。 */
   const replacementRef = useRef<ReplacementLifecycle | null>(null);
@@ -154,7 +174,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   function handleTokenChange(value: string): void {
     accessTokenValueRef.current = value;
     requestIdRef.current += 1;
-    setAccessToken(value);
+    setAccessTokenValue(value);
     updateFeedback(null);
     // 验证当前输入时允许继续编辑；一旦输入变化，旧请求的结果与 loading 状态都失效。
     if (pendingOperation === 'validating') setPendingOperation(null);
@@ -173,7 +193,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
       if (result.ok) {
         updateFeedback({ kind: 'success', message: SUCCESS_SAVED });
         accessTokenValueRef.current = '';
-        setAccessToken('');
+        setAccessTokenValue('');
         setRevealed(false);
         queryClient.setQueryData(['accessTokenState'], { configured: true });
         void queryClient.invalidateQueries({ queryKey: ['accessTokenState'] });
@@ -223,7 +243,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   async function handleSave(event: FormEvent): Promise<void> {
     event.preventDefault();
     if (pendingOperation !== null || replacement !== null) return;
-    const value = accessToken.trim();
+    const value = accessTokenValue.trim();
     if (!value) {
       showError('请输入访问令牌');
       return;
@@ -235,7 +255,12 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     await handleFirstSave(value);
   }
 
-  /** 用户确认更换：后端先网络验证，成功后在同步事务里保存新令牌并推进访问上下文。 */
+  /**
+   * 用户确认更换：后端先网络验证，成功后在同步事务里保存新令牌并推进访问上下文。
+   *
+   * tokenCommitted=true 是本次操作对应的令牌与上下文已提交的事实：清理失败也成立。
+   * 因此判定已提交不能用 result.ok（ok=false 只说明后续清理没做完），也不能缺省字段时丢行为。
+   */
   async function handleConfirmReplace(): Promise<void> {
     const current = replacementRef.current;
     if (!current || current.stage !== 'awaiting') return;
@@ -248,22 +273,35 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     updateFeedback(null);
     try {
       const result = await api.confirm(token);
-      if (result.ok) {
-        // 已提交成功是不可逆事实：与表单是否还有效、页面是否还在无关，一律先按事实收尾。
+      if (isCommitted(result)) {
+        // 已提交是不可逆事实：与表单是否还有效、页面是否还在无关，先按事实协调旧上下文。
+        if (!await coordinateCommittedReplacement(result)) {
+          if (mountedRef.current && isCurrentReplacement(generation)) {
+            replacementRef.current = null;
+            setReplacement(null);
+          }
+          return;
+        }
         const mine = isCurrentReplacement(generation);
-        if (mountedRef.current) {
+        if (!mountedRef.current) return;
+        if (!isCleanupPending(result)) {
           if (mine) {
             replacementRef.current = null;
             setReplacement(null);
             accessTokenValueRef.current = '';
-            setAccessToken('');
+            setAccessTokenValue('');
             setRevealed(false);
           }
           // 表单已被取消/改动/离开时也要如实告知：更换已经生效，旧资料已清理。
           updateFeedback({ kind: 'success', message: SUCCESS_REPLACED });
+          if (mine && replacementSeqRef.current === generation && requestIdRef.current === interactionVersion) scheduleOnSaved();
+          return;
         }
-        await applyCommittedReplacement();
-        if (mine && mountedRef.current && replacementSeqRef.current === generation && requestIdRef.current === interactionVersion) scheduleOnSaved();
+        // 令牌已提交但清理未完成：不宣称验证失败、不导航；恢复入口由权威 pending 状态驱动。
+        if (mine) {
+          replacementRef.current = null;
+          setReplacement(null);
+        }
         return;
       }
       // 失败（含验证被取消/被取代）：原令牌与本地资料保留，只有仍属于当前操作时才回到可重试状态。
@@ -279,6 +317,40 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
     }
   }
 
+  /**
+   * 清理恢复：空令牌只重试清理。不验证、不保存令牌、不推进访问上下文，也不调用 begin。
+   * 与更换生命周期无关，因此应用重启、页面刚挂载或前一次更换已收尾时都能直接恢复。
+   */
+  async function handleRetryCleanup(): Promise<void> {
+    if (retryingCleanup) return;
+    const api = replacementApi();
+    if (!api) {
+      showError('当前应用不支持清理访问令牌资料，请重启后再试');
+      return;
+    }
+    const requestId = ++requestIdRef.current;
+    setRetryingCleanup(true);
+    updateFeedback(null);
+    try {
+      const result = await api.confirm('');
+      // 无论成败，已提交的上下文事实都要协调；空值重试不会再次提交令牌与上下文。
+      if (!await coordinateCommittedReplacement(result)) return;
+      if (!mountedRef.current || requestIdRef.current !== requestId) return;
+      if (result.ok === true && !isCleanupPending(result)) {
+        accessToken.resolveCleanup(result.accessContextRevision);
+        updateFeedback({ kind: 'success', message: SUCCESS_CLEANED });
+        scheduleOnSaved();
+      }
+    } catch {
+      if (mountedRef.current && requestIdRef.current === requestId) {
+        // 无法确认清理是否完成：保持恢复入口，可再次重试，不用错误文案猜测状态。
+        void accessToken.refetch();
+      }
+    } finally {
+      if (mountedRef.current) setRetryingCleanup(false);
+    }
+  }
+
   function handleCancelReplace(): void {
     requestIdRef.current += 1;
     reclaimReplacement();
@@ -286,18 +358,56 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   }
 
   /**
-   * 更换成功的渲染层协调：清掉旧访问上下文的展示数据，在途旧 Promise 一并作废。
-   * 与组件状态无关，因此卸载后迟到的成功回包同样执行。
+   * 已提交后的渲染层协调：清掉旧访问上下文的展示数据，在途旧 Promise 一并作废。
+   * 与组件状态、表单生命周期、页面是否卸载都无关，因此迟到的已提交回包同样执行。
    */
-  async function applyCommittedReplacement(): Promise<void> {
-    queryClient.setQueryData(['accessTokenState'], { configured: true });
+  async function coordinateCommittedReplacement(result: TokenOperationResult): Promise<boolean> {
+    if (!isCommitted(result)) {
+      accessToken.refetch();
+      return false;
+    }
+    const pending = isCleanupPending(result);
+    const previous = queryClient.getQueryData<AccessTokenState>(['accessTokenState']);
+    if (result.accessContextRevision === undefined && previous?.accessContextRevision !== undefined) {
+      // 无版本旧回包不能借用当前版本宣告清理完成；只按权威本地状态恢复入口。
+      try {
+        publishAccessTokenState(queryClient, await getApi().accessTokenState());
+      } catch {
+        accessToken.refetch();
+      }
+      return false;
+    }
+    const accepted = publishAccessTokenState(queryClient, {
+      ...(previous ?? { configured: true }),
+      configured: true,
+      cleanupPending: pending,
+      ...(result.accessContextRevision !== undefined
+        ? { accessContextRevision: result.accessContextRevision }
+        : {}),
+    });
+    if (!accepted) return false;
+    const stillCurrent = (): boolean => {
+      const current = queryClient.getQueryData<AccessTokenState>(['accessTokenState']);
+      return current?.accessContextRevision === (result.accessContextRevision ?? previous?.accessContextRevision)
+        && (!pending || current?.cleanupPending === true);
+    };
     void queryClient.invalidateQueries({ queryKey: ['accessTokenState'] });
     // 先取消在途请求，再重置缓存：旧数据立即退出展示，挂载中的视图随即按新上下文重读，
     // 不等下一次无关重渲染（移除查询会让已挂载观察者继续显示已销毁查询里的旧数据）。
     await queryClient.cancelQueries({ queryKey: ['repositories'] });
+    if (!stillCurrent()) return false;
     await queryClient.cancelQueries({ queryKey: ['detail'] });
+    if (!stillCurrent()) return false;
+    await queryClient.cancelQueries({ queryKey: ['trend'] });
+    if (!stillCurrent()) return false;
     await queryClient.resetQueries({ queryKey: ['repositories'] });
+    if (!stillCurrent()) return false;
     await queryClient.resetQueries({ queryKey: ['detail'] });
+    if (!stillCurrent()) return false;
+    await queryClient.resetQueries({ queryKey: ['trend'] });
+    if (!stillCurrent()) return false;
+    if (!pending) accessToken.resolveCleanup(result.accessContextRevision);
+    return true;
   }
 
   /** 让成功提示可见后再跳转。 */
@@ -314,7 +424,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
 
   async function handleValidate(): Promise<void> {
     if (pendingOperation !== null || replacement !== null) return;
-    const value = accessToken.trim();
+    const value = accessTokenValue.trim();
     if (!value) {
       showError('请输入访问令牌');
       return;
@@ -340,7 +450,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
   }
 
   const replacing = replacement !== null && replacement.stage !== 'starting' ? replacement : null;
-  const busy = pendingOperation !== null || replacement !== null;
+  const busy = pendingOperation !== null || replacement !== null || retryingCleanup;
 
   return (
     <div className="settings-page max-w-[840px]">
@@ -354,7 +464,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
         <div className="settings-token-heading">
           <h3 className="min-w-0 text-sm font-medium text-secondary">Personal Access Token</h3>
           <div className="flex shrink-0 items-center gap-2">
-            {accessTokenStateQuery.isPending ? (
+            {accessToken.isPending ? (
               <span role="status" aria-busy="true" aria-atomic="true" className="flex items-center gap-1.5 text-xs text-muted">
                 <Spinner className="h-3.5 w-3.5" /> 读取中…
               </span>
@@ -369,10 +479,10 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                 {configured ? '已配置' : '未配置'}
               </span>
             )}
-            {accessTokenStateQuery.isError ? (
+            {accessToken.isError ? (
               <button
                 type="button"
-                onClick={() => void accessTokenStateQuery.refetch()}
+                onClick={() => accessToken.refetch()}
                 className="inline-flex h-8 items-center rounded border border-default px-2 text-xs text-secondary transition-colors duration-150 ease-out hover:bg-surface-hover active:bg-surface-active"
               >
                 重新读取
@@ -381,6 +491,32 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
           </div>
         </div>
 
+        {cleanupPending ? (
+          <div
+            role="group"
+            aria-label="本地资料清理"
+            className="settings-cleanup-pending mt-4 rounded-md border border-warning/40 bg-warning-soft px-3 py-2.5"
+          >
+            <p className="text-sm font-medium text-secondary">{CLEANUP_PENDING_MESSAGE}</p>
+            <p className="mt-1 text-xs text-muted">{CLEANUP_PENDING_HINT}</p>
+            <div className="mt-2.5 flex flex-wrap items-start gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRetryCleanup()}
+                disabled={retryingCleanup}
+                aria-busy={retryingCleanup}
+                className="flex h-9 min-w-[8rem] shrink-0 items-center justify-center gap-2 rounded-md bg-accent-solid px-4 text-sm font-medium text-accent-contrast transition-colors duration-150 ease-out hover:bg-accent-solid-hover active:bg-accent-solid-pressed disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {retryingCleanup ? (
+                  <span aria-hidden="true">
+                    <Spinner className="h-3.5 w-3.5" />
+                  </span>
+                ) : null}
+                {retryingCleanup ? '清理中…' : '重试清理'}
+              </button>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSave} className="mt-4">
           <div className="space-y-3">
             <div className="min-w-0">
@@ -389,7 +525,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
                   id="accessToken-input"
                   aria-label="Personal Access Token"
                   type={revealed ? 'text' : 'password'}
-                  value={accessToken}
+                  value={accessTokenValue}
                   onChange={(event) => handleTokenChange(event.target.value)}
                   disabled={pendingOperation === 'saving'}
                   placeholder="ghp_…"
@@ -534,6 +670,7 @@ export function SettingsPage({ onSaved }: SettingsPageProps) {
             </div>
           </div>
         </form>
+        )}
       </SettingSection>
     </div>
   );

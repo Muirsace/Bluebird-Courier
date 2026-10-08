@@ -44,14 +44,24 @@ export function writeDetail(db: LocalDatabase, cache: DetailCache, accessContext
   write();
 }
 
+/**
+ * 详情 feature 自有资料表：缓存正文、栏目、范围账本、本地视图版本、观察应用记账、
+ * 分页暂存与任务目标。都是按 repository_id 归属的行；删除仓库或更换访问上下文时一起清理。
+ */
+const DETAIL_OWNED_TABLES = ['detail_cache', 'detail_column', 'detail_scope_state', 'detail_view_state', 'detail_observation_apply', 'cache_query_page', 'sync_task_target'] as const;
+
 export function deleteDetail(db: LocalDatabase, repositoryId: number): void {
-  db.prepare('DELETE FROM detail_cache WHERE repository_id = ?').run(repositoryId);
-  db.prepare('DELETE FROM detail_column WHERE repository_id = ?').run(repositoryId);
+  const remove = db.transaction(() => {
+    for (const table of DETAIL_OWNED_TABLES) db.prepare(`DELETE FROM ${table} WHERE repository_id = ?`).run(repositoryId);
+  });
+  remove();
 }
 
 export function clearDetails(db: LocalDatabase): void {
-  db.prepare('DELETE FROM detail_cache').run();
-  db.prepare('DELETE FROM detail_column').run();
+  const clear = db.transaction(() => {
+    for (const table of DETAIL_OWNED_TABLES) db.prepare(`DELETE FROM ${table}`).run();
+  });
+  clear();
 }
 
 // —— 成功同步的原子写入（步骤 8A）：数据、覆盖基线、范围确认与视图版本同事务 ——

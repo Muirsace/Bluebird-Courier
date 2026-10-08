@@ -9,6 +9,10 @@ function h(): Harness {
   return harness;
 }
 
+function scopeRow(id: number, scope: string): Record<string, unknown> {
+  return h().db.prepare('SELECT * FROM detail_scope_state WHERE repository_id = ? AND scope = ? ORDER BY access_context_revision DESC').get(id, scope) as Record<string, unknown>;
+}
+
 afterEach(() => {
   harness?.destroy();
   harness = null;
@@ -144,29 +148,27 @@ describe('清单检查与观察交接（步骤 6）', () => {
     expect(row.access_context_revision).toBe(0);
   });
 
-  it('HEAD 变化产生待交接记录；重复观察不重复；确认幂等', async () => {
+  it('HEAD 变化及时落到详情账本（dirty）；重复观察不重复增加序号', async () => {
     await readyWithCheckRepo();
     await h().facade.refreshGlance(); // 基线
+    const id = (await h().facade.listRepositories())[0]!.id;
 
     const data = h().github.repos.get('octo-demo/hello-world')!;
     data.observation!.head = 'sha-b';
     h().clock.advanceMs(60_000);
     await h().facade.refreshGlance();
 
-    const pending = h().repositoryList.pendingObservations();
-    expect(pending).toHaveLength(1);
-    expect(pending[0]).toMatchObject({ accessContextRevision: 0 });
-    expect(pending[0]!.changeSet).toMatchObject({ headChanged: true, affectedScopes: ['overview', 'commits', 'builds', 'readme', 'tree'] });
+    // 轻量检查成功即及时交接：变化落到详情账本（只 dirty，不抓详情），待交接队列清空
+    expect(h().repositoryList.pendingObservations()).toEqual([]);
+    expect(scopeRow(id, 'commits')).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale' });
+    expect(h().github.count('fetchScope')).toBe(0);
+    expect(h().github.count('listCommits')).toBe(0);
 
-    // 重复观察同一状态：不产生第二条变化
+    // 重复观察同一状态：不产生新变化，也不重复增加序号
     h().clock.advanceMs(60_000);
     await h().facade.refreshGlance();
-    expect(h().repositoryList.pendingObservations()).toHaveLength(1);
-
-    const observationId = pending[0]!.observationId;
-    expect(h().repositoryList.confirmObservationHandoff(observationId)).toBe(true);
-    expect(h().repositoryList.confirmObservationHandoff(observationId)).toBe(false);
     expect(h().repositoryList.pendingObservations()).toEqual([]);
+    expect(scopeRow(id, 'commits')!.detected_revision).toBe(1);
   });
 
   it('保存失败与交接同事务回滚：摘要保留旧值并记录失败', async () => {
@@ -252,11 +254,13 @@ describe('清单检查与观察交接（步骤 6）', () => {
     expect(row.access_context_revision).toBe(1); // 快照按新上下文保存
     expect((JSON.parse(row.observation_json) as { signals: { headRevision: { value: string } } }).signals.headRevision.value).toBe('sha-b');
 
-    // 上下文内的再次变化可正常发现
+    // 上下文内的再次变化可正常发现（及时交接后待交接队列清空，账本序号推进）
     data.observation!.head = 'sha-c';
     h().clock.advanceMs(60_000);
     await h().facade.refreshGlance();
-    expect(h().repositoryList.pendingObservations()).toHaveLength(1);
+    const id = (await h().facade.listRepositories())[0]!.id;
+    expect(h().repositoryList.pendingObservations()).toEqual([]);
+    expect(scopeRow(id, 'commits')).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale' });
   });
 
   it('启动检查与手动检查并发时共用去重登记', async () => {

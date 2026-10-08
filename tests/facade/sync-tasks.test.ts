@@ -35,12 +35,18 @@ async function readyWithCache(overrides: Partial<FakeRepoData> = {}): Promise<{ 
   return { id };
 }
 
-/** 制造真实交接：先建立观察基线，再推进 HEAD 并经检查产生待交接记录。 */
+/**
+ * 制造真实、仍未交接的观察（HEAD 前进）。
+ * 轻量检查成功后会及时把交接应用到详情账本，这里注入一次应用中断，
+ * 使交接保留在待交接队列，供后续"打开时消费 / 同步中新变化"用例消费。
+ */
 async function produceHeadHandoff(): Promise<void> {
   await h().facade.refreshGlance();
   h().github.repos.get(NAME)!.observation!.head = 'sha-b';
   h().clock.advanceMs(60_000);
-  await h().facade.refreshGlance();
+  const original = h().repositoryDetail.applyObservation;
+  h().repositoryDetail.applyObservation = () => { throw new Error('注入的交接应用中断'); };
+  try { await h().facade.refreshGlance(); } finally { h().repositoryDetail.applyObservation = original; }
 }
 
 /** 直接写入一条构建变化交接（轻量检查当前不产生构建信号，构建脏由验证或范围抓取产生）。 */
@@ -221,13 +227,12 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
     expect(opened.task).toMatchObject({ kind: 'open' });
     expect(opened.task!.targetRevisions.commits).toBe(1);
 
-    // 同步期间又检测到新变化（sha-c）并应用
+    // 同步期间又检测到新变化（sha-c）：轻量检查及时交接，账本序号推进到 2
     h().github.repos.get(NAME)!.observation!.head = 'sha-c';
     h().clock.advanceMs(60_000);
     await h().facade.refreshGlance();
-    const pending = h().repositoryList.pendingObservations();
-    expect(pending).toHaveLength(1);
-    expect(h().repositoryDetail.applyObservation(pending[0]!, h().clock.now().toISOString())).toMatchObject({ applied: true });
+    expect(h().repositoryList.pendingObservations()).toEqual([]);
+    expect(scopeRow(id, 'commits')!.detected_revision).toBe(2);
 
     release();
     await waitTaskSettled(id);

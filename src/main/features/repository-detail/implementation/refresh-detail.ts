@@ -155,7 +155,7 @@ function scopeFullyCovered(outcome: ScopeFetchOutcome): boolean {
  * 上下文变化、仓库删除与任务过期是整批放弃条件；限流/令牌失败只停止后续 HTTP，
  * 已取得的可信范围仍返回给调用方原子提交，未完成范围保留旧值与 dirty。
  */
-export async function loadFullDetail(port: ScopeFetchPort, token: string, repository: Glance, defaultBranch: string | null, revision: number, now: () => string, writable: () => boolean, openStaging?: OpenScopeStaging): Promise<LoadedFullDetail> {
+export async function loadFullDetail(port: ScopeFetchPort, token: string, repository: Glance, defaultBranch: string | null, revision: number, now: () => string, writable: () => boolean, openStaging?: OpenScopeStaging, onObserved?: (observation: NonNullable<LoadedFullDetail['observation']>) => void): Promise<LoadedFullDetail> {
   const limit = 50;
   const request = (scope: DetailScope) => ({ scope, fullName: repository.fullName, defaultBranch, accessContextRevision: revision, observedAt: now(), cursor: null, limit });
   const failures: Partial<Record<DetailScope, string>> = {};
@@ -192,6 +192,10 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
     if (!collected.blocked && !collected.staged) {
       if (candidate?.values && candidate.metadata) { content = candidate; defaultBranch = candidate.metadata.defaultBranch ?? defaultBranch; }
       else if (failures.overview === undefined) failures.overview = '概览内容缺失，不能确认覆盖';
+      // 摘要独立于后续内容范围，取得真实概览即通知；监听器失败不改变采集或提交算法。
+      if (outcome.coverageComplete && content && writable()) {
+        try { onObserved?.({ values: content.values, observedAt: outcome.observedAt }); } catch { /* 采样故障由接收者持久补偿 */ }
+      }
     }
   } catch (error) {
     if (!writable()) throw error;

@@ -4,9 +4,9 @@ import type { Clock } from '../../../core/infra/clock';
 import type { CipherBox } from '../../../core/infra/encryption';
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { Logger } from '../../../core/infra/logger';
-import type { TokenChangeState, TokenOperationResult, TokenSettingsService } from '../contract';
+import type { TokenChangeState, TokenCleanupState, TokenOperationResult, TokenSettingsService } from '../contract';
 import { createReplaceTokenController } from './replace-token';
-import { advanceAccessContextRevision, readAccessContextRevision, readPreferences, readToken, writePreferences, writeTokenAndAdvanceAccessContext } from './token-store';
+import { advanceAccessContextRevision, clearCleanupIntent, readAccessContextRevision, readCleanupIntent, readPreferences, readToken, writePreferences, writeTokenAndAdvanceAccessContext } from './token-store';
 import { createTokenVerifier } from './verify-token';
 
 export interface TokenSettingsDependencies { db: LocalDatabase; cipher: CipherBox; github: GitHubPort; logger?: Logger; clock: Clock }
@@ -72,5 +72,10 @@ export function createTokenSettingsService({ db, cipher, github, logger, clock }
     updateSettings,
     accessContextRevision: () => readAccessContextRevision(db),
     advanceAccessContext: (updatedAt: string) => advanceAccessContextRevision(db, updatedAt),
+    cleanupState: (): TokenCleanupState => {
+      const revision = readCleanupIntent(db);
+      return { pending: revision !== null, accessContextRevision: revision ?? readAccessContextRevision(db) };
+    },
+    completeCleanup: (accessContextRevision: number) => clearCleanupIntent(db, accessContextRevision),
   };
 }

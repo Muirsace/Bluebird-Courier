@@ -24,6 +24,17 @@ async function readyWithRepo(overrides: Partial<FakeRepoData> = {}): Promise<Har
 }
 
 describe('全量信息抓取（详情页）', () => {
+  it('完整打开的趋势状态来自快照feature，与返回的两日数据一致', async () => {
+    await readyWithRepo();
+    const id = (await h().facade.listRepositories())[0]!.id;
+    await h().facade.fetchDetail(id);
+    h().clock.advanceMs(86400000);
+    await h().facade.refreshGlance();
+    const result = await h().facade.fetchDetail(id);
+    expect(result.detail?.trend).toHaveLength(2);
+    expect(result.syncState?.trends?.cacheStatus).toBe('valid');
+  });
+
   it('返回五类更新的完整内容：发版 / 提交 / 议题与合并请求 / 构建状态 / 星标趋势', async () => {
     await readyWithRepo();
     const id = (await h().facade.listRepositories())[0]!.id;
@@ -202,12 +213,18 @@ describe('本地读取与观察应用（步骤 7A）', () => {
     return { id };
   }
 
-  /** 让清单产生一条真实的待交接观察（HEAD 前进）。 */
+  /**
+   * 让清单产生一条真实、仍未交接的观察（HEAD 前进）。
+   * 轻量检查成功后会及时把交接应用到详情账本，这里注入一次应用中断，
+   * 使交接保留在待交接队列，供后续"应用 / 幂等重放 / 重启重放"用例消费。
+   */
   async function producePendingHandoff(id: number): Promise<number> {
     await h().facade.refreshGlance(); // 基线（首次观察不宣称变化）
     h().github.repos.get('octo-demo/hello-world')!.observation!.head = 'sha-b';
     h().clock.advanceMs(60_000);
-    await h().facade.refreshGlance();
+    const original = h().repositoryDetail.applyObservation;
+    h().repositoryDetail.applyObservation = () => { throw new Error('注入的交接应用中断'); };
+    try { await h().facade.refreshGlance(); } finally { h().repositoryDetail.applyObservation = original; }
     const pending = h().repositoryList.pendingObservations();
     if (pending.length !== 1) throw new Error(`expected one pending handoff, got ${pending.length}`);
     return id;
@@ -279,7 +296,7 @@ describe('本地读取与观察应用（步骤 7A）', () => {
       'INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (1, ?, ?, NULL, 1, 0)',
     ).run(payload, '2026-09-26T12:00:00.000Z');
 
-    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false, accessContextRevision: 0, cleanupPending: false });
     const read = await h().facade.readLocalDetail(1);
     expect(read.error).toBeNull();
     expect(read.detail?.releases).toEqual([{ tagName: 'v1', title: 'v1', publishedAt: null }]);

@@ -204,6 +204,147 @@ describe('同步记账存储与兼容升级（V3）', () => {
     expect(db.prepare('SELECT complete_fetched_at FROM detail_cache WHERE repository_id = 1').get()).toEqual({ complete_fetched_at: '2026-09-26T13:00:00.000Z' });
   });
 
+  it('V7 升级：追加待补偿采样意图表，保留旧资料且按仓库级联', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 6)).run(legacy);
+    seedRepository(legacy);
+    legacy.prepare('INSERT INTO detail_cache (repository_id, payload, fetched_at, source_updated_at, schema_version, access_context_revision) VALUES (1, ?, ?, NULL, 1, 0)')
+      .run('{"repositoryId":1,"values":{"releases":[]}}', '2026-09-26T12:00:00.000Z');
+    legacy.prepare('INSERT INTO snapshot (repository_id, captured_at, day, stars, forks, open_issues, latest_release_tag, pushed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(1, '2026-09-26T12:00:00.000Z', '2026-09-26', 1284, 96, 23, 'v2.4.0', '2026-09-25T08:30:00.000Z');
+    expect(legacy.pragma('user_version', { simple: true })).toBe(6);
+    legacy.close();
+
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(tableNames(db)).toContain('snapshot_pending');
+    // 旧资料保留
+    expect(db.prepare('SELECT stars FROM repository WHERE id = 1').get()).toEqual({ stars: 1284 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot').get()).toEqual({ n: 1 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM detail_cache').get()).toEqual({ n: 1 });
+
+    // 稳定身份唯一：同一次真实观察重复登记被主键去重，且只保存观察值与时间（不含令牌）
+    const insert = db.prepare('INSERT OR IGNORE INTO snapshot_pending (identity, repository_id, access_context_revision, observed_at, payload, created_at) VALUES (?, 1, 0, ?, ?, ?)');
+    insert.run('1|2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z', '{"stars":1284}', '2026-09-26T13:00:00.000Z');
+    insert.run('1|2026-09-26T12:00:00.000Z', '2026-09-26T12:00:00.000Z', '{"stars":9999}', '2026-09-26T14:00:00.000Z');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot_pending').get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT payload FROM snapshot_pending WHERE identity = '1|2026-09-26T12:00:00.000Z'").get()).toEqual({ payload: '{"stars":1284}' });
+
+    // 删除仓库级联清理待补偿意图
+    db.prepare('DELETE FROM repository WHERE id = 1').run();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot_pending').get()).toEqual({ n: 0 });
+  });
+
+  it('V7 迁移失败：待补偿表与版本号一起回滚，旧库停留在 V6', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    opened.push(legacy);
+    createMigrationRunner(MIGRATIONS.slice(0, 6)).run(legacy);
+    seedRepository(legacy);
+    const failing = createMigrationRunner([
+      ...MIGRATIONS.slice(0, 6),
+      (database) => {
+        database.exec('CREATE TABLE snapshot_pending (identity TEXT PRIMARY KEY)');
+        throw new Error('注入的 V7 迁移失败');
+      },
+    ]);
+
+    expect(() => failing.run(legacy)).toThrow('注入的 V7 迁移失败');
+
+    expect(legacy.pragma('user_version', { simple: true })).toBe(6);
+    expect(tableNames(legacy)).not.toContain('snapshot_pending');
+    expect(legacy.prepare('SELECT full_name FROM repository WHERE id = 1').get()).toEqual({ full_name: 'octo-demo/hello-world' });
+  });
+
+  it('V8 升级：追加交接隔离列与采样补偿游标表，保留旧资料', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 7)).run(legacy);
+    seedRepository(legacy);
+    legacy.prepare('INSERT INTO observation_handoff (observation_id, repository_id, detected_at, access_context_revision, change_set) VALUES (?, 1, ?, 0, ?)')
+      .run('obs-1', '2026-09-26T12:00:00.000Z', JSON.stringify({ repoId: 1, affectedScopes: ['commits'], detectedAt: '2026-09-26T12:00:00.000Z' }));
+    legacy.prepare('INSERT INTO snapshot (repository_id, captured_at, day, stars, forks, open_issues, latest_release_tag, pushed_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?)')
+      .run('2026-09-26T12:00:00.000Z', '2026-09-26', 1284, 96, 23, 'v2.4.0', '2026-09-25T08:30:00.000Z');
+    expect(legacy.pragma('user_version', { simple: true })).toBe(7);
+    legacy.close();
+
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(tableNames(db)).toContain('snapshot_pending_cursor');
+    // 旧资料与旧交接记录保留，隔离列默认未隔离
+    expect(db.prepare('SELECT stars FROM repository WHERE id = 1').get()).toEqual({ stars: 1284 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM snapshot').get()).toEqual({ n: 1 });
+    expect(db.prepare('SELECT observation_id, quarantined_at FROM observation_handoff').get()).toEqual({ observation_id: 'obs-1', quarantined_at: null });
+    // 补偿游标单行缺省为 0
+    expect(db.prepare('SELECT last_rowid FROM snapshot_pending_cursor WHERE id = 1').get()).toEqual({ last_rowid: 0 });
+  });
+
+  it('V8 迁移失败：隔离列、游标表与版本号一起回滚，旧库停留在 V7', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    opened.push(legacy);
+    createMigrationRunner(MIGRATIONS.slice(0, 7)).run(legacy);
+    seedRepository(legacy);
+    const failing = createMigrationRunner([
+      ...MIGRATIONS.slice(0, 7),
+      (database) => {
+        database.exec('CREATE TABLE snapshot_pending_cursor (id INTEGER PRIMARY KEY)');
+        database.exec('ALTER TABLE observation_handoff ADD COLUMN quarantined_at TEXT');
+        throw new Error('注入的 V8 迁移失败');
+      },
+    ]);
+
+    expect(() => failing.run(legacy)).toThrow('注入的 V8 迁移失败');
+
+    expect(legacy.pragma('user_version', { simple: true })).toBe(7);
+    expect(tableNames(legacy)).not.toContain('snapshot_pending_cursor');
+    const columns = (legacy.pragma('table_info(observation_handoff)') as Array<{ name: string }>).map((column) => column.name);
+    expect(columns).not.toContain('quarantined_at');
+    expect(legacy.prepare('SELECT full_name FROM repository WHERE id = 1').get()).toEqual({ full_name: 'octo-demo/hello-world' });
+  });
+
+  it('V8旧库升级V9保留快照、待补偿、交接与已有游标，重复打开幂等', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 8)).run(legacy);
+    seedRepository(legacy);
+    const at = '2026-09-26T04:00:00.000Z';
+    legacy.prepare('INSERT INTO snapshot (repository_id, captured_at, day, stars) VALUES (1, ?, ?, 100)').run(at, '2026-09-26');
+    legacy.prepare('INSERT INTO snapshot_pending (identity, repository_id, access_context_revision, observed_at, payload, created_at) VALUES (?, 1, 0, ?, ?, ?)').run('old-pending', at, '{"stars":200}', at);
+    legacy.prepare('INSERT INTO observation_handoff (observation_id, repository_id, detected_at, access_context_revision, change_set) VALUES (?, 1, ?, 0, ?)').run('old-handoff', at, '{}');
+    legacy.prepare('UPDATE snapshot_pending_cursor SET last_rowid = 7 WHERE id = 1').run();
+    legacy.close();
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.prepare('SELECT captured_at, stars, observation_sequence, observation_at FROM snapshot').get()).toEqual({ captured_at: at, stars: 100, observation_sequence: 0, observation_at: at });
+    expect(db.prepare('SELECT identity, payload, observation_sequence FROM snapshot_pending').get()).toEqual({ identity: 'old-pending', payload: '{"stars":200}', observation_sequence: 0 });
+    expect(db.prepare('SELECT observation_id FROM observation_handoff').get()).toEqual({ observation_id: 'old-handoff' });
+    expect(db.prepare('SELECT last_rowid FROM snapshot_pending_cursor').get()).toEqual({ last_rowid: 7 });
+    expect(tableNames(db)).toEqual(expect.arrayContaining(['snapshot_observation', 'observation_replay_cursor']));
+    db.close();
+    expect(open(pathname).prepare('SELECT COUNT(*) AS n FROM snapshot').get()).toEqual({ n: 1 });
+  });
+
+  it('实际V9迁移执行后注入失败，新增列/表和版本一起回滚且可重试', () => {
+    const db = new Database(tempDbPath());
+    opened.push(db);
+    createMigrationRunner(MIGRATIONS.slice(0, 8)).run(db);
+    seedRepository(db);
+    const failing = createMigrationRunner([...MIGRATIONS.slice(0, 8), (database) => {
+      MIGRATIONS[8](database);
+      throw new Error('V9失败');
+    }]);
+    expect(() => failing.run(db)).toThrow('V9失败');
+    expect(db.pragma('user_version', { simple: true })).toBe(8);
+    expect(tableNames(db)).not.toContain('snapshot_observation');
+    expect(tableNames(db)).not.toContain('observation_replay_cursor');
+    for (const table of ['snapshot', 'snapshot_pending']) expect((db.pragma(`table_info(${table})`) as Array<{ name: string }>).map(row => row.name)).not.toContain('observation_sequence');
+    expect(db.prepare('SELECT stars FROM repository').get()).toEqual({ stars: 1284 });
+    createMigrationRunner(MIGRATIONS).run(db);
+    expect(db.pragma('user_version', { simple: true })).toBe(9);
+  });
+
   it('迁移中途失败：该版本已写入的内容与 user_version 一起回滚', () => {
     const pathname = tempDbPath();
     const db = new Database(pathname);

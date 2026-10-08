@@ -8,19 +8,28 @@ import type { Snapshot } from '../../shared/types';
 
 export type TrendMetricName = 'stars' | 'forks';
 
-/** 可选时间范围；`all` = 已记录的全部历史（概览摘要用）。 */
-export type TrendRange = '7d' | '30d' | '90d';
+/**
+ * 可选时间范围；`all` = 已记录的全部历史（概览摘要用）。
+ * 只提供 7D / 30D：当前保留策略是同仓库最近 30 个自然日，90D 会让人误以为有完整 90 日历史，
+ * 因此不提供该入口，也不扩展保留期（设计 14.2）。
+ */
+export type TrendRange = '7d' | '30d';
 export type TrendScope = TrendRange | 'all';
 
-export const TREND_RANGES: readonly TrendRange[] = ['7d', '30d', '90d'];
+export const TREND_RANGES: readonly TrendRange[] = ['7d', '30d'];
 
 export const TREND_RANGE_LABELS: Record<TrendRange, string> = {
   '7d': '7D',
   '30d': '30D',
-  '90d': '90D',
 };
 
-export const TREND_RANGE_DAYS: Record<TrendRange, number> = { '7d': 7, '30d': 30, '90d': 90 };
+export const TREND_RANGE_DAYS: Record<TrendRange, number> = { '7d': 7, '30d': 30 };
+
+/** 当前趋势保留期：主进程同仓库同日只留最后一档、最近 30 个自然日。 */
+export const TREND_RETENTION_DAYS = 30;
+
+/** 趋势区的保留范围说明，与 7D / 30D 两个入口使用同一产品文案。 */
+export const TREND_RETENTION_NOTE = `趋势按自然日保留最近 ${TREND_RETENTION_DAYS} 天记录。`;
 
 export const DEFAULT_TREND_RANGE: TrendRange = '7d';
 

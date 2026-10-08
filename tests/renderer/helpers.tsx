@@ -6,7 +6,13 @@ import type { Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionConfig } from 'motion/react';
 import { vi } from 'vitest';
-import type { AddRepositoryResult, AccessTokenResult, Detail, Glance, GitHubExternalTarget, BluebirdCourierBridge, OpenExternalResult, Snapshot } from '../../src/shared/types';
+import type {
+  AddRepositoryResult, AccessTokenResult, ColumnName, ColumnResult, Detail, DetailResult, DetailScope,
+  DisplayAcknowledgment, Glance, GitHubExternalTarget, BluebirdCourierBridge, LocalReadRequest,
+  LocalReadResult, OpenExternalResult, PaginationCursor, ScopeSyncState, Snapshot, TaskSnapshot,
+  CommitItem, IssueItem, PullRequestItem, ReleaseItem, NormalizedError,
+} from '../../src/shared/types';
+import { LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT } from '../../src/shared/types';
 import { App } from '../../src/renderer/pages/App';
 import { ThemeProvider } from '../../src/renderer/lib/theme';
 
@@ -85,6 +91,10 @@ export function resetReducedMotion(): void {
 
 // ---------- 桩门面 ----------
 
+/**
+ * 桥接调用计数：打开意图、强制命令、只读读取（分模式）与展示确认分别计数，
+ * 让断言能区分"表达了打开意图"、"真的下了强制命令"和"只是读了本地状态"。
+ */
 export interface StubCalls {
   accessTokenState: number;
   saveAccessToken: number;
@@ -93,13 +103,45 @@ export interface StubCalls {
   updateSettings: number;
   listRepositories: number;
   refreshGlance: number;
+  /** 打开意图（fetchDetail）：每次实际导航各一次，不等待后台网络。 */
   fetchDetail: number;
+  /** 强制命令（refreshRepository）：用户重新抓取与错误重试才走这里。 */
+  refreshRepository: number;
+  /** 只读本地读取总数，以及按模式拆分（status 只读轻量状态；view 读有界内容）。 */
   readLocalDetail: number;
+  readLocalStatus: number;
+  readLocalView: number;
   acknowledgeRepositoryViewed: number;
   addRepository: number;
   inspectRepositoryInput: number;
   removeRepository: number;
   openGitHubExternal: number;
+}
+
+/** 桩里的本地视图事实：版本、访问上下文、任务快照、两个成功时间与内容。 */
+export interface StubLocalState {
+  /** 本地 L2 没有可展示内容（离线未抓过 / 换上下文后已清理）。 */
+  localEmpty: boolean;
+  viewVersion: number;
+  detailViewVersion: number;
+  accessContextRevision: number;
+  task: TaskSnapshot | null;
+  /** null = 沿用当前 Summary 的 fetchedAt（真实摘要检查时间）。 */
+  summaryFetchedAt: string | null;
+  /** null = 尚未完整同步（首次部分成功或旧库未知）。 */
+  detailFetchedAt: string | null;
+  /** 详情内容夹具（完整列表；读取时按范围与游标做有界切片）。 */
+  detailPatch: Partial<Detail>;
+  /** 权威范围账本夹具：可模拟 Glance 未变但 HEAD/defaultBranch 已推进的重要序号。 */
+  scopeState?: Partial<Record<DetailScope, Partial<ScopeSyncState>>>;
+}
+
+export interface StubReadRequest {
+  repositoryId: number;
+  mode: 'view' | 'status';
+  scopes?: readonly DetailScope[];
+  itemLimit?: number;
+  cursors?: Partial<Record<DetailScope, PaginationCursor>>;
 }
 
 export interface StubHandle {
@@ -113,6 +155,18 @@ export interface StubHandle {
   externalTargets: GitHubExternalTarget[];
   /** 收到过的新增仓库原始输入。 */
   addInputs: string[];
+  /** 本地视图当前事实（只读快照）。 */
+  readonly local: Readonly<StubLocalState>;
+  /** 更新本地视图事实：版本推进、上下文更换、任务快照、时间与内容都从这里驱动。 */
+  setLocal(patch: Partial<StubLocalState>): void;
+  /** 主进程后台任务快照：非空期间页面应做只读状态轮询。 */
+  setTask(task: TaskSnapshot | null): void;
+  /** 收到过的强制命令（force 标志一并记录，不能伪装成打开意图）。 */
+  refreshRequests: Array<{ repositoryId: number; force: boolean | undefined }>;
+  /** 收到过的只读读取请求（用于核对范围、上限与模式）。 */
+  readRequests: StubReadRequest[];
+  /** 收到过的展示确认。 */
+  acknowledgments: Array<DisplayAcknowledgment & { repositoryId: number }>;
   /** 下次 listRepositories 返回的清单（删除成功后用它模拟清单缩小）。 */
   setRepositories(repositories: Glance[]): void;
   /** 让下一次 listRepositories 挂起，返回放行函数。 */
@@ -124,9 +178,22 @@ export interface StubHandle {
   /** 让下一次 addRepository 挂起，返回放行函数。 */
   holdNextAdd(): () => void;
   /** 让下一次 openGitHubExternal 挂起，返回放行函数。 */
+  holdNextExternalLink(): () => void;
+  /** 让下一次打开意图（fetchDetail）挂起，返回放行函数。 */
   holdNextOpen(): () => void;
-  /** 让下一次 fetchDetail 挂起，返回放行函数。 */
-  holdNextDetail(): () => void;
+  /** 让下一次强制命令（refreshRepository）挂起，返回放行函数。 */
+  holdNextForce(): () => void;
+  /** 让下一次只读 status 读取挂起，返回放行函数。 */
+  holdNextStatus(): () => void;
+  /** 让下一次只读 view 读取挂起，返回放行函数。 */
+  holdNextView(): () => void;
+  /**
+   * 指定下一次打开意图的返回（一次性，之后回到默认行为）。
+   * 用它可以改变返回内容而不绕过调用计数——直接覆盖 api 方法会让计数失真。
+   */
+  nextOpenResult(result: DetailResult): void;
+  /** 指定下一次强制命令的返回（一次性，之后回到默认行为）。 */
+  nextForceResult(result: DetailResult): void;
 }
 
 export interface StubOptions {
@@ -148,8 +215,12 @@ export interface StubOptions {
   detail?: Partial<Detail>;
   /** openGitHubExternal 的返回（默认成功）。 */
   openExternalResult?: OpenExternalResult;
-  /** fetchDetail 返回失败 envelope（detail 为 null + error）：首次抓取失败的语义。 */
+  /** 打开意图返回失败 envelope（本地无可展示缓存且首次获取失败）。 */
   detailFails?: boolean;
+  /** 强制命令返回失败 envelope：旧内容保留、错误局部呈现。 */
+  forceFails?: boolean;
+  /** 初始本地视图事实（版本 / 上下文 / 任务 / 时间 / 截断）。 */
+  local?: Partial<StubLocalState>;
 }
 
 export function makeGlance(id: number, fullName: string): Glance {
@@ -166,6 +237,9 @@ export function makeGlance(id: number, fullName: string): Glance {
     pushedAt: '2026-09-26T00:00:00.000Z',
     latestReleaseTag: `v1.0.${id}`,
     fetchedAt: '2026-09-27T00:00:00.000Z',
+    // 主进程聚合的活动结果：卡片与详情表头的「最近活动」只格式化它。
+    activityAt: '2026-09-26T00:00:00.000Z',
+    activityKind: 'code',
   };
 }
 
@@ -179,6 +253,19 @@ export function makeDetail(repository: Glance, overrides: Partial<Detail> = {}):
     build: { status: 'none', conclusion: null, workflowName: null, url: null, finishedAt: null },
     // 空趋势：概览只渲染「随使用积累」提示，不拉 chart.js 画布
     trend: [],
+    ...overrides,
+  };
+}
+
+/** 主进程后台任务快照（只含状态与版本，不携带详情 payload）。 */
+export function makeTask(overrides: Partial<TaskSnapshot> = {}): TaskSnapshot {
+  return {
+    taskId: 'task-1',
+    kind: 'open',
+    status: 'running',
+    targetScopes: ['overview'],
+    targetRevisions: {},
+    startedAt: '2026-10-08T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -200,6 +287,119 @@ export function daysAgoIso(daysAgo: number, hour = 0): string {
   return date.toISOString();
 }
 
+// —— 长列表夹具：有界分页要用真实条数与顺序验证"最后一条到底能不能读到" ——
+
+/** n 条提交（编号从 1 起，按 1..n 顺序保存，最后一条最旧）。 */
+export function makeCommits(count: number, prefix = 'c'): CommitItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    sha: `${prefix}-${index + 1}`,
+    message: `${prefix} 提交 ${index + 1}`,
+    authorName: 'dev',
+    committedAt: daysAgoIso(0),
+  }));
+}
+
+/** n 个议题。 */
+export function makeIssues(count: number, prefix = 'i'): IssueItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    number: index + 1,
+    title: `${prefix} 议题 ${index + 1}`,
+    body: null,
+    state: 'open',
+    authorName: 'dev',
+    updatedAt: daysAgoIso(0),
+  }));
+}
+
+/** n 个合并请求。 */
+export function makePulls(count: number, prefix = 'p'): PullRequestItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    number: 1000 + index + 1,
+    title: `${prefix} 合并请求 ${index + 1}`,
+    body: null,
+    state: 'open',
+    authorName: 'dev',
+    updatedAt: daysAgoIso(0),
+  }));
+}
+
+/** n 条发版。 */
+export function makeReleases(count: number, prefix = 'v'): ReleaseItem[] {
+  return Array.from({ length: count }, (_, index) => ({
+    tagName: `${prefix}${index + 1}`,
+    title: `${prefix} 发版 ${index + 1}`,
+    publishedAt: daysAgoIso(0),
+  }));
+}
+
+/** 桩里"主进程默认读取"覆盖的范围：全部已缓存范围（含 README / 目录树）。 */
+const ALL_SCOPES: readonly DetailScope[] = ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'readme', 'tree', 'trends'];
+
+/** 范围里参与分页的列表字段（按此顺序共用同一个条目预算，与主进程一致）。 */
+const SCOPE_LISTS: Record<DetailScope, readonly (keyof Detail)[]> = {
+  overview: [],
+  releases: ['releases', 'tags'],
+  commits: ['commits'],
+  issuesAndPr: ['issues', 'pullRequests'],
+  builds: ['builds'],
+  readme: ['readmes'],
+  tree: ['tree'],
+  trends: ['trend'],
+};
+
+/** 栏目到范围的映射（与主进程一致）：只读回部分范围时，栏位状态也按范围取舍。 */
+const COLUMN_SCOPE: Record<ColumnName, DetailScope> = {
+  overview: 'overview',
+  releases: 'releases',
+  tags: 'releases',
+  commits: 'commits',
+  issues: 'issuesAndPr',
+  pullRequests: 'issuesAndPr',
+  builds: 'builds',
+  readme: 'readme',
+  tree: 'tree',
+};
+
+/**
+ * 桩的续读游标与主进程同一形状：绑定仓库、访问上下文、内容版本（含完整同步时间）与范围。
+ * 渲染层原样透传，桩据此校验；换版 / 换上下文后旧游标一律失效。
+ */
+function stubCursor(state: StubLocalState, repositoryId: number, scope: DetailScope, offset: number): PaginationCursor {
+  return JSON.stringify({
+    repositoryId,
+    accessContextRevision: state.accessContextRevision,
+    detailViewVersion: state.detailViewVersion,
+    fetchedAt: state.detailFetchedAt,
+    scope,
+    offset,
+  });
+}
+
+/** 解析并校验游标：null = 该范围新格式失效（陈旧版本 / 上下文 / 损坏）。 */
+function stubCursorOffset(cursor: PaginationCursor | undefined, state: StubLocalState, repositoryId: number, scope: DetailScope): number | null {
+  if (cursor == null) return 0;
+  try {
+    const value = JSON.parse(cursor) as Record<string, unknown>;
+    return value.repositoryId === repositoryId
+      && value.accessContextRevision === state.accessContextRevision
+      && value.detailViewVersion === state.detailViewVersion
+      && value.fetchedAt === state.detailFetchedAt
+      && value.scope === scope
+      && typeof value.offset === 'number' && Number.isSafeInteger(value.offset) && value.offset >= 0
+      ? value.offset
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface StubPage {
+  detail: Detail | null;
+  cursors: Partial<Record<DetailScope, PaginationCursor>>;
+  truncated: boolean;
+  error: NormalizedError | null;
+}
+
 export function createStub(options: StubOptions = {}): StubHandle {
   let repositories = options.repositories ?? [makeGlance(1, 'octocat/Hello-World')];
   let preferences: Record<string, string> = { ...options.preferences };
@@ -208,8 +408,25 @@ export function createStub(options: StubOptions = {}): StubHandle {
   let gate: Promise<void> | null = null;
   let removeGate: Promise<void> | null = null;
   let addGate: Promise<void> | null = null;
+  let externalGate: Promise<void> | null = null;
   let openGate: Promise<void> | null = null;
-  let detailGate: Promise<void> | null = null;
+  let forceGate: Promise<void> | null = null;
+  let statusGate: Promise<void> | null = null;
+  let viewGate: Promise<void> | null = null;
+  let nextOpen: DetailResult | null = null;
+  let nextForce: DetailResult | null = null;
+  const local: StubLocalState = {
+    localEmpty: false,
+    viewVersion: 1,
+    detailViewVersion: 1,
+    accessContextRevision: 1,
+    task: null,
+    summaryFetchedAt: null,
+    detailFetchedAt: null,
+    // README / 目录树默认非空：用来验证展示层不持有未展示的范围。
+    detailPatch: { readmes: [{ language: 'TypeScript', content: '# Hello-World' }], tree: [{ path: 'src', kind: 'directory' }], ...options.detail },
+    ...options.local,
+  };
   const calls: StubCalls = {
     accessTokenState: 0,
     saveAccessToken: 0,
@@ -219,7 +436,10 @@ export function createStub(options: StubOptions = {}): StubHandle {
     listRepositories: 0,
     refreshGlance: 0,
     fetchDetail: 0,
+    refreshRepository: 0,
     readLocalDetail: 0,
+    readLocalStatus: 0,
+    readLocalView: 0,
     acknowledgeRepositoryViewed: 0,
     addRepository: 0,
     inspectRepositoryInput: 0,
@@ -228,6 +448,132 @@ export function createStub(options: StubOptions = {}): StubHandle {
   };
   const externalTargets: GitHubExternalTarget[] = [];
   const addInputs: string[] = [];
+  const refreshRequests: StubHandle['refreshRequests'] = [];
+  const readRequests: StubReadRequest[] = [];
+  const acknowledgments: StubHandle['acknowledgments'] = [];
+
+  function findRepository(repositoryId: number): Glance | null {
+    return repositories.find((item) => item.id === repositoryId) ?? null;
+  }
+
+  /** 本地保存的完整详情（未按范围投影）。 */
+  function storedDetail(repository: Glance): Detail {
+    return makeDetail(repository, { releases: [], commits: [], issues: [], pullRequests: [], trend: [], ...local.detailPatch });
+  }
+
+  /**
+   * 单范围的一页：该范围的列表字段按顺序共用一个条目预算，从 offset 起取 limit 条。
+   * 与主进程 readLocalScopePage 的行为一致（issues 先于 pullRequests、releases 先于 tags）。
+   */
+  function pageScope(full: Detail, scope: DetailScope, offset: number, limit: number): { values: Partial<Detail>; count: number; hasMore: boolean } {
+    const values: Partial<Detail> = {};
+    if (scope === 'overview') return { values: { metadata: full.metadata }, count: 0, hasMore: false };
+    if (scope === 'builds') values.build = full.build;
+    const keys = SCOPE_LISTS[scope];
+    const combined: unknown[] = keys.flatMap((key) => ((full[key] as unknown[] | undefined) ?? []));
+    const page = combined.slice(offset, offset + limit);
+    // 按各列表在合并序列里的实际位置切片：跨栏目的一页要落在正确的字段上。
+    let fieldStart = 0;
+    for (const key of keys) {
+      const source = (full[key] as unknown[] | undefined) ?? [];
+      const from = Math.max(0, offset - fieldStart);
+      const to = Math.min(source.length, offset + page.length - fieldStart);
+      (values as Record<string, unknown>)[key] = source.slice(from, Math.max(from, to));
+      fieldStart += source.length;
+    }
+    return { values, count: page.length, hasMore: combined.length > offset + page.length };
+  }
+
+  /**
+   * 按范围与游标做真实有界切片：只返回请求范围的内容，各自带绑定版本的下一页游标。
+   * 游标失效（换版 / 换上下文 / 损坏）时该范围不带内容，并按主进程的方式给出错误。
+   */
+  function sliceScopes(repository: Glance, scopes: readonly DetailScope[], cursors: Partial<Record<DetailScope, PaginationCursor>> | undefined, limit: number): StubPage {
+    if (local.localEmpty) return { detail: null, cursors: {}, truncated: false, error: null };
+    const full = storedDetail(repository);
+    const projected = makeDetail(repository);
+    const nextCursors: Partial<Record<DetailScope, PaginationCursor>> = {};
+    let truncated = false;
+    let error: NormalizedError | null = null;
+    for (const scope of scopes) {
+      const offset = stubCursorOffset(cursors?.[scope], local, repository.id, scope);
+      if (offset === null) {
+        error ??= { kind: 'unknown', message: `${scope} 本地续读游标已失效，请重新读取该范围` };
+        continue;
+      }
+      const page = pageScope(full, scope, offset, limit);
+      Object.assign(projected, page.values);
+      if (page.hasMore) {
+        truncated = true;
+        nextCursors[scope] = stubCursor(local, repository.id, scope, offset + page.count);
+      }
+    }
+    return { detail: projected, cursors: nextCursors, truncated, error };
+  }
+
+  function summaryFetchedAt(repository: Glance | null): string | null {
+    return local.summaryFetchedAt ?? repository?.fetchedAt ?? null;
+  }
+
+  function syncState(): Partial<Record<DetailScope, ScopeSyncState>> {
+    const state: Partial<Record<DetailScope, ScopeSyncState>> = {};
+    for (const scope of ALL_SCOPES) {
+      state[scope] = {
+        cacheStatus: local.localEmpty ? 'missing' : 'valid',
+        freshness: 'unknown',
+        checkStatus: 'idle',
+        syncStatus: 'idle',
+        detectedRevision: 0,
+        syncedRevision: 0,
+        importantRevision: 0,
+        viewedRevision: 0,
+        dirtyReasons: [],
+        ...local.scopeState?.[scope],
+      };
+    }
+    return state;
+  }
+
+  function columns(): Partial<Record<ColumnName, ColumnResult>> {
+    const columns: Partial<Record<ColumnName, ColumnResult>> = {};
+    for (const name of ['overview', 'releases', 'tags', 'commits', 'issues', 'pullRequests', 'builds'] as const) {
+      columns[name] = { status: local.localEmpty ? 'loading' : 'success', value: null, error: null };
+    }
+    return columns;
+  }
+
+  /** 只返回请求范围的栏位状态：与主进程按选中范围收口栏位的行为一致。 */
+  function columnsFor(scopes: readonly DetailScope[]): Partial<Record<ColumnName, ColumnResult>> {
+    const all = columns();
+    const selected: Partial<Record<ColumnName, ColumnResult>> = {};
+    for (const name of Object.keys(all) as ColumnName[]) {
+      if (scopes.includes(COLUMN_SCOPE[name])) selected[name] = all[name];
+    }
+    return selected;
+  }
+
+  /** 打开 / 强制命令的结果：本地视图 + 范围状态 + 任务快照 + 两个成功时间。 */
+  function detailResultFromLocal(repositoryId: number, force: boolean): DetailResult {
+    const repository = findRepository(repositoryId);
+    if (!repository) return { detail: null, error: { kind: 'not_found', message: '监控仓库不存在' } };
+    // 打开 / 强制与主进程一样按缺省上限读取首页，其余条目靠返回的游标续读。
+    const page = sliceScopes(repository, ALL_SCOPES, undefined, LOCAL_READ_DEFAULT_LIMIT);
+    return {
+      detail: page.detail,
+      error: page.error,
+      cached: !force && page.detail !== null,
+      columns: columns(),
+      viewVersion: local.viewVersion,
+      detailViewVersion: local.detailViewVersion,
+      accessContextRevision: local.accessContextRevision,
+      cursors: page.cursors,
+      truncated: page.truncated,
+      summaryFetchedAt: summaryFetchedAt(repository),
+      detailFetchedAt: local.detailFetchedAt,
+      syncState: syncState(),
+      task: local.task,
+    };
+  }
 
   const api: BluebirdCourierBridge = {
     async accessTokenState() {
@@ -256,11 +602,13 @@ export function createStub(options: StubOptions = {}): StubHandle {
     async setThemePreference() {},
     async listRepositories() {
       calls.listRepositories += 1;
+      // 调用时捕获清单；延迟期间的主进程变化不能伪装成这份旧回包里的新事实。
+      const result = repositories;
       if (listGate) await listGate;
       if (options.listFailFrom && calls.listRepositories >= options.listFailFrom) {
         throw new Error('stub: listRepositories 失败');
       }
-      return repositories;
+      return result;
     },
     async addRepository(fullName) {
       calls.addRepository += 1;
@@ -292,43 +640,104 @@ export function createStub(options: StubOptions = {}): StubHandle {
     },
     async fetchDetail(repositoryId) {
       calls.fetchDetail += 1;
-      if (detailGate) await detailGate;
-      if (options.detailFails) {
-        return { detail: null, error: { kind: 'unknown', message: '抓取全量信息失败，请稍后重试' } };
+      // 回包在调用时就算好，再走（可挂起的）桥接延迟：迟到的回包带的是当时的内容与上下文。
+      let result: DetailResult;
+      if (nextOpen) {
+        result = nextOpen;
+        nextOpen = null;
+      } else {
+        const repository = findRepository(repositoryId);
+        if (!repository) result = { detail: null, error: null };
+        else if (options.detailFails) result = { detail: null, error: { kind: 'unknown', message: '抓取全量信息失败，请稍后重试' } };
+        else {
+          if (local.localEmpty) {
+            // 没有可展示缓存：本次打开等待必要的首次获取，成功即提交内容与完整成功时间。
+            local.localEmpty = false;
+            local.detailFetchedAt = local.detailFetchedAt ?? new Date().toISOString();
+          }
+          result = detailResultFromLocal(repositoryId, false);
+        }
       }
-      const repository = repositories.find((item) => item.id === repositoryId);
-      if (!repository) return { detail: null, error: null };
-      return { detail: makeDetail(repository, options.detail), error: null };
+      if (openGate) await openGate;
+      return result;
     },
-    async readLocalDetail(repositoryId) {
+    async refreshRepository(repositoryId, force) {
+      calls.refreshRepository += 1;
+      refreshRequests.push({ repositoryId, force });
+      let result: DetailResult;
+      if (nextForce) {
+        result = nextForce;
+        nextForce = null;
+      } else {
+        const repository = findRepository(repositoryId);
+        if (!repository) result = { detail: null, error: { kind: 'not_found', message: '监控仓库不存在' } };
+        else if (options.forceFails) result = { detail: null, error: { kind: 'network', message: '网络请求失败' } };
+        else {
+          local.localEmpty = false;
+          // 强制成功 = 完整同步提交：完整详情时间推进到本次成功。
+          local.detailFetchedAt = new Date().toISOString();
+          result = detailResultFromLocal(repositoryId, true);
+        }
+      }
+      if (forceGate) await forceGate;
+      return result;
+    },
+    async readLocalDetail(repositoryId: number, request?: LocalReadRequest): Promise<LocalReadResult> {
+      const mode = request?.mode === 'status' ? 'status' : 'view';
       calls.readLocalDetail += 1;
-      const repository = repositories.find((item) => item.id === repositoryId);
-      return {
+      if (mode === 'status') calls.readLocalStatus += 1;
+      else calls.readLocalView += 1;
+      readRequests.push({ repositoryId, mode, scopes: request?.scopes, itemLimit: request?.itemLimit, cursors: request?.cursors });
+      const repository = findRepository(repositoryId);
+      const scopes = request?.scopes ?? ALL_SCOPES;
+      // 单次 IPC 的每范围条目上限与主进程一致：超过上限一律收口，不静默放大窗口。
+      const limit = Math.min(request?.itemLimit ?? LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT);
+      const page: StubPage = mode === 'status' || repository === null
+        ? { detail: null, cursors: {}, truncated: false, error: null }
+        : sliceScopes(repository, scopes, request?.cursors, limit);
+      const result: LocalReadResult = {
         repositoryId,
-        viewVersion: 1,
-        detailViewVersion: 1,
-        accessContextRevision: 1,
-        detail: repository ? makeDetail(repository, options.detail) : null,
-        columns: {},
-        syncState: {},
-        task: null,
-        truncated: false,
-        summaryFetchedAt: null,
-        detailFetchedAt: null,
-        error: null,
+        viewVersion: local.viewVersion,
+        detailViewVersion: local.detailViewVersion,
+        accessContextRevision: local.accessContextRevision,
+        detail: page.detail,
+        columns: mode === 'status' ? columns() : columnsFor(scopes.filter(scope =>
+          repository !== null && stubCursorOffset(request?.cursors?.[scope], local, repositoryId, scope) !== null)),
+        syncState: syncState(),
+        task: local.task,
+        cursors: page.cursors,
+        truncated: page.truncated,
+        summaryFetchedAt: summaryFetchedAt(repository),
+        detailFetchedAt: local.detailFetchedAt,
+        error: page.error,
       };
+      if (mode === 'status' && statusGate) await statusGate;
+      if (mode === 'view' && viewGate) await viewGate;
+      return result;
     },
-    async acknowledgeRepositoryViewed() {
+    async acknowledgeRepositoryViewed(repositoryId, acknowledgment) {
       calls.acknowledgeRepositoryViewed += 1;
+      acknowledgments.push({ repositoryId, ...acknowledgment });
       return { ok: true, seenRevision: 0 };
     },
     async openGitHubExternal(target) {
       calls.openGitHubExternal += 1;
       externalTargets.push(target);
-      if (openGate) await openGate;
+      if (externalGate) await externalGate;
       return options.openExternalResult ?? { ok: true, reason: null };
     },
   };
+
+  function hold(set: (value: Promise<void> | null) => void): () => void {
+    let release = (): void => {};
+    set(new Promise<void>((resolve) => {
+      release = () => {
+        set(null);
+        resolve();
+      };
+    }));
+    return release;
+  }
 
   return {
     api,
@@ -336,71 +745,56 @@ export function createStub(options: StubOptions = {}): StubHandle {
     get preferences() {
       return { ...preferences };
     },
+    get local() {
+      return local;
+    },
+    setLocal(patch) {
+      Object.assign(local, patch);
+    },
+    setTask(task) {
+      local.task = task;
+    },
     settingsPatches,
     externalTargets,
     addInputs,
+    refreshRequests,
+    readRequests,
+    acknowledgments,
     setRepositories(next) {
       repositories = next;
     },
     holdNextList() {
-      let release = (): void => {};
-      listGate = new Promise<void>((resolve) => {
-        release = () => {
-          listGate = null;
-          resolve();
-        };
-      });
-      return release;
+      return hold((value) => { listGate = value; });
     },
     holdNextRefresh() {
-      let release = (): void => {};
-      gate = new Promise<void>((resolve) => {
-        release = () => {
-          gate = null;
-          resolve();
-        };
-      });
-      return release;
+      return hold((value) => { gate = value; });
     },
     holdNextRemove() {
-      let release = (): void => {};
-      removeGate = new Promise<void>((resolve) => {
-        release = () => {
-          removeGate = null;
-          resolve();
-        };
-      });
-      return release;
+      return hold((value) => { removeGate = value; });
     },
     holdNextAdd() {
-      let release = (): void => {};
-      addGate = new Promise<void>((resolve) => {
-        release = () => {
-          addGate = null;
-          resolve();
-        };
-      });
-      return release;
+      return hold((value) => { addGate = value; });
+    },
+    holdNextExternalLink() {
+      return hold((value) => { externalGate = value; });
     },
     holdNextOpen() {
-      let release = (): void => {};
-      openGate = new Promise<void>((resolve) => {
-        release = () => {
-          openGate = null;
-          resolve();
-        };
-      });
-      return release;
+      return hold((value) => { openGate = value; });
     },
-    holdNextDetail() {
-      let release = (): void => {};
-      detailGate = new Promise<void>((resolve) => {
-        release = () => {
-          detailGate = null;
-          resolve();
-        };
-      });
-      return release;
+    holdNextForce() {
+      return hold((value) => { forceGate = value; });
+    },
+    holdNextStatus() {
+      return hold((value) => { statusGate = value; });
+    },
+    holdNextView() {
+      return hold((value) => { viewGate = value; });
+    },
+    nextOpenResult(result) {
+      nextOpen = result;
+    },
+    nextForceResult(result) {
+      nextForce = result;
     },
   };
 }

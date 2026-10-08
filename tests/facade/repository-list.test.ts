@@ -220,7 +220,7 @@ describe('仓库清单 feature', () => {
     const listed = await reopened.facade.listRepositories();
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({ fullName: 'octo-demo/hello-world', stars: 1284 });
-    expect(await reopened.facade.accessTokenState()).toEqual({ configured: true });
+    expect(await reopened.facade.accessTokenState()).toEqual({ configured: true, accessContextRevision: 0, cleanupPending: false });
   });
 
   it('加入清单：GitHub 网址加入成功并归一为 owner/name', async () => {

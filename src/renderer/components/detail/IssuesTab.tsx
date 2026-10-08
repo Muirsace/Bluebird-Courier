@@ -8,15 +8,18 @@ export function IssuesTab({
   pullRequests,
   owner,
   name,
+  incomplete = false,
 }: {
   issues: Detail['issues'];
   pullRequests: Detail['pullRequests'];
   owner: string;
   name: string;
+  /** 本地读取被截断：空的一侧不显示成"确认没有"。 */
+  incomplete?: boolean;
 }) {
   return (
     <Section title="Issue & PR">
-      <IssuesAndPulls issues={issues} pullRequests={pullRequests} owner={owner} name={name} />
+      <IssuesAndPulls issues={issues} pullRequests={pullRequests} owner={owner} name={name} incomplete={incomplete} />
     </Section>
   );
 }

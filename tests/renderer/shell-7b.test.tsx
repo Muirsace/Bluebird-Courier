@@ -126,7 +126,10 @@ describe('Shell-7B shared CSS and header contracts', () => {
     const header = document.querySelector('.repository-header')!;
     expect(header.querySelector('h1,h2')?.getAttribute('aria-label')).toBe('owner/existing');
     expect(header.querySelector('.repository-header-owner')?.textContent).toBe('owner');
-    expect(header.querySelector('.repository-header-identity .repository-header-fetched')?.textContent).toContain('抓取于');
+    // 摘要检查时间与完整详情同步时间分开表达
+    const times = header.querySelector('.repository-header-identity .repository-header-fetched')!;
+    expect(times.querySelector('.repository-header-summary-time')?.textContent).toContain('摘要检查于');
+    expect(times.querySelector('.repository-header-detail-time')?.textContent).toContain('详情同步于');
     const metrics = header.querySelector('.repository-header-metrics')!;
     for (const label of ['Stars','Forks','最近活动','最新版本']) expect(metrics.textContent).toContain(label);
     expect(metrics.querySelectorAll('.font-semibold').length).toBe(4);

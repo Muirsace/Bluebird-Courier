@@ -759,8 +759,10 @@ describe('设置页 · 更换已配置的令牌', () => {
     expect(repoRows()).toHaveLength(1);
     await click(repoOpenButton('octocat/Hello-World'));
     await settle();
-    // 旧详情缓存仍可复用：没有重新抓取
-    expect(handle.calls.fetchDetail).toBe(1);
+    // 旧详情缓存仍可直接展示：重进只表达一次打开意图，没有强制命令
+    expect(handle.calls.fetchDetail).toBe(2);
+    expect(handle.calls.refreshRepository).toBe(0);
+    expect(document.querySelector('.detail-reveal')?.getAttribute('data-reveal')).toBe('ready');
   });
 
   it('begin 登记在途时编辑：回收旧意图、恢复可操作，且不取消更新的操作', async () => {

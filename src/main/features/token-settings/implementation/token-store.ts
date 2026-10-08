@@ -2,6 +2,7 @@ import type { LocalDatabase } from '../../../core/infra/database';
 import type { CipherBox } from '../../../core/infra/encryption';
 
 const ACCESS_TOKEN_KEY = 'access_token';
+const CLEANUP_PENDING_KEY = 'token_cleanup_pending';
 const PREFERENCE_PREFIX = 'pref:';
 
 export function readToken(db: LocalDatabase, cipher: CipherBox): string | null {
@@ -48,20 +49,42 @@ function advanceAccessContextRevisionInTransaction(db: LocalDatabase, updatedAt:
   return readAccessContextRevision(db);
 }
 
+function writeCleanupIntentInTransaction(db: LocalDatabase, accessContextRevision: number): void {
+  db.prepare('INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(CLEANUP_PENDING_KEY, String(accessContextRevision));
+}
+
+/** 读取持久清理意图；缺失或值损坏按"无未完成清理"处理，不凭内存标志推断。 */
+export function readCleanupIntent(db: LocalDatabase): number | null {
+  const row = db.prepare('SELECT value FROM setting WHERE key = ?').get(CLEANUP_PENDING_KEY) as { value: string } | undefined;
+  if (!row) return null;
+  const revision = Number(row.value);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
+}
+
+/** 条件性完成清理：只在持久意图仍属于该上下文版本时清除，返回是否真的清除。 */
+export function clearCleanupIntent(db: LocalDatabase, accessContextRevision: number): boolean {
+  const info = db.prepare('DELETE FROM setting WHERE key = ? AND value = ?').run(CLEANUP_PENDING_KEY, String(accessContextRevision));
+  return info.changes > 0;
+}
+
 /**
- * 更换访问令牌的原子提交：保存加密令牌与推进访问上下文在同一事务内完成，
- * 同步返回新版本——调用方拿回结果时新上下文已经可读。
+ * 更换访问令牌的原子提交：保存加密令牌、推进访问上下文、登记持久清理意图三者同一事务完成，
+ * 同步返回新版本——调用方拿回结果时新上下文与清理义务都已经可读。
  *
- * 任一步失败整体回滚：原令牌、原上下文版本保持不变。加密放在事务外，
+ * 覆盖"令牌已提交、facade 尚未清理即崩溃"的窗口：重启后按意图继续清理，不需要内存标志。
+ * 任一步失败整体回滚：原令牌、原上下文版本与旧意图保持不变。加密放在事务外，
  * 安全存储不可用时不会留下任何半提交状态。
  */
 export function writeTokenAndAdvanceAccessContext(db: LocalDatabase, cipher: CipherBox, token: string, updatedAt: string): number {
   const encrypted = cipher.encrypt(token);
   const commit = db.transaction(() => {
     writeEncryptedToken(db, encrypted);
-    return advanceAccessContextRevisionInTransaction(db, updatedAt);
+    const revision = advanceAccessContextRevisionInTransaction(db, updatedAt);
+    writeCleanupIntentInTransaction(db, revision);
+    return revision;
   });
   return commit();
 }
 
-export { ACCESS_TOKEN_KEY };
+export { ACCESS_TOKEN_KEY, CLEANUP_PENDING_KEY };

@@ -52,7 +52,7 @@ describe('Desktop repo switch entrance ownership', () => {
   it('A → pending B shows Header/Loading immediately and preserves the full data reveal without a workspace entrance', async () => {
     vi.useFakeTimers(); await mount(); await open('A');
     await settleMotion(DETAIL_REVEAL_TOTAL_MS + 200);
-    const release = stub.holdNextDetail(); await open('B');
+    const release = stub.holdNextOpen(); await open('B');
     const page = detail(), header = page?.querySelector('.repository-header');
     const title = page?.querySelector('.repository-header-name');
     const refetch = buttonByText('抓取中…');
@@ -96,7 +96,9 @@ describe('Desktop repo switch entrance ownership', () => {
     await open('A');
     expect(detail()).toBe(before);
     expect(repos.map(repo => repoSlot(repo.fullName))).toEqual(rows);
-    expect(stub.calls.fetchDetail).toBe(2);
+    // 三次实际导航各表达一次打开意图（含回到已缓存的 A）；第四次是同仓库 no-op
+    expect(stub.calls.fetchDetail).toBe(3);
+    expect(stub.calls.refreshRepository).toBe(0);
   });
 
   it('rapid cached A/B/C/D/A at 50ms keeps one latest workspace and never queues exits', async () => {
@@ -110,13 +112,15 @@ describe('Desktop repo switch entrance ownership', () => {
       await settleMotion(50);
     }
     expect(repos.map(repo => repoSlot(repo.fullName))).toEqual(nodes);
-    expect(stub.calls.fetchDetail).toBe(4);
+    // 九次实际导航各表达一次打开意图；强制命令 0 次
+    expect(stub.calls.fetchDetail).toBe(9);
+    expect(stub.calls.refreshRepository).toBe(0);
     expect(document.querySelector('.view-transition')).toBeNull();
   });
 
   it('an old pending response cannot enter or overlap the latest selected repo', async () => {
     await mount(); await open('A');
-    const release = stub.holdNextDetail(); await open('B'); await open('C');
+    const release = stub.holdNextOpen(); await open('B'); await open('C');
     const latest = detail();
     await act(async () => release()); await settle();
     expect(detail()).toBe(latest);
@@ -135,7 +139,8 @@ describe('Desktop repo switch entrance ownership', () => {
       expect(detail()?.dataset.workspaceEnter).toBeUndefined();
       expect(detail()?.dataset.workspaceSwitch).toBeUndefined();
     }
-    expect(stub.calls.fetchDetail).toBe(2);
+    expect(stub.calls.fetchDetail).toBe(3);
+    expect(stub.calls.refreshRepository).toBe(0);
   });
 
   it('system theme changes retain DOM and entrance marker, so cannot restart keyframes', async () => {
@@ -147,7 +152,8 @@ describe('Desktop repo switch entrance ownership', () => {
       expect(before?.dataset.workspaceEnter).toBe('true');
       expect(document.documentElement.dataset.theme).toBe(theme);
     }
-    expect(stub.calls.fetchDetail).toBe(2);
+    expect(stub.calls.fetchDetail).toBe(3);
+    expect(stub.calls.refreshRepository).toBe(0);
   });
 
   it('Settings and return to a repo have no new entrance', async () => {
@@ -174,7 +180,7 @@ describe('Desktop repo switch entrance ownership', () => {
     const panel = before?.querySelector('[role="tabpanel"]');
     expect(panel?.className).toContain('tab-panel-enter');
     await act(async () => setSystemTheme('dark')); await settle();
-    const release = stub.holdNextDetail(); await click(buttonByText('重新抓取')); await settle();
+    const release = stub.holdNextForce(); await click(buttonByText('重新抓取')); await settle();
     expect(revealPhase()).toBe('ready');
     expect(loadingSlot()).toBeNull();
     await act(async () => release()); await settle();
@@ -183,12 +189,13 @@ describe('Desktop repo switch entrance ownership', () => {
     expect(before?.dataset.workspaceEnter).toBeUndefined();
     expect(before?.dataset.workspaceSwitch).toBeUndefined();
     expect(factSwaps()).toHaveLength(0);
-    expect(stub.calls.fetchDetail).toBe(3);
+    expect(stub.calls.fetchDetail).toBe(2);
+    expect(stub.calls.refreshRepository).toBe(1);
   });
 
   it('Reduced Motion cold switch shows loading then direct ready, without workspace entrance', async () => {
     vi.useFakeTimers(); setReducedMotion(true); await mount(); await open('A');
-    const release = stub.holdNextDetail(); await open('B');
+    const release = stub.holdNextOpen(); await open('B');
     expect(revealPhase()).toBe('loading');
     expect(loadingSlot()?.dataset.state).toBe('visible');
     const before = detail();
@@ -204,7 +211,7 @@ describe('Desktop repo switch entrance ownership', () => {
 
   it('theme and layout migration during a cold fetch never turn arriving data into a cached switch', async () => {
     vi.useFakeTimers(); await mount({ preferences: { theme: 'system' } }); await open('A');
-    const release = stub.holdNextDetail(); await open('B');
+    const release = stub.holdNextOpen(); await open('B');
     const before = detail();
     await act(async () => setSystemTheme('dark')); await settle();
     for (const width of [899, 1152]) {
@@ -226,13 +233,12 @@ describe('Desktop repo switch entrance ownership', () => {
 
   it('cold first-fetch failure then retry reveals data without retroactively assigning a workspace entrance', async () => {
     vi.useFakeTimers(); await mount(); await open('A');
-    const fetchDetail = stub.api.fetchDetail;
-    stub.api.fetchDetail = async () => ({ detail: null, error: { kind: 'unknown', message: 'fixture error' } });
+    stub.nextOpenResult({ detail: null, error: { kind: 'unknown', message: 'fixture error' } });
     await open('B');
     const before = detail();
     expect(before?.querySelector('[role="alert"]')?.textContent).toContain('fixture error');
-    stub.api.fetchDetail = fetchDetail;
-    const release = stub.holdNextDetail(); await click(buttonByLabel('重新抓取仓库详情')); await settle();
+    // 错误重试走强制命令
+    const release = stub.holdNextForce(); await click(buttonByLabel('重新抓取仓库详情')); await settle();
     expect(revealPhase()).toBe('loading');
     // 失败 envelope 已是 query data：重试期间沿用原错误面板和禁用按钮。
     expect(loadingSlot()).toBeNull();

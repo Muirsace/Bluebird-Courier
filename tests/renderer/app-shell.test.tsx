@@ -82,10 +82,12 @@ describe('Desktop AppShell', () => {
     expect(tab('概览')?.getAttribute('aria-selected')).toBe('true');
     workspace().scrollTop = 250;
     listViewport().scrollTop = 300;
-    const before = stub.calls.fetchDetail;
+    const before = stub.calls.refreshRepository;
     await click(buttonByText('重新抓取'));
     await settle();
-    expect(stub.calls.fetchDetail).toBe(before + 1);
+    // 用户重新抓取走强制命令，不伪装成一次打开意图
+    expect(stub.calls.refreshRepository).toBe(before + 1);
+    expect(stub.calls.fetchDetail).toBe(2);
     expect(workspace().scrollTop).toBe(250);
     expect(listViewport().scrollTop).toBe(300);
   });

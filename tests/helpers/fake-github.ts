@@ -226,6 +226,7 @@ export class FakeGitHub implements GitHubPort {
   async getRepositoryMeta(_accessToken: string, fullName: string): Promise<RepoMeta> {
     this.record('getRepositoryMeta');
     this.guard(fullName, 'getRepositoryMeta');
+    await this.waitGate('getRepositoryMeta');
     return this.repo(fullName).meta;
   }
 

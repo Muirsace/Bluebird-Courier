@@ -78,12 +78,11 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     pruneForeignStagedScopes(db, repository.id, context.accessContextRevision, DETAIL_CACHE_SCHEMA_VERSION);
     const openStaging: OpenScopeStaging = (scope, params) => scopeStaging(repository.id, context, scope, params);
     const loaded = await loadFullDetail(scopeFetch, token, repository, readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null,
-      context.accessContextRevision, () => clock.now().toISOString(), () => writable(context, repository.fullName), openStaging);
+      context.accessContextRevision, () => clock.now().toISOString(), () => writable(context, repository.fullName), openStaging,
+      observation => onObserved?.({ observationId: `detail:${context.taskId}:overview`, repositoryId: repository.id, accessContextRevision: context.accessContextRevision, ...observation }));
     if (!writable(context, repository.fullName)) throw new Error('任务结果已过期，放弃写入');
     const cache: DetailCache = { repositoryId: repository.id, fullName: repository.fullName,
       values: loaded.values, columns: loaded.columns, fetchedAt: clock.now().toISOString(), source: 'fresh' };
-    // 摘要观察独立于内容提交；监听器故障不改变详情事务的结果。
-    try { if (loaded.observation) onObserved?.({ repositoryId: repository.id, accessContextRevision: context.accessContextRevision, ...loaded.observation }); } catch {}
     if (!writable(context, repository.fullName)) throw new Error('任务身份已变化，放弃写入');
     const failedScopes = Object.keys(loaded.failures) as DetailScope[];
     const syncedAt = cache.fetchedAt;

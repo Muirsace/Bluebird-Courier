@@ -21,6 +21,7 @@ import {
   navButton,
   openRepo,
   renderApp,
+  sectionByTitle,
   segmentedButton,
   settle,
   tab,
@@ -291,23 +292,23 @@ describe('趋势 · 时间范围', () => {
     expect(seriesAt(0).data).toHaveLength(10);
     expect(trendCard('stars')?.textContent).toContain('+9');
     expect(trendCard('stars')?.textContent).toContain('已记录 9 天');
-
-    await click(segmentedButton('90D'));
-    await settle();
-    expect(trendCard('stars')?.textContent).toContain('+9');
   });
 
-  it('范围按钮是 aria-pressed 的真按钮，默认 7D', async () => {
+  it('只提供有数据支撑的范围：7D / 30D，并说明当前保留期', async () => {
     await openDetailTab({ trend: TEN_DAYS }, '趋势');
 
     expect(segmentedButton('7D')?.getAttribute('aria-pressed')).toBe('true');
     expect(segmentedButton('30D')?.getAttribute('aria-pressed')).toBe('false');
-    expect(segmentedButton('90D')?.getAttribute('aria-pressed')).toBe('false');
+    // 90D 不提供：当前保留期只有 30 天，给出 90D 会让人误以为有完整历史
+    expect(segmentedButton('90D')).toBeNull();
+    expect(document.querySelector('[role="group"] button')?.parentElement?.textContent)
+      .not.toContain('90D');
+    expect(sectionByTitle('趋势')?.textContent).toContain('趋势按自然日保留最近 30 天记录。');
     expect(DEFAULT_TREND_RANGE).toBe('7d');
 
-    await click(segmentedButton('90D'));
+    await click(segmentedButton('30D'));
     await settle();
-    expect(segmentedButton('90D')?.getAttribute('aria-pressed')).toBe('true');
+    expect(segmentedButton('30D')?.getAttribute('aria-pressed')).toBe('true');
     expect(segmentedButton('7D')?.getAttribute('aria-pressed')).toBe('false');
   });
 });
@@ -370,8 +371,6 @@ describe('趋势 · 不产生额外请求', () => {
 
     await click(segmentedButton('30D'));
     await settle();
-    await click(segmentedButton('90D'));
-    await settle();
     await click(segmentedButton('7D'));
     await settle();
     expect(handle.calls.fetchDetail).toBe(1);
@@ -382,7 +381,7 @@ describe('趋势 · 不产生额外请求', () => {
     }
     expect(handle.calls.fetchDetail).toBe(1);
 
-    // 去设置换成深色再回来：详情缓存仍在，不重新抓取
+    // 去设置换成深色再回来：缓存命中，只表达一次打开意图，没有强制命令
     await click(navButton('设置'));
     await settle();
     await click(segmentedButton('深色'));
@@ -390,6 +389,7 @@ describe('趋势 · 不产生额外请求', () => {
     await click(navButton('监控清单'));
     await settle();
     await openRepo(REPO);
-    expect(handle.calls.fetchDetail).toBe(1);
+    expect(handle.calls.fetchDetail).toBe(2);
+    expect(handle.calls.refreshRepository).toBe(0);
   });
 });

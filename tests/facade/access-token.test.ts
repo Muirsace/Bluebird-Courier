@@ -30,7 +30,7 @@ describe('访问令牌校验与保存', () => {
 
     h().reopen();
 
-    expect(await h().facade.accessTokenState()).toEqual({ configured: true });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: true, accessContextRevision: 0, cleanupPending: false });
     expect((await h().facade.getSettings()).accessTokenConfigured).toBe(true);
   });
 
@@ -39,7 +39,7 @@ describe('访问令牌校验与保存', () => {
 
     const result = await h().facade.saveAccessToken('ghp_valid_token');
     expect(result).toEqual({ ok: true, error: null });
-    expect(await h().facade.accessTokenState()).toEqual({ configured: true });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: true, accessContextRevision: 0, cleanupPending: false });
 
     const row = h()
       .db.prepare("SELECT value FROM setting WHERE key = 'access_token'")
@@ -54,7 +54,7 @@ describe('访问令牌校验与保存', () => {
     const result = await h().facade.saveAccessToken('ghp_bad');
     expect(result.ok).toBe(false);
     expect(result.error).toMatchObject({ kind: 'access_token_invalid' });
-    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false, accessContextRevision: 0, cleanupPending: false });
 
     const row = h().db.prepare("SELECT value FROM setting WHERE key = 'access_token'").get();
     expect(row).toBeUndefined();
@@ -67,14 +67,14 @@ describe('访问令牌校验与保存', () => {
     const result = await h().facade.saveAccessToken('ghp_valid_token');
     expect(result.ok).toBe(false);
     expect(result.error).toMatchObject({ kind: 'network' });
-    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false, accessContextRevision: 0, cleanupPending: false });
   });
 
   it('校验访问令牌只校验、不落库', async () => {
     harness = createHarness();
 
     expect(await h().facade.validateAccessToken('ghp_valid_token')).toEqual({ ok: true, error: null });
-    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false, accessContextRevision: 0, cleanupPending: false });
 
     h().github.fail('*', 'validateAccessToken', fixtures.unauthorized());
     const bad = await h().facade.validateAccessToken('whatever');
@@ -118,7 +118,7 @@ describe('访问令牌校验与保存', () => {
       kind: 'unknown',
       message: '系统安全存储不可用，无法保存访问令牌',
     });
-    expect(await h().facade.accessTokenState()).toEqual({ configured: false });
+    expect(await h().facade.accessTokenState()).toEqual({ configured: false, accessContextRevision: 0, cleanupPending: false });
     expect(h().db.prepare("SELECT value FROM setting WHERE key = 'access_token'").get()).toBeUndefined();
   });
 });

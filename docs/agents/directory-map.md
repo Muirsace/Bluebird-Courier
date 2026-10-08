@@ -257,7 +257,9 @@ src/  # 应用源代码
 - `implementation/retention-runner.ts`：清理超过 30 个自然日的快照。
 - `implementation/trend-query.ts`：读取 Star/Fork 趋势，不补造缺失日期。
 
-清单和详情 feature 不直接 import 快照 feature。轻量成功、完整成功或复用成功后的快照写入由 `facade` 调用快照契约完成；删除仓库时，`facade` 依次编排清单、详情和快照资料清理。更换 Token 的确认成功后，也由 `facade` 编排清空这些资料，再进入新 Token 验证流程。
+清单和详情feature不直接import快照feature。真实观察成功后由facade调用快照契约登记身份、持久顺序和意图；清单批次只提交此前已登记的观察，登记失败明确报告，不能晚到时补造顺序。缓存复用和本地读取不采样。删除仓库时，facade依次编排清单、详情和快照清理。更换Token先验证，再于token-settings事务原子保存密文、推进上下文并登记清理义务；随后facade编排清理，失败或重启继续恢复，完成清理不会再次推进上下文。
+
+趋势按注入时钟保留30个本地自然日，同日观察以真实时间和持久序号仲裁。只读趋势窗口与持久内容版本分别表达；跨自然日游标绑定窗口身份，状态读取与页面重读同样校验，不通过伪造数据库版本处理时间变化。
 
 ## `main/facade`
 
@@ -281,7 +283,7 @@ src/  # 应用源代码
 - `pages/App.tsx`：页面路由、导航方向与界面级状态（无 Router，视图状态内聚）。
 - `pages/WatchlistPage.tsx`：清单、搜索、刷新、排序、新增与删除交互。
 - `pages/DetailPage.tsx`：详情栏目、缓存提示、Tab 切换与滚动协调。
-- `pages/SettingsPage.tsx`：Token 配置入口与主题设置区。
+- `pages/SettingsPage.tsx`：Token配置、二次确认、已提交但待清理的恢复入口与主题设置区。
 - `components/detail/`：详情表头（桌面 / 单栏）、Tab、概览与各栏目组件（含趋势）。
 - `components/watchlist/`：清单行、侧栏行、新增表单、操作浮层与 Motion 包装。
 - `components/shell/`：桌面 / 单栏外壳、页面宿主与侧栏头部。

@@ -112,17 +112,22 @@ function NumberedItemList({ items, kind, owner, name, showBody }: NumberedItemLi
   );
 }
 
+/** 有界本地读取只覆盖了前一段时的说明：不把"这一段里没有"当成"确实为空"。 */
+export const UNREAD_GROUP_COPY = '这一段本地内容里没有它的条目，可能还有更多未读取';
+
 interface IssuesAndPullsProps {
   issues: IssueItem[];
   pullRequests: PullRequestItem[];
   owner: string;
   name: string;
+  /** 该范围本地读取被截断：空的一侧不能显示成"确认没有"。 */
+  incomplete?: boolean;
 }
 
 /** 议题与合并请求的完整列表（「Issue & PR」Tab）：先给计数摘要，再分区展示。 */
-export function IssuesAndPulls({ issues, pullRequests, owner, name }: IssuesAndPullsProps) {
+export function IssuesAndPulls({ issues, pullRequests, owner, name, incomplete = false }: IssuesAndPullsProps) {
   if (issues.length === 0 && pullRequests.length === 0) {
-    return <IssueEmptyState />;
+    return incomplete ? <SectionMessage>{UNREAD_GROUP_COPY}</SectionMessage> : <IssueEmptyState />;
   }
 
   return (
@@ -135,13 +140,13 @@ export function IssuesAndPulls({ issues, pullRequests, owner, name }: IssuesAndP
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">议题</h3>
           {issues.length > 0 ? <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
-            : <SectionMessage>暂无议题</SectionMessage>}
+            : <SectionMessage>{incomplete ? UNREAD_GROUP_COPY : '暂无议题'}</SectionMessage>}
         </div>
 
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">合并请求</h3>
           {pullRequests.length > 0 ? <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
-            : <SectionMessage>暂无合并请求</SectionMessage>}
+            : <SectionMessage>{incomplete ? UNREAD_GROUP_COPY : '暂无合并请求'}</SectionMessage>}
         </div>
     </div>
   );

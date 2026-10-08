@@ -99,7 +99,7 @@ export interface ObservationApplyOutcome {
 }
 
 /** 真实远端摘要观察；由 facade 协调清单写回与趋势采样。 */
-export interface DetailObservation { repositoryId: number; accessContextRevision: number; observedAt: string; values: import('../../../../domain/types').GlanceValues; }
+export interface DetailObservation { observationId: string; repositoryId: number; accessContextRevision: number; observedAt: string; values: import('../../../../domain/types').GlanceValues; }
 
 export interface DetailAccessResult {
   view: LocalDetailView;

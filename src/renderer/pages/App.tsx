@@ -5,6 +5,7 @@ import type { Glance, AccessTokenState } from '../../shared/types';
 import lightBrandMark from '../assets/bluebird-mark-light.svg';
 import darkBrandMark from '../assets/bluebird-mark-dark.svg';
 import { getApi } from '../lib/api';
+import { useAccessTokenState } from '../lib/access-token-state';
 import { useLayoutMode } from '../lib/app-layout';
 import { findSidebarScrollRoot } from '../lib/app-scroll-root';
 import { useWindowControlsOverlay } from '../lib/window-chrome';
@@ -27,6 +28,8 @@ type View = 'watchlist' | 'detail' | 'settings';
 interface SelectedRepo {
   id: number;
   fullName: string;
+  /** 选择时对应的上下文，提交新Token后不能保留旧身份。 */
+  accessContextRevision?: number;
 }
 
 /**
@@ -82,12 +85,13 @@ export function App() {
   const previousLayoutModeRef = useRef(layoutMode);
 
   // 启动即查询访问令牌状态：未配置时先进设置页
-  const accessTokenStateQuery = useQuery({
-    queryKey: ['accessTokenState'],
-    queryFn: () => getApi().accessTokenState(),
-    networkMode: 'always',
-  });
-  const configured = accessTokenStateQuery.data?.configured ?? false;
+  const accessToken = useAccessTokenState();
+  const configured = accessToken.configured;
+  /**
+   * 令牌已提交但旧资料清理未完成：旧访问上下文的清单与详情不再属于当前事实，
+   * 入口收敛到设置页的清理恢复，不做自动抓取、也不让旧仓库闪现。
+   */
+  const cleanupPending = accessToken.cleanupPending;
   /**
    * 无访问令牌不等于没有本地资料：本地清单有内容时仍允许清单 / 详情 / 趋势导航。
    * 这里只读本地清单（无网络副作用，且与清单页共用同一个 Query 缓存）。
@@ -101,6 +105,8 @@ export function App() {
     ? localListQuery.data.length > 0 ? 'available' : 'none'
     : localListQuery.isError ? 'none' : 'unknown';
   const localDataAllowed = configured || localEntry === 'available';
+  /** 清理未完成时不展示旧上下文资料（清单会被主进程读成空，不能借此把旧详情留在工作区）。 */
+  const localDataEnabled = localDataAllowed && !cleanupPending;
   /** 无令牌且本地清单还没读出来：先等本地结论，避免先闪到设置页再跳回清单。 */
   const gatePending = !configured && localEntry === 'unknown';
 
@@ -122,9 +128,15 @@ export function App() {
 
   // 令牌保存成功的提示由设置页就地给出，这里只负责跳回清单（同一提示不重复出现）
   function handleAccessTokenSaved(): void {
-    const next: AccessTokenState = { configured: true };
-    queryClient.setQueryData(['accessTokenState'], next);
+    queryClient.setQueryData<AccessTokenState>(['accessTokenState'], (previous) => ({
+      ...(previous ?? {}),
+      configured: true,
+    }));
     void queryClient.invalidateQueries({ queryKey: ['accessTokenState'] });
+    // 已提交/已清理：旧选中仓库与旧详情同属旧上下文，一并撤下再回清单。
+    setSelected(null);
+    setWorkspaceRepoSwitch(false);
+    setRepoContextVisible(false);
     navigate('watchlist');
   }
 
@@ -132,25 +144,42 @@ export function App() {
     // 再选当前仓库是 no-op，也不清掉已经接管身份的 Compact Context。
     if (layoutMode === 'desktop' && view === 'detail' && selected?.id === repo.id) return;
     setWorkspaceRepoSwitch(layoutMode === 'desktop' && activeView === 'detail' && selected !== null);
-    setSelected({ id: repo.id, fullName: repo.fullName });
+    setSelected({ id: repo.id, fullName: repo.fullName, accessContextRevision: accessToken.accessContextRevision });
     navigate('detail');
   }
 
-  const activeView: View = localDataAllowed ? view : 'settings';
+  const obsoleteSelection = selected !== null && accessToken.accessContextRevision !== undefined
+    && (selected.accessContextRevision === undefined || selected.accessContextRevision < accessToken.accessContextRevision);
+  const activeView: View = cleanupPending || !localDataAllowed ? 'settings'
+    : obsoleteSelection && view === 'detail' ? 'watchlist' : view;
   const destination = activeView === 'settings'
-    ? { label: '监控清单', view: 'watchlist' as const, disabled: !localDataAllowed }
+    ? { label: '监控清单', view: 'watchlist' as const, disabled: cleanupPending || !localDataAllowed }
     : { label: '设置', view: 'settings' as const, disabled: false };
   // 读不到任何状态才整页阻断；已有缓存时后台刷新失败不应把界面清空
-  const tokenStateFailed = accessTokenStateQuery.isError;
-  const hasTokenState = accessTokenStateQuery.data !== undefined;
+  const tokenStateFailed = accessToken.isError;
+  const hasTokenState = accessToken.hasData;
   const tokenRefreshError = tokenStateFailed && hasTokenState ? (
     <div className="mb-4">
       <ErrorBar
         error={{ kind: 'unknown', message: '访问令牌状态刷新失败，正在沿用上次读取的状态' }}
-        action={{ label: '重试', onClick: () => void accessTokenStateQuery.refetch() }}
+        action={{ label: '重试', onClick: () => accessToken.refetch() }}
       />
     </div>
   ) : null;
+
+  /**
+   * 令牌已提交、清理未完成：旧上下文的选中仓库与详情已被主进程视为不可读，
+   * 这里撤下选中项并把落点固定到设置页的清理恢复，避免清单空了而旧详情仍挂在工作区；
+   * 清理完成后仍停在设置页给出结果，再按既有成功提示节奏回到清单。
+   */
+  useLayoutEffect(() => {
+    if (!cleanupPending && !obsoleteSelection) return;
+    setSelected(null);
+    setWorkspaceRepoSwitch(false);
+    setRepoContextVisible(false);
+    if (cleanupPending) setView('settings');
+    else if (view === 'detail') setView('watchlist');
+  }, [cleanupPending, obsoleteSelection, view]);
 
   /**
    * 导航的滚动收尾，必须赶在浏览器 paint 前：晚一帧用户就会先看见详情的中段，
@@ -222,14 +251,14 @@ export function App() {
   }, [layoutMode]);
 
   let content;
-  if (accessTokenStateQuery.isPending || gatePending) {
+  if (accessToken.isPending || gatePending) {
     content = (
       <Loading label="正在启动…" />
     );
   } else if (tokenStateFailed && !hasTokenState) {
     content = (
       <WorkspaceMessage title="无法读取访问令牌状态" description="请稍后重试" announcement="alert">
-        <button type="button" onClick={() => void accessTokenStateQuery.refetch()} className="state-action">重试</button>
+        <button type="button" onClick={() => accessToken.refetch()} className="state-action">重试</button>
       </WorkspaceMessage>
     );
   } else if (activeView === 'settings') {
@@ -269,7 +298,7 @@ export function App() {
         settingsActive={activeView === 'settings'}
         onGoSettings={() => navigate('settings')}
         workspaceScrollRootRef={workspaceScrollRootRef}
-        sidebar={localDataAllowed ? <PageSlot host={watchlistHost} /> : null}
+        sidebar={localDataEnabled ? <PageSlot host={watchlistHost} /> : null}
         workspace={<>{tokenRefreshError}<PageSlot host={workspaceHost} /></>}
       />
     ) : (
@@ -283,11 +312,11 @@ export function App() {
         {tokenRefreshError}
         {/* key follows navigation only; the portals below never belong to a Shell. */}
         <PageTransition key={activeView} motion={motion}>
-          <PageSlot host={localDataAllowed && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
+          <PageSlot host={localDataEnabled && activeView === 'watchlist' ? watchlistHost : workspaceHost} />
         </PageTransition>
       </NarrowAppShell>
     )}
-    {localDataAllowed ? createPortal(
+    {localDataEnabled ? createPortal(
       <WatchlistPage
         sidebar={layoutMode === 'desktop'}
         active={layoutMode === 'desktop' || activeView === 'watchlist'}

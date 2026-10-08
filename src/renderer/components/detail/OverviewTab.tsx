@@ -5,7 +5,7 @@ import { Section } from '../Section';
 import { SectionMessage } from '../StateMessage';
 import { BuildStatusPanel } from './BuildStatus';
 import { CommitList } from './CommitList';
-import { IssueEmptyState, NumberedItemRow } from './IssuesAndPulls';
+import { IssueEmptyState, NumberedItemRow, UNREAD_GROUP_COPY } from './IssuesAndPulls';
 import { ReleaseList } from './ReleaseList';
 import { RevealItem } from './RevealItem';
 import { TrendPanel } from './TrendPanel';
@@ -17,6 +17,8 @@ const RECENT_LIMIT = 3;
 
 interface OverviewTabProps {
   detail: Detail;
+  /** 议题 / 合并请求范围本地读取被截断：不把"这一段里没有"当成"确认没有"。 */
+  incompleteIssueScope?: boolean;
 }
 
 function byUpdatedDesc(a: IssueItem | PullRequestItem, b: IssueItem | PullRequestItem): number {
@@ -60,7 +62,7 @@ function RecentList({
 }
 
 /** 概览：第一屏回答"这个仓库最近怎么样"——构建是否正常、最近发了什么、最近在改什么。 */
-export function OverviewTab({ detail }: OverviewTabProps) {
+export function OverviewTab({ detail, incompleteIssueScope = false }: OverviewTabProps) {
   const { repository, build, releases, commits, issues, pullRequests, trend } = detail;
   const { owner, name } = repository;
   const openIssues = issues.filter((issue) => issue.state === 'open').length;
@@ -118,7 +120,7 @@ export function OverviewTab({ detail }: OverviewTabProps) {
       >
         <Section title="Issue & PR">
           {noIssuesAtAll ? (
-            <IssueEmptyState />
+            incompleteIssueScope ? <SectionMessage>{UNREAD_GROUP_COPY}</SectionMessage> : <IssueEmptyState />
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
@@ -131,6 +133,9 @@ export function OverviewTab({ detail }: OverviewTabProps) {
                   value={`开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
                 />
               </div>
+              {incompleteIssueScope ? (
+                <p className="text-xs text-muted">本地只读取了前一段，计数与列表都只覆盖这一段。</p>
+              ) : null}
               <div className="detail-overview-issues grid gap-x-6 gap-y-3 md:grid-cols-2">
                 <RecentList
                   title="最近更新的议题"

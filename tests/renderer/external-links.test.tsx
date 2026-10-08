@@ -139,7 +139,7 @@ describe('监控清单 · 在 GitHub 打开', () => {
   it('调用期间菜单不会被打掉：失败的原因必须有机会显示出来', async () => {
     await mount({ openExternalResult: { ok: false, reason: 'open_failed' } });
     await openMenu();
-    const release = handle.holdNextOpen();
+    const release = handle.holdNextExternalLink();
 
     await click(buttonByLabel(`在 GitHub 打开 ${FULL_NAME}`));
     await settle();

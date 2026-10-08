@@ -1,6 +1,33 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { DetailScope } from '../../../shared/types';
 
 export type DetailTabId = 'overview' | 'releases' | 'commits' | 'issues' | 'build' | 'trend';
+
+/**
+ * 每个 Tab 实际展示、且属于远端同步基线的范围（展示确认按它上报）。
+ * 趋势是本地快照视图，不参与详情确认；README / 目录树没有任何 Tab 展示，因此不在表内。
+ */
+export const TAB_DISPLAY_SCOPES: Record<DetailTabId, readonly DetailScope[]> = {
+  overview: ['releases', 'commits', 'issuesAndPr', 'builds'],
+  releases: ['releases'],
+  commits: ['commits'],
+  issues: ['issuesAndPr'],
+  build: ['builds'],
+  trend: [],
+};
+
+/**
+ * 每个 Tab 需要读取的本地范围：该 Tab 展示的内容，加上表头依赖的仓库概览元数据。
+ * 内容版本变化时只重读当前 Tab 的这些范围，其他范围的有效字段 / 状态 / 游标与窗口原样保留。
+ */
+export const TAB_READ_SCOPES: Record<DetailTabId, readonly DetailScope[]> = {
+  overview: ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'trends'],
+  releases: ['overview', 'releases'],
+  commits: ['overview', 'commits'],
+  issues: ['overview', 'issuesAndPr'],
+  build: ['overview', 'builds'],
+  trend: ['overview', 'trends'],
+};
 
 const TABS: ReadonlyArray<{ id: DetailTabId; label: string }> = [
   { id: 'overview', label: '概览' },

@@ -165,7 +165,7 @@ describe('步骤 7A 审查回归', () => {
   it('趋势仅在选中时读取、有界续读，真实采样改变窗口后旧游标失效', async () => {
     const { h, id } = await ready();
     for (let i = 1; i <= 10; i++) h.db.prepare('INSERT INTO snapshot (repository_id, captured_at, day, stars, forks) VALUES (?, ?, ?, ?, ?)')
-      .run(id, '2026-08-' + String(i).padStart(2, '0') + 'T00:00:00.000Z', '2026-08-' + String(i).padStart(2, '0'), i, 1);
+      .run(id, '2026-09-' + String(i).padStart(2, '0') + 'T00:00:00.000Z', '2026-09-' + String(i).padStart(2, '0'), i, 1);
     const excluded = await h.facade.readLocalDetail(id, { scopes: ['commits'], itemLimit: 2 });
     expect(excluded.detail!.trend).toEqual([]);
     const first = await h.facade.readLocalDetail(id, { scopes: ['trends'], itemLimit: 3 });
@@ -173,6 +173,8 @@ describe('步骤 7A 审查回归', () => {
     const next = await h.facade.readLocalDetail(id, { scopes: ['trends'], itemLimit: 3, cursors: { trends: first.cursors!.trends! } });
     expect(next.detail!.trend).toHaveLength(3);
     expect(next.detail!.trend[0]!.capturedAt).not.toBe(first.detail!.trend[0]!.capturedAt);
+    // 只有真实采样内容变化才令旧游标失效，不能依靠同值观察伪增版本。
+    h.github.repos.get('octo-demo/hello-world')!.meta.stars += 1;
     await h.facade.refreshGlance();
     const changed = await h.facade.readLocalDetail(id, { scopes: ['trends'], cursors: { trends: first.cursors!.trends! } });
     expect(changed.error?.message).toContain('游标已失效');
@@ -286,25 +288,33 @@ describe('本地视图接口（任务 01）：权威版本、栏目状态与成�
 });
 
 describe('观察交接恢复路径（任务 01 核实）', () => {
-  it('无 Token 重启后打开仓库：本地重放待交接观察并确认，全程零网络', async () => {
+  it('无 Token 重启后启动重放待交接观察并确认，全程零网络', async () => {
     const { h, id } = await ready();
     // 制造真实交接：先建立观察基线，再推进 HEAD 并经轻量检查产生待交接记录。
     await h.facade.refreshGlance();
     h.github.repos.get('octo-demo/hello-world')!.observation = { head: 'sha-b' };
     h.clock.advanceMs(60_000);
-    await h.facade.refreshGlance();
+    // 注入一次交接应用中断，使真实交接保留在待交接队列（回归存储与重放路径）。
+    const original = h.repositoryDetail.applyObservation;
+    h.repositoryDetail.applyObservation = () => { throw new Error('注入的交接应用中断'); };
+    try { await h.facade.refreshGlance(); } finally { h.repositoryDetail.applyObservation = original; }
     expect(h.repositoryList.pendingObservations()).toHaveLength(1);
 
-    // 模拟重启 + 无 Token（离线）：打开仓库经 feature contract 重放并确认交接。
+    // 模拟重启 + 无 Token（离线）：启动维护经 feature contract 重放并确认交接。
     h.reopen();
     h.db.prepare("DELETE FROM setting WHERE key = 'access_token'").run();
     h.github.resetCalls();
-    const opened = await h.facade.fetchDetail(id);
+    h.facade.startupMaintenance();
 
-    expect(opened.detail).not.toBeNull(); // 离线仍可展示已有缓存
     expect(h.repositoryList.pendingObservations()).toEqual([]); // 重放后确认，不重复
     expect(h.db.prepare("SELECT detected_revision, synced_revision, freshness FROM detail_scope_state WHERE repository_id = ? AND scope = 'commits'").get(id))
       .toEqual({ detected_revision: 1, synced_revision: 0, freshness: 'stale' });
     expect(h.github.calls).toEqual({}); // 恢复路径是本地写入，不是网络路径
+
+    // 重复启动维护幂等：不重复增加序号、不重复采样
+    const before = h.db.prepare("SELECT detected_revision FROM detail_scope_state WHERE repository_id = ? AND scope = 'commits'").get(id);
+    h.facade.startupMaintenance();
+    expect(h.db.prepare("SELECT detected_revision FROM detail_scope_state WHERE repository_id = ? AND scope = 'commits'").get(id)).toEqual(before);
+    expect(h.github.calls).toEqual({});
   });
 });

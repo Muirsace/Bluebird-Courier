@@ -140,6 +140,8 @@ if (userDataPathError !== null) {
         clock: systemClock,
         logger,
       });
+      // UI 依赖 freshness 之前先做本地恢复：重放待交接观察 + 补偿未完成的真实采样（离线也可）。
+      facade.startupMaintenance();
       registerIpc(facade, {
         openGitHubExternal: (target) => openGitHubExternal(target, (url) => shell.openExternal(url)),
         applyTheme: (preference) => {

@@ -45,10 +45,26 @@ export type CacheSource = 'none' | 'fresh' | 'reused' | 'cache' | 'forced';
 export type RepositoryStatus = 'active' | 'archived' | 'deleted' | 'renamed';
 export type FailureSource = 'token' | 'rate_limit' | 'network' | 'repository' | 'detail' | 'column' | 'persistence' | 'input' | 'unknown';
 
-export interface AccessTokenState { configured: boolean; }
+export interface AccessTokenState {
+  configured: boolean;
+  /** 当前权威访问上下文；兼容旧调用方时可以缺省。 */
+  accessContextRevision?: number;
+  /** Token 已生效，但跨功能清理尚未完成；重启后仍须如实返回。 */
+  cleanupPending?: boolean;
+}
 export interface AccessTokenResult { ok: boolean; error: NormalizedError | null; }
 export type TokenChangeState = 'idle' | 'awaiting_confirmation' | 'verifying' | 'failed' | 'completed';
-export interface TokenOperationResult { ok: boolean; state: TokenChangeState; error: NormalizedError | null; }
+export interface TokenOperationResult {
+  ok: boolean;
+  state: TokenChangeState;
+  error: NormalizedError | null;
+  /** 本次操作对应的 Token 和上下文已提交；即使后续清理失败也为 true。 */
+  tokenCommitted?: boolean;
+  /** 持久化的清理意图尚未完成；不能把它解释为 Token 验证失败。 */
+  cleanupPending?: boolean;
+  /** 组装结果时的权威访问上下文，用于忽略迟到的旧操作结果。 */
+  accessContextRevision?: number;
+}
 
 export interface AddRepositoryResult {
   ok: boolean;
@@ -77,6 +93,8 @@ export interface ColumnResult<T = unknown> {
   updatedAt?: string | null;
 }
 export interface DetailResult {
+  /** 本地趋势保留窗口身份；跨自然日续读时校验，不冒充抓取时间或数据库版本。 */
+  trendWindow?: string;
   detail: Detail | null;
   error: NormalizedError | null;
   cached?: boolean;
@@ -128,6 +146,8 @@ export { LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT } from '../domain/types'
 
 /** 只读本地读取结果：无网络副作用，不启动抓取。 */
 export interface LocalReadResult {
+  /** 本地趋势保留窗口身份；轻量状态也携带，供展示识别窗口变化。 */
+  trendWindow?: string;
   repositoryId: number;
   /** 组合展示版本：详情或趋势任一变化都会改变（保持既有语义）。 */
   viewVersion: number;

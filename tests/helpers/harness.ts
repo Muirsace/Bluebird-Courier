@@ -6,6 +6,7 @@ import { createIdentifierGenerator } from '../../src/main/core/infra/identifier'
 import { openDatabase } from '../../src/main/core/infra/database';
 import type { CipherBox } from '../../src/main/core/infra/encryption';
 import { createFacade } from '../../src/main/facade/facade';
+import type { FacadeLifecycle } from '../../src/main/facade/facade';
 import { createRepositoryList } from '../../src/main/features/repository-list/implementation/create';
 import { createRepositoryDetail } from '../../src/main/features/repository-detail/implementation/create';
 import { createTokenSettings } from '../../src/main/features/token-settings/implementation/create';
@@ -13,6 +14,7 @@ import { createSnapshotTrend } from '../../src/main/features/snapshot-trend/impl
 import type { RepositoryListService } from '../../src/main/features/repository-list/contract';
 import type { RepositoryDetailService } from '../../src/main/features/repository-detail/contract';
 import type { TokenSettingsService } from '../../src/main/features/token-settings/contract';
+import type { SnapshotTrendService } from '../../src/main/features/snapshot-trend/contract';
 import type { BluebirdCourierFacade } from '../../src/shared/types';
 import type { ScopeFetchPort, ScopeVerificationPort } from '../../src/domain/ports';
 import { FakeGitHub } from './fake-github';
@@ -23,11 +25,12 @@ export interface Harness {
   github: FakeGitHub;
   cipher: CipherBox;
   clock: FakeClock;
-  facade: BluebirdCourierFacade;
+  facade: BluebirdCourierFacade & FacadeLifecycle;
   /** feature 服务实例（facade 尚未暴露的用例用它们直接验证，如待交接读取与访问上下文推进）。 */
   repositoryList: RepositoryListService;
   repositoryDetail: RepositoryDetailService;
   tokenSettings: TokenSettingsService;
+  snapshotTrend: SnapshotTrendService;
   /** 关闭并重新打开同一个数据库文件（模拟应用重启）。 */
   reopen(): Harness;
   destroy(): void;
@@ -49,7 +52,8 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox; scopePo
   let repositoryList!: RepositoryListService;
   let repositoryDetail!: RepositoryDetailService;
   let tokenSettings!: TokenSettingsService;
-  let facade!: BluebirdCourierFacade;
+  let snapshotTrend!: SnapshotTrendService;
+  let facade!: BluebirdCourierFacade & FacadeLifecycle;
   const build = (): void => {
     tokenSettings = createTokenSettings({ db, cipher, github, clock });
     repositoryList = createRepositoryList({ db, clock, github,
@@ -66,12 +70,13 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox; scopePo
       scopeFetch: options.scopePorts ?? github,
       nextTaskId: createIdentifierGenerator(),
     });
+    snapshotTrend = createSnapshotTrend({ db, clock, accessContext: { currentRevision: () => tokenSettings.accessContextRevision() } });
     facade = createFacade({
       repositoryList,
       github,
       repositoryDetail,
       tokenSettings,
-      snapshotTrend: createSnapshotTrend({ db, clock, accessContext: { currentRevision: () => tokenSettings.accessContextRevision() } }),
+      snapshotTrend,
       clock,
     });
   };
@@ -95,6 +100,9 @@ export function createHarness(options: { now?: Date; cipher?: CipherBox; scopePo
     },
     get tokenSettings() {
       return tokenSettings;
+    },
+    get snapshotTrend() {
+      return snapshotTrend;
     },
     reopen(): Harness {
       db.close();
