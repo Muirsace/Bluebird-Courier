@@ -15,10 +15,11 @@ export interface ViewAcknowledgmentInput {
   acknowledgment: ViewAcknowledgment;
 }
 
-/** 仍未查看的重要版本：仍未查看范围中最高的 importantRevision；没有则 0（表达"全部已看"）。 */
+/** 常规详情仍未查看的最高重要版本；历史目录树独立保留，不阻碍当前详情的查看确认。 */
 function remainingUnseen(states: Partial<Record<DetailScope, ScopeSyncState>>): number {
   let unseen = 0;
-  for (const state of Object.values(states)) {
+  for (const [scope, state] of Object.entries(states)) {
+    if (scope === 'tree') continue;
     if (state && state.importantRevision > state.viewedRevision) unseen = Math.max(unseen, state.importantRevision);
   }
   return unseen;

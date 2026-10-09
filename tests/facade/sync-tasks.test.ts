@@ -101,7 +101,8 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
     expect(opened.error).toBeNull();
     expect(opened.detail!.releases.map((entry) => entry.tagName)).toEqual(['v2.4.0', 'v2.3.1']);
     expect(opened.task).toMatchObject({ kind: 'open', status: 'running' });
-    expect(opened.task!.targetRevisions).toMatchObject({ overview: 1, commits: 1, builds: 1, readme: 1, tree: 1 });
+    expect(opened.task!.targetRevisions).toMatchObject({ overview: 1, commits: 1, builds: 1, readme: 1 });
+    expect(opened.task!.targetScopes).not.toContain('tree');
     await waitForReleases();
     expect(h().github.count('listReleases')).toBe(1); // 先读真实概览，再进入发版窗口；此时仍被闸门阻塞
     expect((h().db.prepare('SELECT COUNT(*) AS n FROM snapshot').get() as { n: number }).n).toBe(snapshotsBefore);
@@ -131,7 +132,7 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
     expect(opened.detail).not.toBeNull();
     expect(opened.task).toBeNull(); // 首次获取完成后没有在途任务
     expect(opened.viewVersion).toBeGreaterThanOrEqual(1);
-    expect(h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state').get()).toEqual({ n: 7 });
+    expect(h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state').get()).toEqual({ n: 6 });
     expect(opened.syncState!.commits).toMatchObject({ cacheStatus: 'valid', detectedRevision: 0, syncedRevision: 0 });
   });
 
@@ -469,7 +470,7 @@ describe('构建范围独立更新与范围验证（步骤 8A）', () => {
     const opened = await h().facade.fetchDetail(id);
     expect(opened.task).toMatchObject({ kind: 'check' });
     await waitTaskSettled(id);
-    expect(h().github.count('verifyScopes')).toBe(7); // 适配器调用口径：7 个过期范围各验证一次；未配置的范围返回未完成，不冒充无变化
+    expect(h().github.count('verifyScopes')).toBe(6); // 适配器调用口径：6 个常规过期范围各验证一次；未配置的范围返回未完成，不冒充无变化
     const read = await h().facade.readLocalDetail(id, { scopes: ['releases'] });
     expect(read.detail!.releases[0]!.tagName).toBe('v4.0.0'); // 同一次打开内已抓取并展示
     expect(scopeRow(id, 'releases')).toMatchObject({ detected_revision: 1, synced_revision: 1, freshness: 'unknown' });
@@ -649,8 +650,8 @@ describe('部分提交与来源级成败（步骤 8B）', () => {
 describe('完整详情成功时间与缓存身份分离（R1）', () => {
   it('首次部分成功不宣布完整时间；完整成功才推进；后续部分与构建更新保留旧完整时间', async () => {
     const { id } = await ready();
-    // 无缓存 + 树请求失败 + 其他范围成功：建立缓存，但完整详情时间未知
-    h().github.setScopeFetch(NAME, 'tree', async () => { throw fixtures.networkError(); });
+    // 无缓存 + README请求失败 + 其他范围成功：建立缓存，但完整详情时间未知
+    h().github.setScopeFetch(NAME, 'readme', async () => { throw fixtures.networkError(); });
     const first = await h().facade.fetchDetail(id);
     expect(first.detail).not.toBeNull();
     expect(first.error).not.toBeNull();
@@ -661,9 +662,9 @@ describe('完整详情成功时间与缓存身份分离（R1）', () => {
     expect((await h().facade.readLocalDetail(id, { mode: 'status' })).detailFetchedAt ?? null).toBeNull();
     expect((await h().facade.readLocalDetail(id)).detailFetchedAt ?? null).toBeNull(); // status/打开/只读同一语义
 
-    // 全部远端范围完整覆盖的一轮：推进完整时间
-    h().github.setScopeFetch(NAME, 'tree', async request => ({ scope: request.scope, items: [], hasMore: false, nextCursor: null, coverageComplete: true,
-      observedAt: request.observedAt, accessContextRevision: request.accessContextRevision, fingerprint: 'fp-tree' }));
+    // 全部常规详情范围完整覆盖的一轮：推进完整时间
+    h().github.setScopeFetch(NAME, 'readme', async request => ({ scope: request.scope, items: [], hasMore: false, nextCursor: null, coverageComplete: true,
+      observedAt: request.observedAt, accessContextRevision: request.accessContextRevision, fingerprint: 'fp-readme' }));
     h().clock.advanceMs(60_000);
     const complete = await h().facade.refreshRepository!(id, true);
     expect(complete.error).toBeNull();

@@ -42,11 +42,13 @@ export function buildLocalView(repository: Glance, input: LocalViewInput, reques
   for (const scope of input.task?.targetScopes ?? []) {
     scopes[scope] = { ...scopes[scope]!, ...(input.task?.kind === 'check' ? { checkStatus: input.task.status } : { syncStatus: input.task!.status }) };
   }
-  for (const state of Object.values(scopes)) {
+  for (const scope of SCOPE_ORDER) {
+    if (scope === 'tree' && !selected.includes(scope)) continue;
+    const state = scopes[scope];
     if (state?.syncStatus === 'error' && state.lastSyncError) error ??= state.lastSyncFailure ?? failure(state.lastSyncError);
     if (state?.checkStatus === 'error' && state.lastCheckError) error ??= state.lastCheckFailure ?? failure(state.lastCheckError);
   }
-  // 详情成功时间独立于缓存身份：只取最近一次全部远端范围完整覆盖的时间；部分成功或旧库留空。
+  // 详情成功时间独立于缓存身份：只取最近一次全部常规详情范围完整覆盖的时间；部分成功或旧库留空。
   const metaUsable = input.cacheMeta !== null && input.cacheMeta.schemaVersion === DETAIL_CACHE_SCHEMA_VERSION
     && input.cacheMeta.accessContextRevision === input.currentAccessContextRevision;
   const base: LocalDetailView = { repository, values: null, columns: mode === 'status' ? input.columns : {}, viewVersion: input.viewVersion,

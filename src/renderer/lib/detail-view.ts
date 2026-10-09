@@ -36,7 +36,7 @@ import type {
 import { LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT } from '../../shared/types';
 import { getApi } from './api';
 
-/** 详情页会展示的范围：README / 目录树不在任何 Tab 里，因此从不请求、也不持有。 */
+/** 详情页会展示的范围：README / 目录树尚无 Tab，因此不读其本地页、不持有其L1内容；README仍由主进程采集。 */
 const DISPLAY_SCOPES: readonly DetailScope[] = ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'trends'];
 
 /** 范围到详情字段的唯一映射（与主进程的栏目投影一致）：只读回某范围时，其余字段沿用上一份。 */

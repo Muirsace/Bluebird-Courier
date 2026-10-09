@@ -30,6 +30,9 @@ export const SCOPE_ORDER: readonly DetailScope[] = ['overview', 'releases', 'com
 /** 需要远端内容的范围（trends 是本地快照，不参与网络同步与确认）。 */
 export const REMOTE_SCOPES: readonly DetailScope[] = ['overview', 'releases', 'commits', 'issuesAndPr', 'builds', 'readme', 'tree'];
 
+/** 常规详情同步的必要范围；目录树保留独立能力，不参与打开、强制同步或成功时间判定。 */
+export const DETAIL_SYNC_SCOPES: readonly DetailScope[] = REMOTE_SCOPES.filter(scope => scope !== 'tree');
+
 export function scopeOfColumn(column: ColumnName): DetailScope {
   return COLUMN_SCOPE[column];
 }

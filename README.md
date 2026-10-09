@@ -286,11 +286,13 @@ icacls node_modules\electron\dist /setintegritylevel "(OI)(CI)Medium" /T /C
 | 📝 提交 | `GET /repos/{full_name}/commits` | 按分页预算 |
 | 💬 议题与合并请求 | `GET /repos/{full_name}/issues`、`/pulls`等对应来源 | 按组合来源和分页预算 |
 | 🏗 构建状态 | `GET /repos/{full_name}/actions/runs`与已跟踪运行 | 按窗口和跟踪预算 |
+| 📄 README文件清单 | `GET /repos/{full_name}/contents` | 常规抓取保留路径/文件清单，未下载正文、未接页面展示 |
 | 📈 星标趋势 | **不调接口** | 0（读本机历史快照） |
 
 要点：
 
 - 请求数取决于目标范围、实际来源、分页、窗口重启和预算，不能固定声明为每仓库4次。清单「检查更新」、打开意图、强制命令和本地状态读取分别计数；本地读取不请求GitHub。
+- 常规详情抓取包含概览、发版/标签、提交、Issue/PR、构建和README文件清单；目录树不请求，也不阻止完整同步时间更新。旧目录树资料保留，但不会因其过期、失败或待续读自动重新下载。
 - `/releases/latest` 的 **404 被吞掉、视为「无发版」**，不算错误。
 - **限流不做主动探测**，只在出错时反应式判定：`429`，或 `403` 且 `x-ratelimit-remaining: 0`，或响应带 `retry-after`；恢复时间优先取 `x-ratelimit-reset`（epoch 秒）。
 - 清单批量抓取**并发 5**（`GLANCE_CONCURRENCY`）；令牌失效 / 限流会**中止后续波次**且同类错误只上报一次。

@@ -3,7 +3,7 @@ import type { BuildItem, CacheStatus, DetailScope, Glance, ScopeSyncState, TaskC
 import type { Clock } from '../../../core/infra/clock';
 import type { LocalDatabase } from '../../../core/infra/database';
 import { BUILD_SCOPE_GROUP, planSync } from '../../../../domain/rules/sync-plan';
-import { REMOTE_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
+import { DETAIL_SYNC_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
 import { isVerificationExpired } from '../../../../domain/rules/refresh-window';
 import { canCommitTaskResult, deriveFreshness, hasUnsyncedChanges, ledgerOf } from '../../../../domain/rules/scope-ledger';
 import { applyScopeObservation, applyScopeVerification, initialScopeState, verificationChangeScopes } from '../../../../domain/rules/observation-application';
@@ -89,7 +89,7 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     const meta = readDetailMeta(db, repository.id);
     const validCache = meta !== null && meta.schemaVersion === DETAIL_CACHE_SCHEMA_VERSION && meta.accessContextRevision === context.accessContextRevision && hasReadableDetail(db, repository.id);
     const hasContent = loaded.deliveries.some(delivery => Object.keys(delivery.values).length > 0);
-    // 只有全部远端范围完整覆盖、且没有范围仍在暂存时才算一轮完整详情；否则完整成功时间保持旧值/未知。
+    // 只有全部常规详情范围完整覆盖、且没有范围仍在暂存时才算一轮完整详情；否则完整成功时间保持旧值/未知。
     const complete = failedScopes.length === 0 && loaded.stagedScopes.length === 0;
     // 成功范围（含来源级成功栏目）与失败错误在同一事务提交；失败范围保留旧值、旧成功时间与 dirty。
     const write = db.transaction(() => {
@@ -167,7 +167,7 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     // 验证发现变化后，同一次打开流程内安排至多一个兼容后继同步；后续动作仍由 domain 计划按账本目标决定。
     // 令牌无效或限流时不再追加请求，避免无界重试。
     const states = readScopeStatesFull(db, repository.id, context.accessContextRevision);
-    const followUp = !blocked && REMOTE_SCOPES.some(scope => { const state = states[scope]; return state !== undefined && hasUnsyncedChanges(ledgerOf(state)); });
+    const followUp = !blocked && DETAIL_SYNC_SCOPES.some(scope => { const state = states[scope]; return state !== undefined && hasUnsyncedChanges(ledgerOf(state)); });
     return { ok: failures.length === 0, error: failures[0]?.error ?? null, followUp };
   }
   function schedule(repositoryId: number, token: string, intent: 'open' | 'force'): ScheduledSyncTask | null {
@@ -180,11 +180,11 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     const states = readScopeStatesFull(db, repositoryId, revision);
     // 仍有暂存进度的范围同样属于"未同步工作"：下一批从续读点继续，而不是永久从头重读。
     const stagedScopes = pendingStagedScopes(db, repositoryId, revision, DETAIL_CACHE_SCHEMA_VERSION);
-    const dirtyScopes = REMOTE_SCOPES.filter(scope => stagedScopes.includes(scope) || (states[scope] !== undefined && hasUnsyncedChanges(ledgerOf(states[scope]!))));
+    const dirtyScopes = DETAIL_SYNC_SCOPES.filter(scope => stagedScopes.includes(scope) || (states[scope] !== undefined && hasUnsyncedChanges(ledgerOf(states[scope]!))));
     const dirtyReasonsByScope = Object.fromEntries(dirtyScopes.map(scope => [scope,
       [...new Set([...(states[scope]?.dirtyReasons ?? []), ...(stagedScopes.includes(scope) ? ['staged'] : [])])]]));
     const now = clock.now().toISOString();
-    const expiredScopes = REMOTE_SCOPES.filter(scope => {
+    const expiredScopes = DETAIL_SYNC_SCOPES.filter(scope => {
       const state = states[scope];
       const times = [state?.lastCheckedAt, state?.lastSyncedAt, attempts.get(repositoryId + '|' + revision + '|' + scope), meta?.fetchedAt]
         .filter((time): time is string => typeof time === 'string').sort();
@@ -194,7 +194,7 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     const decision = planSync({ intent, cacheStatus, changeSet: null, dirtyScopes, dirtyReasonsByScope, expiredScopes, baselineMissingScopes });
     if (decision === 'reuse-cache' || decision === 'update-summary-only' || decision === 'mark-scopes-stale') return null;
     const kind: SyncTaskState['kind'] = decision === 'force-full-fetch' ? 'force' : decision === 'background-scope-fetch' ? 'scope' : decision === 'revalidate-scopes' ? 'check' : 'open';
-    const targetScopes: DetailScope[] = kind === 'scope' ? [...BUILD_SCOPE_GROUP] : kind === 'check' ? [...expiredScopes] : [...REMOTE_SCOPES];
+    const targetScopes: DetailScope[] = kind === 'scope' ? [...BUILD_SCOPE_GROUP] : kind === 'check' ? [...expiredScopes] : [...DETAIL_SYNC_SCOPES];
     const prior = [...active.values()].filter(task => task.repoId === repositoryId && task.revision === revision);
     const covering = prior.find(task => targetScopes.every(scope => task.snapshot.targetScopes.includes(scope)) &&
       (intent !== 'force' || task.snapshot.kind === 'force') && (task.snapshot.kind !== 'check' || kind === 'check'));

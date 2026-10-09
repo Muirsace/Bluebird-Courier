@@ -185,7 +185,7 @@ describe('Token 更换：跨 feature 清理与失败恢复', () => {
     expect(count('repository')).toBe(1);
     expect(count('detail_cache')).toBe(1);
     expect(count('snapshot')).toBeGreaterThan(0);
-    expect(h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE repository_id = ?').get(id)).toEqual({ n: 7 });
+    expect(h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE repository_id = ?').get(id)).toEqual({ n: 6 });
 
     // 取消后确认被拒：同样不清理
     expect((await h().facade.beginTokenReplacement!()).ok).toBe(true);

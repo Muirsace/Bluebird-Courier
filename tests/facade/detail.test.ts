@@ -369,14 +369,15 @@ describe('本地读取与观察应用（步骤 7A）', () => {
     const rows = h().db.prepare(
       'SELECT scope, detected_revision, synced_revision, freshness, dirty_reasons, last_synced_at FROM detail_scope_state WHERE repository_id = ? ORDER BY scope',
     ).all(id) as Array<{ scope: string; detected_revision: number; synced_revision: number; freshness: string; dirty_reasons: string; last_synced_at: string | null }>;
-    // 首次凭开获取已同事务写入全部远端范围的覆盖基线；本次观察只影响 heads 变化映射的范围。
+    // 首次打开已写入常规详情范围基线；目录树只接收变化观察，不由常规同步伪造基线。
     expect(rows.map((row) => row.scope)).toEqual(['builds', 'commits', 'issuesAndPr', 'overview', 'readme', 'releases', 'tree']);
     const baselineSyncedAt = rows.find((row) => row.scope === 'commits')!.last_synced_at;
-    for (const row of rows.filter((entry) => ['overview', 'commits', 'builds', 'readme', 'tree'].includes(entry.scope))) {
+    for (const row of rows.filter((entry) => ['overview', 'commits', 'builds', 'readme'].includes(entry.scope))) {
       expect(row).toMatchObject({ detected_revision: 1, synced_revision: 0, freshness: 'stale' }); // 不宣布 fresh
       expect(row.last_synced_at).toBe(baselineSyncedAt); // 观察不刷新同步时间，也不清除既有基线
       expect(JSON.parse(row.dirty_reasons)).toContain('head');
     }
+    expect(rows.find(row => row.scope === 'tree')).toMatchObject({ detected_revision: 1, synced_revision: 0, last_synced_at: null, freshness: 'stale' });
     for (const row of rows.filter((entry) => entry.scope === 'releases' || entry.scope === 'issuesAndPr')) {
       expect(row).toMatchObject({ detected_revision: 0, synced_revision: 0 });
     }
@@ -411,7 +412,7 @@ describe('本地读取与观察应用（步骤 7A）', () => {
     expect(outcome).toMatchObject({ applied: false, duplicate: false });
     // 当前上下文账本没有任何新增：首次获取写入的基线属于旧上下文，跨上下文观察不改动它，也不改当前账本。
     expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE access_context_revision = 1').get() as { n: number }).n).toBe(0);
-    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE access_context_revision = 0').get() as { n: number }).n).toBe(7);
+    expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_scope_state WHERE access_context_revision = 0').get() as { n: number }).n).toBe(6);
     expect((h().db.prepare('SELECT COUNT(*) AS n FROM detail_observation_apply').get() as { n: number }).n).toBe(0);
 
     // facade 打开时不确认（应用无进展），待交接保留供后续重放

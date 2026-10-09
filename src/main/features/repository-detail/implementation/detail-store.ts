@@ -11,7 +11,7 @@ export const DETAIL_CACHE_SCHEMA_VERSION = 1;
 export interface DetailCacheMeta {
   /** 缓存身份/最近写入时间；用于本地续读身份与验证有效期回退，不代表完整详情成功时间。 */
   fetchedAt: string;
-  /** 最近一次全部远端范围完整覆盖的时间；null 表示还没有可信的完整详情（旧库或首次部分成功）。 */
+  /** 最近一次全部常规详情范围完整覆盖的时间；null 表示还没有可信的完整详情（旧库或首次部分成功）。 */
   completeFetchedAt: string | null;
   schemaVersion: number;
   accessContextRevision: number;
@@ -138,7 +138,7 @@ const CONTENT_VALUE_KEYS: readonly (keyof DetailValues)[] = ['metadata', 'releas
 /**
  * 有旧缓存时的分级提交：逐范围改写 payload 内本次成功来源的键，其他栏目原样保留；
  * 完整覆盖的范围随指纹与成功时间一起推进同步基线。
- * 只有 `complete=true`（全部远端范围完整覆盖，且没有范围仍在暂存）才推进完整成功时间；
+ * 只有 `complete=true`（全部常规详情范围完整覆盖，且没有范围仍在暂存）才推进完整成功时间；
  * 后续部分更新或构建独立更新保留旧完整时间。
  * payload 损坏或缓存缺失时整体回滚，不产生半套写入。
  */

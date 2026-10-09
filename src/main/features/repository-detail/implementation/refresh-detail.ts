@@ -1,8 +1,8 @@
 import { PortFailure } from '../../../../domain/ports';
 import type { OverviewContent, ScopeFetchOutcome, ScopeFetchPort, ScopePartName, ScopePartResult } from '../../../../domain/ports';
-import type { BuildItem, CommitItem, DetailScope, DetailValues, Glance, GlanceValues, NormalizedError, ReadmeDocument, ReleaseItem, RepositoryMetadata, TagItem, TreeEntry } from '../../../../domain/types';
+import type { BuildItem, CommitItem, DetailScope, DetailValues, Glance, GlanceValues, NormalizedError, ReadmeDocument, ReleaseItem, RepositoryMetadata, TagItem } from '../../../../domain/types';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
-import { REMOTE_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
+import { DETAIL_SYNC_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
 import type { ColumnName, ColumnResult } from '../contract';
 import { aggregateColumns } from './column-aggregator';
 import { stagedItemsBytes, type StagedScopeState } from './staged-scope';
@@ -210,7 +210,7 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
     outcomes.set('overview', failedOutcome('overview'));
   }
 
-  for (const scope of REMOTE_SCOPES) {
+  for (const scope of DETAIL_SYNC_SCOPES) {
     if (scope === 'overview' || blocked) continue;
     try {
       record(scope, await collectScope(port, token, request(scope), writable, stagingFor(scope)));
@@ -229,7 +229,7 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
   }
 
   // 被供应商阻塞而未尝试的范围：保留旧值与 dirty，按阻塞原因明示不可提交。
-  for (const scope of REMOTE_SCOPES) {
+  for (const scope of DETAIL_SYNC_SCOPES) {
     if (outcomes.has(scope)) continue;
     outcomes.set(scope, failedOutcome(scope));
     if (blocked) {
@@ -248,14 +248,14 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
   const issues = collaboration.filter(item => item.kind === 'issue').map(({ kind: _kind, ...item }) => item);
   const pullRequests = collaboration.filter(item => item.kind === 'pull').map(({ kind: _kind, ...item }) => item);
   const readmes = outcomes.get('readme')!.items as ReadmeDocument[];
-  const tree = outcomes.get('tree')!.items as TreeEntry[];
   const values: DetailValues = {
     ...(content?.metadata ? { metadata: content.metadata as RepositoryMetadata } : {}),
     releases, tags, commits, issues, pullRequests,
     builds, build: builds[0] ?? emptyLocalBuild(),
-    readmes, tree,
+    readmes,
   };
-  const columns = aggregateColumns({ overview: { ...repository, ...(content?.values ?? {}) }, releases, tags, commits, issues, pullRequests, builds, readme: readmes, tree });
+  const columns = aggregateColumns({ overview: { ...repository, ...(content?.values ?? {}) }, releases, tags, commits, issues, pullRequests, builds, readme: readmes, tree: null });
+  columns.tree = { status: 'unsupported', value: null, error: null };
 
   const pickColumns = (names: readonly ColumnName[]): Partial<Record<ColumnName, ColumnResult>> => {
     const picked: Partial<Record<ColumnName, ColumnResult>> = {};
@@ -276,7 +276,6 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
   const commitsComplete = scopeFullyCovered(outcomes.get('commits')!);
   const buildsComplete = scopeFullyCovered(outcomes.get('builds')!);
   const readmeComplete = scopeFullyCovered(outcomes.get('readme')!);
-  const treeComplete = scopeFullyCovered(outcomes.get('tree')!);
   const releasesDelivered = sourceDelivered(releasesOutcome, 'releases');
   const tagsDelivered = sourceDelivered(releasesOutcome, 'tags');
   const issuesDelivered = sourceDelivered(issuesOutcome, 'issues');
@@ -294,7 +293,6 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
     }),
     delivery(outcomes.get('builds')!, { values: buildsComplete ? { builds, build: values.build } : {}, names: buildsComplete ? ['builds'] : [] }),
     delivery(outcomes.get('readme')!, { values: readmeComplete ? { readmes } : {}, names: readmeComplete ? ['readme'] : [] }),
-    delivery(outcomes.get('tree')!, { values: treeComplete ? { tree } : {}, names: treeComplete ? ['tree'] : [] }),
   ];
 
   const deliveredColumns = new Set<string>(deliveries.flatMap(delivery => Object.keys(delivery.columns)));

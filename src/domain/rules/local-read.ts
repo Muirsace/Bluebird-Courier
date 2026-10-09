@@ -1,6 +1,6 @@
 import type { BuildInfo, DetailScope, DetailValues } from '../types';
 import { LOCAL_READ_DEFAULT_LIMIT, LOCAL_READ_MAX_LIMIT } from '../types';
-import { SCOPE_ORDER } from './detail-scope';
+import { DETAIL_SYNC_SCOPES, SCOPE_ORDER } from './detail-scope';
 
 export interface LocalQueryIdentity {
   repositoryId: number;
@@ -14,7 +14,7 @@ export function localReadLimit(value?: number): number {
   return Number.isFinite(value) ? Math.min(LOCAL_READ_MAX_LIMIT, Math.max(1, Math.floor(value!))) : LOCAL_READ_DEFAULT_LIMIT;
 }
 export function selectedLocalScopes(scopes?: readonly DetailScope[]): DetailScope[] {
-  return scopes === undefined ? [...SCOPE_ORDER] : SCOPE_ORDER.filter(scope => scopes.includes(scope));
+  return scopes === undefined ? [...DETAIL_SYNC_SCOPES, 'trends'] : SCOPE_ORDER.filter(scope => scopes.includes(scope));
 }
 /** 续读绑定仓库、上下文、内容版本和范围；失效返回 null，不能把旧 offset 用在新窗口。 */
 export function localReadOffset(cursor: string | null | undefined, scope: DetailScope, identity: LocalQueryIdentity): number | null {
