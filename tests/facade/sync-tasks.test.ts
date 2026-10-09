@@ -219,6 +219,7 @@ describe('后台计划与受保护执行（步骤 7B/8A）', () => {
   it('同步中新变化不被旧任务确认：只推进任务启动时的目标序号', async () => {
     const { id } = await readyWithCache({ observation: { head: 'sha-a' } });
     await produceHeadHandoff();
+    h().github.repos.get(NAME)!.commits[0]!.sha = 'sha-b'; // 模拟绑定B的任务回包；后来观察C不改写这份B内容。
     const [handoff1] = h().repositoryList.pendingObservations();
     h().repositoryDetail.applyObservation(handoff1!, h().clock.now().toISOString());
     h().github.resetCalls();
@@ -626,11 +627,14 @@ describe('部分提交与来源级成败（步骤 8B）', () => {
 
     // 真实成功空结果：替换内容并推进同步基线
     h().github.resetCalls();
+    h().github.repos.get(NAME)!.latestRelease = null;
+    h().github.repos.get(NAME)!.releases = [];
     dirtyScope(id, 'releases', 'release');
     h().github.setScopeFetch(NAME, 'releases', async request => ({
       scope: request.scope, items: [], hasMore: false, nextCursor: null, coverageComplete: true,
       observedAt: request.observedAt, accessContextRevision: request.accessContextRevision,
       fingerprint: 'fp-empty',
+      version: { releaseRevision: null, tagRevision: null },
       parts: {
         releases: { ok: true, coverageComplete: true, hasMore: false, nextCursor: null },
         tags: { ok: true, coverageComplete: true, hasMore: false, nextCursor: null },

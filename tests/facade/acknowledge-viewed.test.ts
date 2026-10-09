@@ -65,6 +65,7 @@ describe('展示确认：只推进已同步基线', () => {
   it('旧缓存A看到后B未同步仍未看；B 同步完成后再次确认才清除', async () => {
     const { id } = await readyWithCache();
     await produceHeadHandoff();
+    h().github.repos.get(NAME)!.commits[0]!.sha = 'sha-b'; // 远端已提供B，本地仍是A；后续只确认实际抓到的B。
     const release = h().github.holdNext('listReleases'); // 挂住后台同步，先完成确认
     const opened = await h().facade.fetchDetail(id);
     expect(opened.detail).not.toBeNull();

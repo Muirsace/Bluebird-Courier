@@ -54,6 +54,7 @@ export function applyScopeSync(base: ScopeSyncState, input: {
     lastSyncedAt: input.syncedAt,
     lastSyncError: undefined,
     lastSyncFailure: undefined,
+    verificationProgress: undefined,
     ...(input.fingerprint !== undefined ? { syncedFingerprint: input.fingerprint, observedFingerprint: input.fingerprint } : {}),
   };
 }

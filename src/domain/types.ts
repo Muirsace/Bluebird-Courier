@@ -81,7 +81,10 @@ export interface BuildInfo {
 export interface BuildItem extends BuildInfo { id: string | null; }
 export interface ReadmeDocument { language: string; content: string; }
 export interface TreeEntry { path: string; kind: 'file' | 'directory'; size?: number | null; }
-export interface RepositoryMetadata { description: string | null; homepage: string | null; license: string | null; defaultBranch: string | null; }
+/** 来自成功仓库元信息的资源能力；未知不能冒充已关闭。 */
+export type ResourceAvailability = 'enabled' | 'disabled' | 'unknown';
+export interface RepositoryCapabilities { issues: ResourceAvailability; pullRequests: ResourceAvailability; }
+export interface RepositoryMetadata { description: string | null; homepage: string | null; license: string | null; defaultBranch: string | null; capabilities?: RepositoryCapabilities; }
 
 export type ColumnName = 'overview' | 'releases' | 'tags' | 'commits' | 'issues' | 'pullRequests' | 'builds' | 'readme' | 'tree';
 export type ColumnStatus = 'loading' | 'success' | 'empty' | 'forbidden' | 'failed' | 'unsupported';
@@ -246,6 +249,8 @@ export interface ScopeSyncState {
   lastCheckFailure?: NormalizedError;
   lastSyncError?: string;
   lastSyncFailure?: NormalizedError;
+  /** 有界验证的持久续扫进度；不是成功同步或验证基线。 */
+  verificationProgress?: string;
 }
 
 /** 单仓库同步汇总；重启后从持久化基线恢复，旧 running 不作为运行中任务。 */
@@ -319,6 +324,8 @@ export interface TaskScopeTarget {
   targetRevision: number;
   /** 任务启动时该范围的已同步指纹；null 表示任务前无基线。 */
   baselineFingerprint: string | null;
+  /** 启动时已知的源目标；字段缺省为未知，null表达可信的已知空值。 */
+  sourceVersion?: Partial<ContentVersion>;
 }
 
 /** 同步任务上下文；写入前校验仓库存在、访问上下文一致且任务版本未被更新任务超越。 */

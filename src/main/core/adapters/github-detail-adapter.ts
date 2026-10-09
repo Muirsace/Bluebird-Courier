@@ -22,13 +22,14 @@ import type {
 } from '../../../domain/types';
 import { mapGitHubError, type GitHubHttpClient } from './github-http-client';
 import { encodedBranch, releaseFingerprint } from './github-repository-adapter';
+import { repositoryCapabilities } from './github-capabilities';
 
 interface RawRelease { tag_name?: unknown; name?: unknown; published_at?: unknown }
 interface RawCommit { sha?: unknown; commit?: { message?: unknown; author?: { name?: unknown; date?: unknown } | null; committer?: { date?: unknown } | null } }
 interface RawIssue { number?: unknown; title?: unknown; body?: unknown; state?: unknown; user?: { login?: unknown } | null; updated_at?: unknown; pull_request?: unknown }
 interface RawPull { number?: unknown; title?: unknown; body?: unknown; state?: unknown; user?: { login?: unknown } | null; updated_at?: unknown; draft?: unknown; merged_at?: unknown; head?: { ref?: unknown } | null; base?: { ref?: unknown } | null }
 interface RawWorkflowRun { id?: unknown; run_attempt?: unknown; name?: unknown; status?: unknown; conclusion?: unknown; html_url?: unknown; updated_at?: unknown }
-interface RawRepo { archived?: unknown; disabled?: unknown; full_name?: unknown; stargazers_count?: unknown; forks_count?: unknown; open_issues_count?: unknown; pushed_at?: unknown; default_branch?: unknown; description?: unknown; homepage?: unknown; license?: { spdx_id?: unknown } | null }
+interface RawRepo { has_issues?: unknown; has_pull_requests?: unknown; archived?: unknown; disabled?: unknown; full_name?: unknown; stargazers_count?: unknown; forks_count?: unknown; open_issues_count?: unknown; pushed_at?: unknown; default_branch?: unknown; description?: unknown; homepage?: unknown; license?: { spdx_id?: unknown } | null }
 
 const PAGE_SIZE = 100;
 /** 平台单页上限：调用方给的 limit 超过它时必须按平台值读取，否则会误判"没有更多"。 */
@@ -59,6 +60,12 @@ function toReleaseItem(release: RawRelease): ReleaseItem {
     title: typeof release.name === 'string' && release.name.length > 0 ? release.name : release.tag_name,
     publishedAt: typeof release.published_at === 'string' ? release.published_at : null,
   };
+}
+
+/** 实际已取得的稳定发版也参与交付，避免预发布挤出窗口导致永久欠同步。 */
+function withStableRelease(releases: ReleaseItem[], stable: ReleaseItem | null): ReleaseItem[] {
+  if (stable === null || releases.some(release => releaseFingerprint(release) === releaseFingerprint(stable))) return releases;
+  return [stable, ...releases.filter(release => release.tagName !== stable.tagName)];
 }
 
 function toIssue(item: RawIssue): IssueOrPullRequest {
@@ -157,17 +164,60 @@ function mapTree(json: unknown): TreeEntry[] {
 
 function mapRuns(json: unknown): RawWorkflowRun[] {
   const runs = typeof json === 'object' && json !== null ? (json as { workflow_runs?: unknown }).workflow_runs : undefined;
-  return arrayOf<RawWorkflowRun>(runs);
+  return arrayOf<RawWorkflowRun>(runs).map(run => { runTuple(run); return run; });
 }
 
-/** 构建指纹元组：id、重跑次数、状态、结果；任一变化都算变化（含结束与重跑）。 */
-function runTuple(run: RawWorkflowRun): [string, number, string, string | null] {
-  return [
+const RUN_STATUSES = new Set(['queued', 'in_progress', 'completed', 'waiting', 'requested', 'pending', 'action_required']);
+const RUN_CONCLUSIONS = new Set(['success', 'failure', 'neutral', 'cancelled', 'timed_out', 'action_required', 'stale', 'skipped', 'startup_failure']);
+const runId = (value: unknown): value is string => typeof value === 'string' && /^[1-9]\d*$/.test(value);
+
+/** 持久摘要逐字段校验；四元组只用于安全迁移，不能冒充已核验展示字段。 */
+function readRunTuples(value: unknown, legacy = true): unknown[][] | null {
+  if (!Array.isArray(value)) return null;
+  if (!value.every(tuple => Array.isArray(tuple) && (tuple.length === 7 || legacy && tuple.length === 4) && runId(tuple[0]) &&
+    Number.isSafeInteger(tuple[1]) && tuple[1] > 0 && typeof tuple[2] === 'string' && RUN_STATUSES.has(tuple[2]) &&
+    (tuple[3] === null || typeof tuple[3] === 'string' && RUN_CONCLUSIONS.has(tuple[3])) &&
+    tuple.slice(4).every(field => field === null || typeof field === 'string'))) return null;
+  const unique = new Map<string, unknown[]>();
+  for (const tuple of value as unknown[][]) {
+    const id = String(tuple[0]); const prior = unique.get(id);
+    if (prior !== undefined && !sameJson(prior, tuple)) return null;
+    unique.set(id, tuple);
+  }
+  return [...unique.values()];
+}
+
+/** 损坏或跨身份进度整轮丢弃，不能让不合法 observed 跳过真实补查。 */
+function readBuildProgress(value: Record<string, unknown> | null, key: string, request: { fullName: string; defaultBranch: string | null; accessContextRevision: number }, tracked: Map<string, unknown[]>): { pending: string[]; observed: unknown[][]; changed: boolean } | null {
+  if (value?.v !== 1 || value.k !== key || value.n !== request.fullName || value.b !== request.defaultBranch || value.a !== request.accessContextRevision ||
+    !Array.isArray(value.pending) || value.changed !== undefined && typeof value.changed !== 'boolean') return null;
+  const observed = readRunTuples(value.observed, false);
+  if (observed === null || observed.some(tuple => !tracked.has(String(tuple[0]))) || !value.pending.every(id => runId(id) && tracked.has(id))) return null;
+  const seen = new Set(observed.map(tuple => String(tuple[0])));
+  if (value.pending.some(id => seen.has(String(id)))) return null;
+  return { pending: [...new Set(value.pending as string[])], observed, changed: value.changed === true };
+}
+
+/** 构建摘要同时覆盖协议状态与页面实际展示的名称、链接、时间。 */
+function runTuple(run: RawWorkflowRun): unknown[] {
+  if (typeof run !== 'object' || run === null) throw new TypeError('构建响应格式无效');
+  if (typeof run.id === 'number' && !Number.isSafeInteger(run.id) || run.run_attempt !== undefined && (!Number.isSafeInteger(run.run_attempt) || Number(run.run_attempt) < 1) || run.conclusion !== undefined && run.conclusion !== null && typeof run.conclusion !== 'string') throw new TypeError('构建响应字段无效');
+  const tuple = [
     String(run.id ?? ''),
     Number.isSafeInteger(run.run_attempt) ? run.run_attempt as number : 1,
     typeof run.status === 'string' ? run.status : 'unknown',
     typeof run.conclusion === 'string' ? run.conclusion : null,
+    typeof run.name === 'string' ? run.name : null,
+    typeof run.html_url === 'string' ? run.html_url : null,
+    typeof run.updated_at === 'string' ? run.updated_at : null,
   ];
+  if (readRunTuples([tuple], false) === null) throw new TypeError('构建响应字段无效');
+  return tuple;
+}
+
+/** 续扫只持久化实际展示所需字段；交付时恢复平台映射输入。 */
+function runFromTuple(tuple: unknown[]): RawWorkflowRun {
+  return { id: tuple[0], run_attempt: tuple[1], status: tuple[2], conclusion: tuple[3], name: tuple[4], html_url: tuple[5], updated_at: tuple[6] };
 }
 
 function parseFingerprint(fingerprint: string | null): Record<string, unknown> | null {
@@ -201,7 +251,7 @@ async function windowDigest(items: readonly unknown[]): Promise<string> {
 
 /** 概览内容字段的统一摘要；摘要指标与推送线索由 Summary 独立更新。 */
 function overviewRepoDigest(repo: RawRepo): string {
-  return JSON.stringify([repo.full_name, repo.default_branch, repo.description, repo.homepage, repo.license?.spdx_id ?? null]);
+  return JSON.stringify([repo.full_name, repo.default_branch, repo.description, repo.homepage, repo.license?.spdx_id ?? null, repositoryCapabilities(repo)]);
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
@@ -225,6 +275,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
   function fetchRun(accessToken: string, fullName: string, runId: string): Promise<RawWorkflowRun> {
     return client.request(accessToken, `${repoPath(fullName)}/actions/runs/${encodeURIComponent(runId)}`, (json) => {
       if (typeof json !== 'object' || json === null) throw new TypeError('构建响应格式无效');
+      runTuple(json as RawWorkflowRun);
       return json as RawWorkflowRun;
     });
   }
@@ -282,7 +333,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     return { scope: request.scope, checkedAt: request.checkedAt, checkComplete: false, changed: false, accessContextRevision: request.accessContextRevision };
   }
 
-  function verification(request: ScopeVerifyRequest, changed: boolean, fingerprint?: string, version?: ContentVersion): ScopeVerification {
+  function verification(request: ScopeVerifyRequest, changed: boolean, fingerprint?: string, version?: Partial<ContentVersion>): ScopeVerification {
     return { scope: request.scope, checkedAt: request.checkedAt, checkComplete: true, changed, fingerprint, version, accessContextRevision: request.accessContextRevision };
   }
 
@@ -293,7 +344,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     const fingerprintOf = (digest: string): string => JSON.stringify({ v: 1, d: digest });
     try {
       let digest: string;
-      let version: ContentVersion;
+      let version: Partial<ContentVersion>;
       if (request.scope === 'overview') {
         const repo = await client.request(accessToken, repoPath(request.fullName), (json) => json as RawRepo);
         const branch = typeof repo.default_branch === 'string' ? repo.default_branch : request.defaultBranch;
@@ -312,15 +363,16 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
       } else if (request.scope === 'releases') {
         const windowSize = effectiveLimit(pageOf(base?.perPage, 30));
         const [releases, tags] = await Promise.all([fetchReleasesPage(accessToken, request.fullName, windowSize, 1), fetchTagsPage(accessToken, request.fullName, windowSize, 1)]);
-        digest = JSON.stringify([JSON.stringify(releases.map(releaseFingerprint)), JSON.stringify(tags.map(tagFingerprint))]);
-        const release = releases[0] ?? null;
+        // 最新稳定发版与列表首条（可能是预发布）不是同一个信号。
+        const release = await fetchReleaseRaw(accessToken, request.fullName);
+        digest = JSON.stringify([JSON.stringify(withStableRelease(releases, release).map(releaseFingerprint)), JSON.stringify(tags.map(tagFingerprint))]);
         const tag = tags[0] ?? null;
-        version = { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: release === null ? null : releaseFingerprint(release), tagRevision: tagFingerprint(tag) };
+        version = { releaseRevision: release === null ? null : releaseFingerprint(release), tagRevision: tagFingerprint(tag) };
       } else if (request.scope === 'readme') {
         if (request.defaultBranch === null) return incompleteVerification(request);
         const entries = await client.request(accessToken, `${repoPath(request.fullName)}/contents?ref=${encodeURIComponent(request.defaultBranch)}`, readmeEntries);
         digest = readmeScopeDigest(entries); // 内容摘要：README 条目与内容 sha
-        version = { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: null, tagRevision: null };
+        version = { defaultBranch: request.defaultBranch };
       } else {
         if (request.defaultBranch === null) return incompleteVerification(request);
         let headRevision: string | null = null;
@@ -332,7 +384,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           headRevision = head;
           digest = JSON.stringify([head]);
         }
-        version = { defaultBranch: request.defaultBranch, headRevision, releaseRevision: null, tagRevision: null };
+        version = { defaultBranch: request.defaultBranch, ...(request.scope === 'commits' ? { headRevision } : {}) };
       }
       const fingerprint = request.scope === 'releases'
         ? JSON.stringify({ v: 1, perPage: effectiveLimit(pageOf(base?.perPage, 30)), d: digest })
@@ -355,7 +407,27 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
    */
   async function verifyIssuesAndPr(accessToken: string, request: ScopeVerifyRequest): Promise<ScopeVerification> {
     const base = parseFingerprint(request.baselineFingerprint);
-    if (request.mode === 'probe') {
+    const issuesDisabled = request.capabilities?.issues === 'disabled';
+    const pullsDisabled = request.capabilities?.pullRequests === 'disabled';
+    let sourceBudget = request.maxPages;
+    if (issuesDisabled || pullsDisabled) {
+      // 持久能力可能已复开；只有验证旧禁用状态时重查元信息，完整抓取不重复读取。
+      try {
+        const current = await client.request(accessToken, repoPath(request.fullName), json => repositoryCapabilities(json as RawRepo));
+        sourceBudget -= 1;
+        if (!sameJson(current, request.capabilities)) return { ...incompleteVerification(request), changed: true };
+      } catch (error) {
+        const mapped = mapGitHubError(error);
+        return { ...incompleteVerification(request), error: { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) } };
+      }
+      if (issuesDisabled && pullsDisabled) {
+        const digest = JSON.stringify(['disabled', 'disabled']);
+        const prior = base?.reread as { digest?: unknown } | undefined;
+        return prior?.digest === digest ? verification(request, false, request.baselineFingerprint ?? undefined) : { ...incompleteVerification(request), changed: true };
+      }
+      if (sourceBudget < 1) return incompleteVerification(request);
+    }
+    if (request.mode === 'probe' && !issuesDisabled && !pullsDisabled) {
       const upTo = typeof base?.upTo === 'string' ? base.upTo : null;
       const win = Array.isArray(base?.win) ? base.win as Array<[unknown, unknown]> : null;
       if (upTo === null || win === null) {
@@ -394,12 +466,12 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
     const sizedWindow = prior !== null && typeof (prior as { perPage?: unknown }).perPage === 'number';
     const windowSize = sizedWindow ? effectiveLimit((prior as { perPage: number }).perPage) : PAGE_SIZE;
     const windowPages = sizedWindow ? pageOf(prior.pages, request.maxPages) : request.maxPages;
-    const scanPages = Math.min(windowPages, request.maxPages);
+    const scanPages = Math.min(windowPages, sourceBudget);
     const comparable = prior !== null && scanPages === windowPages && (sizedWindow || pageOf(prior.pages, -1) === request.maxPages) && typeof prior.digest === 'string';
     const issueTuples: unknown[][] = [];
     const pullTuples: unknown[][] = [];
-    let issuesDone = false;
-    let pullsDone = false;
+    let issuesDone = issuesDisabled;
+    let pullsDone = pullsDisabled;
     try {
       for (let page = 1; page <= scanPages && !(issuesDone && pullsDone); page += 1) {
         if (!issuesDone) {
@@ -417,7 +489,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
       const mapped = mapGitHubError(error);
       return { ...incompleteVerification(request), error: { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) } };
     }
-    const digest = JSON.stringify([issueTuples, pullTuples]);
+    const digest = JSON.stringify([issuesDisabled ? 'disabled' : issueTuples, pullsDisabled ? 'disabled' : pullTuples]);
     let newUpTo = request.checkedAt;
     for (const tuple of issueTuples) {
       const updatedAt = tuple[3];
@@ -442,55 +514,69 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
    */
   async function verifyBuilds(accessToken: string, request: ScopeVerifyRequest): Promise<ScopeVerification> {
     const base = parseFingerprint(request.baselineFingerprint);
-    const recentBaseline = Array.isArray(base?.recent) ? base.recent as unknown[][] : null;
-    const trackedBaseline = Array.isArray(base?.tracked) ? base.tracked as unknown[][] : null;
+    const recentBaseline = readRunTuples(base?.recent);
+    const trackedBaseline = readRunTuples(base?.tracked);
 
     // 使用采集时的窗口大小，不能把扩大窗口后读到的旧运行当作新增。
     const windowSize = typeof base?.windowSize === 'number' ? effectiveLimit(base.windowSize) : Math.max(30, Math.min(100, recentBaseline?.length ?? 30));
-    const recentRuns = await fetchRunsPage(accessToken, request.fullName, windowSize, 1);
+    const key = await windowDigest([request.fullName, request.defaultBranch, request.accessContextRevision, request.baselineFingerprint]);
+    const trackedById = new Map((trackedBaseline ?? []).map(tuple => [String(tuple[0]), tuple]));
+    const progress = readBuildProgress(parseFingerprint(request.verificationProgress ?? null), key, request, trackedById);
+    const validProgress = progress !== null;
+    const changedByProgress = validProgress && (progress.changed || progress.observed.some(tuple => !sameJson(trackedById.get(String(tuple[0])), tuple)));
+    let recentRuns: RawWorkflowRun[];
+    try { recentRuns = await fetchRunsPage(accessToken, request.fullName, windowSize, 1); }
+    catch (error) {
+      const mapped = mapGitHubError(error);
+      return { ...incompleteVerification(request), changed: changedByProgress,
+        ...(validProgress ? { verificationProgress: request.verificationProgress } : {}),
+        error: { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) } };
+    }
     const recentTuples = recentRuns.map(runTuple);
-
     if (recentBaseline === null || trackedBaseline === null) {
       const tracked = recentTuples.filter((tuple) => tuple[2] !== 'completed');
-      return { ...incompleteVerification(request), fingerprint: JSON.stringify({ v: 1, windowSize, recent: recentTuples, tracked }) };
+      return { ...incompleteVerification(request), verificationProgress: null, fingerprint: JSON.stringify({ v: 2, windowSize, recent: recentTuples, tracked }) };
     }
 
-    // 近期窗口按运行 ID 逐条比较：窗口大小不同也能发现新增运行、结束与重跑
     const baselineById = new Map(recentBaseline.map((tuple) => [String(tuple[0]), tuple]));
     const currentIds = new Set(recentTuples.map((tuple) => String(tuple[0])));
     const removed = recentTuples.length < windowSize && recentBaseline.some((tuple) => !currentIds.has(String(tuple[0])));
-    const changedByRecent = removed || recentTuples.some((tuple) => {
-      const previous = baselineById.get(String(tuple[0]));
-      return previous === undefined || !sameJson(previous, tuple);
-    });
-
-    const budget = Math.max(0, request.maxPages - 1); // 近期页占 1
-    // 兼容已经包含重复运行的旧指纹，每个运行只占一次追踪预算。
-    const uniqueTracked = [...new Map(trackedBaseline.map((tuple) => [String(tuple[0]), tuple])).values()];
-    const toRead = uniqueTracked.slice(0, budget);
-    const unread = uniqueTracked.length - toRead.length;
-    const currentTracked: unknown[][] = [];
+    // 旧四元组缺少展示证据，保守产生变化，抓取后升级基线而不是宣布 fresh。
+    let changed = changedByProgress || removed || recentBaseline.some(tuple => tuple.length < 7) || trackedBaseline.some(tuple => tuple.length < 7) || recentTuples.some(tuple => !sameJson(baselineById.get(String(tuple[0])), tuple));
+    const observed = new Map<string, unknown[]>(validProgress
+      ? progress.observed.map(tuple => [String(tuple[0]), tuple])
+      : []);
+    // 成功记录移出本轮队列；失败记录移到队尾，避免一直失败的前排饿死后排。
+    const pending = validProgress
+      ? [...progress.pending]
+      : [...trackedById.keys()];
+    for (const id of trackedById.keys()) if (!observed.has(id) && !pending.includes(id)) pending.push(id);
+    const toRead = pending.splice(0, Math.max(0, request.maxPages - 1));
     let readError: import('../../../domain/types').NormalizedError | undefined;
-    let changedByTracked = false;
-    for (const tuple of toRead) {
+    for (let index = 0; index < toRead.length; index += 1) {
+      const id = toRead[index]!;
       try {
-        const run = await fetchRun(accessToken, request.fullName, String(tuple[0]));
-        const current = runTuple(run);
-        if (!sameJson(current, tuple)) changedByTracked = true; // 变化证据不能冒充所有运行已检查
-        if (current[2] !== 'completed') currentTracked.push(current as unknown[]);
+        const current = runTuple(await fetchRun(accessToken, request.fullName, id));
+        if (String(current[0]) !== id) throw new TypeError('构建响应标识不匹配');
+        if (!sameJson(current, trackedById.get(id))) changed = true;
+        observed.set(id, current);
       } catch (error) {
         const mapped = mapGitHubError(error);
         readError ??= { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) };
-        if (mapped.kind === 'access_token_invalid' || mapped.kind === 'rate_limited') break;
+        pending.push(id);
+        if (mapped.kind === 'access_token_invalid' || mapped.kind === 'rate_limited') {
+          pending.push(...toRead.slice(index + 1));
+          break;
+        }
       }
     }
-    const changed = changedByRecent || changedByTracked;
-    if (unread > 0 || readError) return { ...incompleteVerification(request), changed, ...(readError ? { error: readError } : {}) };
-    if (changed) return verification(request, true);
-
-    const freshTracked = recentTuples.filter((tuple) => tuple[2] !== 'completed');
-    const tracked = [...new Map([...freshTracked, ...currentTracked].map((tuple) => [String(tuple[0]), tuple])).values()];
-    return verification(request, false, JSON.stringify({ v: 1, windowSize, recent: recentTuples, tracked }));
+    const verificationProgress = JSON.stringify({ v: 1, n: request.fullName, b: request.defaultBranch, a: request.accessContextRevision, k: key, pending, observed: [...observed.values()], changed });
+    if (pending.length > 0 || readError) return { ...incompleteVerification(request), changed,
+      verificationProgress,
+      ...(readError ? { error: readError } : {}) };
+    if (changed) return { ...verification(request, true), verificationProgress };
+    const tracked = [...new Map([...recentTuples, ...observed.values()].filter(tuple => tuple[2] !== 'completed').map(tuple => [String(tuple[0]), tuple])).values()];
+    return { ...verification(request, false, JSON.stringify({ v: 2, windowSize, recent: recentTuples, tracked })), verificationProgress: null };
   }
 
   return {
@@ -581,14 +667,17 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new PortFailure('unknown', '范围读取上限必须为正整数');
       const perPage = effectiveLimit(limit);
       let cursor = parseCursor(request.cursor);
+      const sourceRef = request.targetVersion?.headRevision ?? request.defaultBranch;
       // 分页参数改变就是新查询；旧 offset / page 不得应用到另一个窗口。
-      if (cursor.v === 2 && (cursor.l !== undefined && cursor.l !== perPage || cursor.b !== undefined && cursor.b !== request.defaultBranch || cursor.a !== undefined && cursor.a !== accessContextRevision || cursor.n !== undefined && cursor.n !== fullName)) cursor = {};
-      const makeCursor = (value: Record<string, unknown>): string => JSON.stringify({ v: 2, l: perPage, b: request.defaultBranch, a: accessContextRevision, n: fullName, ...value });
+      if (cursor.v === 2 && (cursor.l !== undefined && cursor.l !== perPage || cursor.b !== undefined && cursor.b !== request.defaultBranch || cursor.a !== undefined && cursor.a !== accessContextRevision || cursor.n !== undefined && cursor.n !== fullName || cursor.ref !== undefined && cursor.ref !== sourceRef || request.targetVersion?.headRevision && cursor.ref !== sourceRef || cursor.cap !== undefined && cursor.cap !== JSON.stringify(request.capabilities))) cursor = {};
+      const makeCursor = (value: Record<string, unknown>): string => JSON.stringify({ v: 2, l: perPage, b: request.defaultBranch, a: accessContextRevision, n: fullName, ref: sourceRef, cap: JSON.stringify(request.capabilities), sv: cursor.sv, ...value });
       switch (scope) {
         case 'issuesAndPr': {
           const versioned = cursor.v === 2;
-          const issuePage = versioned && cursor.i === null ? null : pageOf(cursor.i);
-          const pullPage = versioned && cursor.p === null ? null : pageOf(cursor.p);
+          const issuesDisabled = request.capabilities?.issues === 'disabled';
+          const pullsDisabled = request.capabilities?.pullRequests === 'disabled';
+          const issuePage = issuesDisabled || versioned && cursor.i === null ? null : pageOf(cursor.i);
+          const pullPage = pullsDisabled || versioned && cursor.p === null ? null : pageOf(cursor.p);
           const offset = pageOf(cursor.off, 0);
           let issues: RawIssue[] = [];
           let issuesError: unknown = null;
@@ -602,7 +691,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           }
           const attempted = (issuePage !== null ? 1 : 0) + (pullPage !== null ? 1 : 0);
           const succeeded = (issuePage !== null && issuesError === null ? 1 : 0) + (pullPage !== null && pullsError === null ? 1 : 0);
-          if (attempted > 0 && succeeded === 0) throw issuesError ?? pullsError;
+          if (attempted > 0 && succeeded === 0 && !issuesDisabled && !pullsDisabled) throw issuesError ?? pullsError;
 
           const merged = new Map<number, IssueOrPullRequest>();
           for (const item of issues) if (Number.isSafeInteger(item.number)) merged.set(item.number as number, toIssue(item));
@@ -635,11 +724,11 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
 
           // 采集基线：只在窗口起点、两个来源都成功时提供（feature 原样保存，不代表"已验证无变化"）
           let fingerprint: string | undefined;
-          if (issuePage === 1 && pullPage === 1 && !partial) {
+          if ((issuePage === 1 || issuesDisabled) && (pullPage === 1 || pullsDisabled) && !partial) {
             let upTo = observedAt;
             for (const item of ordered) if (item.updatedAt > upTo) upTo = item.updatedAt;
             const win = ordered.filter((item) => Date.parse(item.updatedAt) >= Date.parse(upTo) - PROBE_OVERLAP_MS).map((item) => [item.number, item.updatedAt]);
-            fingerprint = JSON.stringify({ v: 1, upTo, win, reread: { pages: 1, perPage, digest: JSON.stringify([issues.map(issueTuple), pulls.map(pullTuple)]) } });
+            fingerprint = JSON.stringify({ v: 1, upTo, win, reread: { pages: 1, perPage, digest: JSON.stringify([issuesDisabled ? 'disabled' : issues.map(issueTuple), pullsDisabled ? 'disabled' : pulls.map(pullTuple)]) } });
           }
 
           return {
@@ -651,13 +740,17 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             parts: {
               issues: {
                 ok: issuesError === null,
-                coverageComplete: issuePage !== null && issuesError === null && !retryWindow && issues.every((item) => delivered.has(item.number as number)),
+                availability: request.capabilities?.issues ?? 'unknown',
+                fingerprint: issuesDisabled ? JSON.stringify(['disabled']) : undefined,
+                coverageComplete: issuesDisabled || issuePage !== null && issuesError === null && !retryWindow && issues.every((item) => delivered.has(item.number as number)),
                 hasMore: issuesMore,
                 nextCursor: retryWindow && issuePage !== null ? String(issuePage) : issuesError !== null ? String(issuePage) : issuesMore ? String(issuePage! + 1) : null,
               },
               pullRequests: {
                 ok: pullsError === null,
-                coverageComplete: pullPage !== null && pullsError === null && !retryWindow && pulls.every((item) => delivered.has(item.number as number)),
+                availability: request.capabilities?.pullRequests ?? 'unknown',
+                fingerprint: pullsDisabled ? JSON.stringify(['disabled']) : undefined,
+                coverageComplete: pullsDisabled || pullPage !== null && pullsError === null && !retryWindow && pulls.every((item) => delivered.has(item.number as number)),
                 hasMore: pullsMore,
                 nextCursor: retryWindow && pullPage !== null ? String(pullPage) : pullsError !== null ? String(pullPage) : pullsMore ? String(pullPage! + 1) : null,
               },
@@ -667,15 +760,58 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
         case 'builds': {
           const page = pageOf(cursor.p, pageOf(cursor.page));
           const runs = await fetchRunsPage(accessToken, fullName, perPage, page);
-          const items: BuildItem[] = runs.map((run) => ({ ...toBuildInfo(run), id: typeof run.id === 'number' || typeof run.id === 'string' ? String(run.id) : null }));
           const tuples = runs.map(runTuple);
           const hasMore = runs.length === perPage;
+          const prior = parseFingerprint(request.baselineFingerprint ?? null);
+          const oldTracked = page === 1 ? readRunTuples(prior?.tracked) ?? [] : [];
+          const trackedById = new Map(oldTracked.map(tuple => [String(tuple[0]), tuple]));
+          const key = await windowDigest([fullName, request.defaultBranch, accessContextRevision, request.baselineFingerprint ?? null]);
+          const progress = readBuildProgress(typeof cursor.bp === 'object' && cursor.bp !== null ? cursor.bp as Record<string, unknown> : parseFingerprint(request.verificationProgress ?? null), key, request, trackedById);
+          const validProgress = progress !== null;
+          const observed = new Map<string, unknown[]>(validProgress
+            ? progress.observed.map(tuple => [String(tuple[0]), tuple])
+            : []);
+          for (const tuple of tuples) if (trackedById.has(String(tuple[0]))) observed.set(String(tuple[0]), tuple);
+          const pending = validProgress
+            ? progress.pending.filter(id => !observed.has(id))
+            : [];
+          for (const id of trackedById.keys()) if (!observed.has(id) && !pending.includes(id)) pending.push(id);
+          const toRead = pending.splice(0, 2); // 近期页与补查共最多三次 HTTP，不无界读取全部运行。
+          let readError: import('../../../domain/types').NormalizedError | undefined;
+          for (let index = 0; index < toRead.length; index += 1) {
+            const id = toRead[index]!;
+            try {
+              const current = runTuple(await fetchRun(accessToken, fullName, id));
+              if (String(current[0]) !== id) throw new TypeError('构建响应标识不匹配');
+              observed.set(id, current);
+            } catch (error) {
+              const mapped = mapGitHubError(error);
+              readError ??= { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) };
+              pending.push(id);
+              if (mapped.kind === 'access_token_invalid' || mapped.kind === 'rate_limited') { pending.push(...toRead.slice(index + 1)); break; }
+            }
+          }
+          if (pending.length > 0 || readError) return {
+            scope, items: [], hasMore: true, nextCursor: makeCursor({ p: page, bp: { v: 1, n: fullName, b: request.defaultBranch, a: accessContextRevision, k: key, pending, observed: [...observed.values()] } }),
+            coverageComplete: false, observedAt, accessContextRevision,
+            ...(readError ? { errors: [readError] } : {}),
+          };
+          const delivered = [...new Map([...tuples, ...observed.values()].map(tuple => [String(tuple[0]), tuple])).values()];
+          const offset = pageOf(cursor.off, 0);
+          const windowKey = await windowDigest(delivered);
+          const completedProgress = { v: 1, n: fullName, b: request.defaultBranch, a: accessContextRevision, k: key, pending: [], observed: [...observed.values()] };
+          if (offset > 0 && cursor.w !== windowKey) return { scope, items: [], hasMore: true, nextCursor: makeCursor({ p: page, bp: completedProgress, off: 0, w: windowKey }), coverageComplete: false, windowRestarted: true, observedAt, accessContextRevision };
+          const items: BuildItem[] = delivered.slice(offset, offset + perPage).map(tuple => ({ ...toBuildInfo(runFromTuple(tuple)), id: String(tuple[0]) }));
+          const consumed = offset + items.length;
+          const windowRemaining = consumed < delivered.length;
+          const tracked = delivered.filter(tuple => tuple[2] !== 'completed');
           return {
-            scope, items, hasMore,
-            nextCursor: hasMore ? makeCursor({ p: page + 1 }) : null,
-            coverageComplete: true, observedAt, accessContextRevision,
+            scope, items, hasMore: hasMore || windowRemaining,
+            nextCursor: windowRemaining ? makeCursor({ p: page, bp: completedProgress, off: consumed, w: windowKey }) : hasMore ? makeCursor({ p: page + 1 }) : null,
+            coverageComplete: !windowRemaining, observedAt, accessContextRevision,
+            version: { defaultBranch: request.defaultBranch },
             // 首页采集即基线：保留 attempt / status / conclusion 源字段，feature 原样保存
-            fingerprint: page === 1 ? JSON.stringify({ v: 1, windowSize: perPage, recent: tuples, tracked: tuples.filter((tuple) => tuple[2] !== 'completed') }) : undefined,
+            fingerprint: page === 1 ? JSON.stringify({ v: 2, windowSize: perPage, recent: tuples, tracked }) : undefined,
           };
         }
         case 'commits': {
@@ -683,13 +819,13 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           // 查询身份随游标保存：分支变化视为新查询，从第一页重新开始
           const identityMatches = cursor.v !== 2 || (typeof cursor.b === 'string' || cursor.b === null) && cursor.b === branch;
           const page = identityMatches ? pageOf(cursor.p, pageOf(cursor.page)) : 1;
-          const items = await client.request(accessToken, `${repoPath(fullName)}/commits?per_page=${perPage}&page=${page}${branch ? `&sha=${encodeURIComponent(branch)}` : ''}`, mapCommits);
+          const items = await client.request(accessToken, `${repoPath(fullName)}/commits?per_page=${perPage}&page=${page}${sourceRef ? `&sha=${encodeURIComponent(sourceRef)}` : ''}`, mapCommits);
           const hasMore = items.length === perPage;
           return {
             scope, items, hasMore,
             nextCursor: hasMore ? makeCursor({ p: page + 1, b: branch }) : null,
             coverageComplete: true, observedAt, accessContextRevision,
-            version: page === 1 ? { defaultBranch: branch, headRevision: items[0]?.sha ?? null, releaseRevision: null, tagRevision: null } : undefined,
+            version: page === 1 ? { defaultBranch: branch, headRevision: items[0]?.sha ?? null } : undefined,
             fingerprint: page === 1 ? JSON.stringify({ v: 1, d: JSON.stringify([items[0]?.sha ?? null]) }) : undefined,
           };
         }
@@ -712,19 +848,30 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           const succeeded = (releasePage !== null && releasesError === null ? 1 : 0) + (tagPage !== null && tagsError === null ? 1 : 0);
           if (attempted > 0 && succeeded === 0) throw releasesError ?? tagsError;
 
-          // 两个栏目可区分：Release 与 Tag 各自带 kind 标记
+          const releasesMore = releasePage !== null && releasesError === null && releases.length === perPage;
+          const tagsMore = tagPage !== null && tagsError === null && tags.length === perPage;
+          const nextTagPage = tagPage === null ? null : tagsError !== null ? tagPage : tagsMore ? tagPage + 1 : null;
+          const fresh = releasePage === 1 && tagPage === 1;
+          let releaseFp: string | null | undefined;
+          let sourceError: unknown = null;
+          if (fresh && request.targetVersion && 'releaseRevision' in request.targetVersion) {
+            try {
+              const saved = cursor.sv as Partial<ReleaseItem> | null | undefined;
+              const stable = saved === null ? null : saved && typeof saved.tagName === 'string' && typeof saved.title === 'string' && (saved.publishedAt === null || typeof saved.publishedAt === 'string')
+                ? saved as ReleaseItem : await fetchReleaseRaw(accessToken, fullName);
+              releaseFp = stable === null ? null : releaseFingerprint(stable);
+              cursor.sv = stable;
+              releases = withStableRelease(releases, stable);
+            } catch (error) { sourceError = error; }
+          }
+          // 两个栏目可区分：Release 与 Tag 各自带 kind 标记；新增实际稳定发版仍按 limit 续窗。
           const items = [
             ...releases.map((release) => ({ kind: 'release' as const, ...release })),
             ...tags.map((tag) => ({ kind: 'tag' as const, name: tag.name, committedAt: null as string | null })),
           ];
-          const releasesMore = releasePage !== null && releasesError === null && releases.length === perPage;
-          const tagsMore = tagPage !== null && tagsError === null && tags.length === perPage;
-          const nextReleasePage = releasePage === null ? null : releasesError !== null ? releasePage : releasesMore ? releasePage + 1 : null;
-          const nextTagPage = tagPage === null ? null : tagsError !== null ? tagPage : tagsMore ? tagPage + 1 : null;
-          const fresh = releasePage === 1 && tagPage === 1;
-          const errors = [releasesError, tagsError].filter(error => error !== null).map(error => { const mapped = mapGitHubError(error); return { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) }; });
-          const partial = releasesError !== null || tagsError !== null;
-          const releaseFp = releases[0] ? releaseFingerprint(releases[0]) : null;
+          const nextReleasePage = releasePage === null ? null : releasesError !== null || sourceError !== null ? releasePage : releasesMore ? releasePage + 1 : null;
+          const errors = [releasesError, tagsError, sourceError].filter(error => error !== null).map(error => { const mapped = mapGitHubError(error); return { kind: mapped.kind, message: mapped.message, ...(mapped.resetAt ? { resetAt: mapped.resetAt } : {}) }; });
+          const partial = releasesError !== null || tagsError !== null || sourceError !== null;
           const tagFp = tags[0] ? JSON.stringify([tags[0].name, tags[0].commitSha]) : null;
           const windowKey = await windowDigest(items);
           if (!partial && offset > 0 && cursor.w !== windowKey) {
@@ -734,7 +881,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
           const windowItems = items.slice(retryWindow ? 0 : offset, (retryWindow ? 0 : offset) + perPage);
           const consumed = offset + windowItems.length;
           const windowRemaining = consumed < items.length;
-          const releasesCovered = releasePage !== null && releasesError === null && !retryWindow && consumed >= releases.length;
+          const releasesCovered = releasePage !== null && releasesError === null && sourceError === null && !retryWindow && consumed >= releases.length;
           const tagsCovered = tagPage !== null && tagsError === null && !retryWindow && !windowRemaining;
           const releaseWindowFp = JSON.stringify(releases.map(releaseFingerprint));
           const tagWindowFp = JSON.stringify(tags.map(tagFingerprint));
@@ -750,17 +897,17 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
                   : null,
             coverageComplete: !partial && !windowRemaining, observedAt, accessContextRevision,
             version: fresh
-              ? { defaultBranch: request.defaultBranch, headRevision: null, releaseRevision: releaseFp, tagRevision: tagFp }
+              ? { ...(releaseFp !== undefined && releasesError === null && sourceError === null ? { releaseRevision: releaseFp } : {}), ...(tagsError === null ? { tagRevision: tagFp } : {}) }
               : undefined,
             fingerprint: fresh && !partial ? JSON.stringify({ v: 1, perPage, d: JSON.stringify([releaseWindowFp, tagWindowFp]) }) : undefined,
             parts: {
-              releases: { ok: releasesError === null, coverageComplete: releasesCovered, hasMore: releasesMore, nextCursor: retryWindow && releasePage !== null ? String(releasePage) : nextReleasePage !== null && releasesError !== null ? String(nextReleasePage) : releasesMore ? String(releasePage! + 1) : null, fingerprint: fresh && releasesCovered ? releaseWindowFp : undefined },
+              releases: { ok: releasesError === null && sourceError === null, coverageComplete: releasesCovered, hasMore: releasesMore, nextCursor: retryWindow && releasePage !== null ? String(releasePage) : nextReleasePage !== null && (releasesError !== null || sourceError !== null) ? String(nextReleasePage) : releasesMore ? String(releasePage! + 1) : null, fingerprint: fresh && releasesCovered ? releaseWindowFp : undefined },
               tags: { ok: tagsError === null, coverageComplete: tagsCovered, hasMore: tagsMore, nextCursor: retryWindow && tagPage !== null ? String(tagPage) : nextTagPage !== null && tagsError !== null ? String(nextTagPage) : tagsMore ? String(tagPage! + 1) : null, fingerprint: fresh && tagsCovered ? tagWindowFp : undefined },
             },
           };
         }
         case 'readme': {
-          const branchQuery = request.defaultBranch ? `?ref=${encodeURIComponent(request.defaultBranch)}` : '';
+          const branchQuery = sourceRef ? `?ref=${encodeURIComponent(sourceRef)}` : '';
           const entries = await client.request(accessToken, `${repoPath(fullName)}/contents${branchQuery}`, readmeEntries);
           const offset = pageOf(cursor.off, 0);
           const windowKey = await windowDigest(entries);
@@ -772,6 +919,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             scope, items, hasMore,
             nextCursor: hasMore ? makeCursor({ off: consumed, w: windowKey }) : null,
             coverageComplete: !hasMore, observedAt, accessContextRevision,
+            version: request.targetVersion?.headRevision ? { defaultBranch: request.defaultBranch, headRevision: request.targetVersion.headRevision } : undefined,
             fingerprint: offset === 0 ? JSON.stringify({ v: 1, d: readmeScopeDigest(entries) }) : undefined,
           };
         }
@@ -824,6 +972,7 @@ export function createGitHubDetailAdapter(client: GitHubHttpClient) {
             homepage: typeof repo.homepage === 'string' ? repo.homepage : null,
             license: repo.license && typeof repo.license.spdx_id === 'string' ? repo.license.spdx_id : null,
             defaultBranch: typeof repo.default_branch === 'string' ? repo.default_branch : null,
+            capabilities: repositoryCapabilities(repo),
           };
           const version: ContentVersion = {
             defaultBranch: metadata.defaultBranch,

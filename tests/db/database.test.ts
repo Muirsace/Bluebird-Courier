@@ -316,7 +316,7 @@ describe('同步记账存储与兼容升级（V3）', () => {
     legacy.prepare('UPDATE snapshot_pending_cursor SET last_rowid = 7 WHERE id = 1').run();
     legacy.close();
     const db = open(pathname);
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
     expect(db.prepare('SELECT captured_at, stars, observation_sequence, observation_at FROM snapshot').get()).toEqual({ captured_at: at, stars: 100, observation_sequence: 0, observation_at: at });
     expect(db.prepare('SELECT identity, payload, observation_sequence FROM snapshot_pending').get()).toEqual({ identity: 'old-pending', payload: '{"stars":200}', observation_sequence: 0 });
     expect(db.prepare('SELECT observation_id FROM observation_handoff').get()).toEqual({ observation_id: 'old-handoff' });
@@ -342,7 +342,39 @@ describe('同步记账存储与兼容升级（V3）', () => {
     for (const table of ['snapshot', 'snapshot_pending']) expect((db.pragma(`table_info(${table})`) as Array<{ name: string }>).map(row => row.name)).not.toContain('observation_sequence');
     expect(db.prepare('SELECT stars FROM repository').get()).toEqual({ stars: 1284 });
     createMigrationRunner(MIGRATIONS).run(db);
-    expect(db.pragma('user_version', { simple: true })).toBe(9);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+  });
+
+  it('V9升级V10保留成功基线和资料，验证续扫进度跨重新打开保存', () => {
+    const pathname = tempDbPath();
+    const legacy = new Database(pathname);
+    createMigrationRunner(MIGRATIONS.slice(0, 9)).run(legacy);
+    seedRepository(legacy);
+    legacy.prepare("INSERT INTO detail_scope_state (repository_id,scope,synced_fingerprint,last_checked_at) VALUES (1,'builds','successful-baseline','2026-10-09T01:00:00Z')").run();
+    legacy.close();
+    const db = open(pathname);
+    expect(db.pragma('user_version', { simple: true })).toBe(10);
+    expect(db.prepare("SELECT synced_fingerprint,last_checked_at,verification_progress FROM detail_scope_state WHERE repository_id=1 AND scope='builds'").get())
+      .toEqual({ synced_fingerprint: 'successful-baseline', last_checked_at: '2026-10-09T01:00:00Z', verification_progress: null });
+    db.prepare("UPDATE detail_scope_state SET verification_progress='pending-run-3' WHERE repository_id=1 AND scope='builds'").run();
+    db.close();
+    expect(open(pathname).prepare("SELECT verification_progress FROM detail_scope_state WHERE repository_id=1 AND scope='builds'").get())
+      .toEqual({ verification_progress: 'pending-run-3' });
+  });
+
+  it('V10列与版本在失败时一起回滚，旧成功基线不丢失', () => {
+    const legacy = new Database(tempDbPath());
+    opened.push(legacy);
+    createMigrationRunner(MIGRATIONS.slice(0, 9)).run(legacy);
+    seedRepository(legacy);
+    legacy.prepare("INSERT INTO detail_scope_state (repository_id,scope,synced_fingerprint) VALUES (1,'builds','baseline')").run();
+    const failing = createMigrationRunner([...MIGRATIONS.slice(0, 9), database => { MIGRATIONS[9](database); throw new Error('V10失败'); }]);
+    expect(() => failing.run(legacy)).toThrow('V10失败');
+    expect(legacy.pragma('user_version', { simple: true })).toBe(9);
+    expect((legacy.pragma('table_info(detail_scope_state)') as Array<{ name: string }>).some(column => column.name === 'verification_progress')).toBe(false);
+    expect(legacy.prepare('SELECT synced_fingerprint FROM detail_scope_state').get()).toEqual({ synced_fingerprint: 'baseline' });
+    createMigrationRunner(MIGRATIONS).run(legacy);
+    expect(legacy.pragma('user_version', { simple: true })).toBe(10);
   });
 
   it('迁移中途失败：该版本已写入的内容与 user_version 一起回滚', () => {

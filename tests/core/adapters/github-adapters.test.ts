@@ -360,8 +360,8 @@ describe('构建验证（verifyScopes）', () => {
   });
 
   it('预算不足重读全部未完成运行时未完成，不宣布无变化', async () => {
-    const recent = [['900', 2, 'in_progress', null]];
-    const tracked = [['456', 1, 'in_progress', null], ['457', 1, 'in_progress', null], ['458', 1, 'in_progress', null]];
+    const recent = [['900', 2, 'in_progress', null, 'ci', 'https://github.com/octo/demo/actions/runs/900', '2026-10-05T02:30:00.000Z']];
+    const tracked = [456, 457, 458].map(id => [String(id), 1, 'in_progress', null, 'ci', `https://github.com/octo/demo/actions/runs/${id}`, '2026-10-05T02:30:00.000Z']);
     const baseline = JSON.stringify({ v: 1, recent, tracked });
     const { fetchImpl, calls } = routeFetch((path) => {
       if (path === runsPath) return { workflow_runs: [runBody(900, 2, 'in_progress', null)] };
@@ -481,7 +481,7 @@ describe('适配器审查回归', () => {
   });
 
   it('同一运行连续验证不重复累积追踪记录或耗尽预算', async () => {
-    const tuple = ['456', 1, 'in_progress', null];
+    const tuple = ['456', 1, 'in_progress', null, null, null, null];
     const route = routeFetch((path) => path.includes('/actions/runs?')
       ? { workflow_runs: [{ id: 456, run_attempt: 1, status: 'in_progress', conclusion: null }] }
       : { id: 456, run_attempt: 1, status: 'in_progress', conclusion: null });
@@ -617,7 +617,7 @@ describe('步骤 4 补齐（R3）', () => {
     expect(collected.checkComplete).toBe(false);
     expect(typeof collected.fingerprint).toBe('string');
     const parsed = JSON.parse(collected.fingerprint ?? '{}') as { recent?: unknown[][] };
-    expect(parsed.recent?.[0]).toEqual(['900', 1, 'completed', 'success']); // 源字段保留在指纹里
+    expect(parsed.recent?.[0]).toEqual(['900', 1, 'completed', 'success', 'ci', null, '2026-10-05T02:30:00.000Z']); // 源字段保留在指纹里
 
     const stable = await compose(routes(false).fetchImpl).verifyScopes('ghp', verifyRequest('builds', { baselineFingerprint: collected.fingerprint ?? null }));
     expect(stable).toMatchObject({ changed: false, checkComplete: true });
@@ -634,7 +634,7 @@ describe('步骤 4 补齐（R3）', () => {
       if (path.startsWith('/repos/octo/demo/tags?')) return [{ name: 'v2', commit: { sha: 'tag-sha-2' } }];
       return httpStatus(404);
     });
-    const request = { fullName: 'octo/demo', scope: 'releases' as const, defaultBranch: 'main', cursor: null, limit: 30, accessContextRevision: 5, observedAt: 'T' };
+    const request = { fullName: 'octo/demo', scope: 'releases' as const, defaultBranch: 'main', cursor: null, limit: 30, accessContextRevision: 5, observedAt: 'T', targetVersion: { releaseRevision: JSON.stringify(['v2', 'v2', '2026-10-05T00:00:00.000Z']) } };
     const outcome = await compose(route.fetchImpl).fetchScope('ghp', request);
 
     expect(outcome.items).toEqual([
@@ -644,7 +644,6 @@ describe('步骤 4 补齐（R3）', () => {
     expect(outcome.parts?.releases).toMatchObject({ ok: true, hasMore: false });
     expect(outcome.parts?.tags).toMatchObject({ ok: true, hasMore: false });
     expect(outcome.version).toEqual({
-      defaultBranch: 'main', headRevision: null,
       releaseRevision: JSON.stringify(['v2', 'v2', '2026-10-05T00:00:00.000Z']),
       tagRevision: JSON.stringify(['v2', 'tag-sha-2']),
     });
@@ -675,7 +674,7 @@ describe('步骤 4 补齐（R3）', () => {
     expect(outcome.coverageComplete).toBe(false);
     expect(outcome.parts?.tags?.ok).toBe(false);
     expect(outcome.items).toHaveLength(1);
-    expect(outcome.version?.tagRevision).toBeNull();
+    expect(outcome.version?.tagRevision).toBeUndefined();
     expect(outcome.fingerprint).toBeUndefined(); // 采集不完整不冒充完整基线
     const cursor = JSON.parse(outcome.nextCursor ?? '{}') as { t?: number | null };
     expect(cursor.t).toBe(1); // tags 留在原页可重试
@@ -953,7 +952,9 @@ describe('适配器窗口一致性审查（R4）', () => {
     const result = await github.verifyScopes('ghp', verifyRequest('releases', { baselineFingerprint: stable.fingerprint ?? null }));
     expect(result.changed).toBe(true);
     expect(result.checkComplete).toBe(true);
-    expect(route.calls.at(-1)).toContain('per_page=10');
+    expect(route.calls.slice(-3, -1)).toHaveLength(2);
+    expect(route.calls.slice(-3, -1).every(path => path.includes('per_page=10'))).toBe(true);
+    expect(route.calls.at(-1)).toBe('/repos/octo/demo/releases/latest');
   });
 
   it('README 未交付完不确认覆盖，截断树的末尾不生成重复游标', async () => {

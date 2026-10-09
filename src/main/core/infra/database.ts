@@ -307,8 +307,13 @@ function migrationV9(database: MigrationDatabase): void {
   `);
 }
 
+/** 有界范围验证的续扫进度独立于成功基线；只追加V10，不改已有迁移。 */
+function migrationV10(database: MigrationDatabase): void {
+  database.exec('ALTER TABLE detail_scope_state ADD COLUMN verification_progress TEXT');
+}
+
 /** 按版本递增，保持旧数据库可重复打开。 */
-export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5, migrationV6, migrationV7, migrationV8, migrationV9] as const;
+export const MIGRATIONS = [migrationV1, migrationV2, migrationV3, migrationV4, migrationV5, migrationV6, migrationV7, migrationV8, migrationV9, migrationV10] as const;
 export const migrationRunner = createMigrationRunner(MIGRATIONS);
 
 /** 生产唯一入口：委托给迁移执行器，内容与 user_version 的原子提交由 runner 保证。 */

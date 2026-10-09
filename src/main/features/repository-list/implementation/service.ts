@@ -3,7 +3,7 @@ import type { Clock } from '../../../core/infra/clock';
 import type { LocalDatabase } from '../../../core/infra/database';
 import type { Logger } from '../../../core/infra/logger';
 import type { AccessContextPort, SummaryObservationPort } from '../../../../domain/ports';
-import type { Glance } from '../../../../domain/types';
+import type { ContentVersion, Glance } from '../../../../domain/types';
 import type { ObservedSummaryRecord, RepositoryListService } from '../contract';
 import { inspectRepositoryInput, createPendingRepository, addFetchedRepository } from './add-repository';
 import { listRepositories, findRepositoryById, findRepositoryByFullName } from './list-repositories';
@@ -55,8 +55,15 @@ export function createRepositoryListService({ db, clock, github, logger, accessC
     findReference: (repositoryId) => {
       const row = readRow(db, repositoryId);
       if (!row) return null;
-      const branch = readStoredObservation(row)?.signals.defaultBranch;
-      return { id: row.id, fullName: row.full_name, defaultBranch: branch && branch.state === 'known' ? branch.value : null };
+      const observation = readStoredObservation(row);
+      const contentVersion: Partial<ContentVersion> = {};
+      if (observation?.accessContextRevision === accessContext.currentRevision()) {
+        for (const field of ['defaultBranch', 'headRevision', 'releaseRevision', 'tagRevision'] as const) {
+          const signal = observation.signals[field];
+          if (signal.state === 'known' && (signal.value === null || typeof signal.value === 'string')) contentVersion[field] = signal.value;
+        }
+      }
+      return { id: row.id, fullName: row.full_name, defaultBranch: contentVersion.defaultBranch ?? null, contentVersion };
     },
   };
 }

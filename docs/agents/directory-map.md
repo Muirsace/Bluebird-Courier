@@ -20,6 +20,7 @@ src/  # 应用源代码
 │     ├─ repository-identity.ts  # 仓库标识规范化
 │     ├─ repository-eligibility.ts  # 仓库加入资格判断
 │     ├─ refresh-window.ts  # 刷新时间窗口判断
+│     ├─ source-coverage.ts  # 已知源目标与实际交付版本核验
 │     ├─ activity-sort.ts  # 活动时间排序
 │     ├─ detail-cache-policy.ts  # 详情缓存策略
 │     ├─ column-state.ts  # 详情栏目状态分类
@@ -48,6 +49,7 @@ src/  # 应用源代码
 │  │     ├─ github-token-adapter.ts  # Token 校验适配器
 │  │     ├─ github-repository-adapter.ts  # 仓库和摘要适配器
 │  │     ├─ github-detail-adapter.ts  # 详情栏目适配器
+│  │     ├─ github-capabilities.ts  # 权威仓库元信息的资源能力转换
 │  │     └─ shell-links.ts  # 平台外链适配器
 │  ├─ features/  # 相互隔离的业务能力
 │  │  ├─ repository-list/  # 仓库清单、轻量刷新和清单维护

@@ -1,6 +1,7 @@
 import type { RepoMeta } from '../../../domain/ports';
-import type { CheckedSignal, NormalizedError, ReleaseItem, RepositoryMetadata, SummaryObservation } from '../../../domain/types';
+import type { CheckedSignal, NormalizedError, ReleaseItem, RepositoryCapabilities, RepositoryMetadata, SummaryObservation } from '../../../domain/types';
 import { mapGitHubError, type GitHubHttpClient } from './github-http-client';
+import { repositoryCapabilities } from './github-capabilities';
 
 interface RawRepo {
   full_name: string;
@@ -16,6 +17,8 @@ interface RawRepo {
   homepage?: string | null;
   license?: { spdx_id?: string | null } | null;
   default_branch?: string | null;
+  has_issues?: unknown;
+  has_pull_requests?: unknown;
 }
 
 interface RawRef { object?: { sha?: unknown } | null }
@@ -53,7 +56,7 @@ async function checked<T>(work: () => Promise<T>, checkedAt: string, onFailure: 
 
 /** GitHub 仓库元数据与外部状态协议适配。 */
 export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
-  function fetchRepositoryMeta(accessToken: string, fullName: string): Promise<RepoMeta> {
+  function fetchRepositoryMeta(accessToken: string, fullName: string): Promise<RepoMeta & { capabilities: RepositoryCapabilities }> {
     return client.request(accessToken, repositoryPath(fullName), (json) => {
       if (typeof json !== 'object' || json === null) throw new TypeError('仓库响应格式无效');
       const repo = json as Partial<RawRepo>;
@@ -68,6 +71,7 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
         openIssues: repo.open_issues_count as number,
         pushedAt: typeof repo.pushed_at === 'string' ? repo.pushed_at : null,
         defaultBranch: typeof repo.default_branch === 'string' ? repo.default_branch : null,
+        capabilities: repositoryCapabilities(repo),
         status: repo.archived === true ? 'archived' : repo.disabled === true ? 'deleted' : 'active',
       };
     });
@@ -102,13 +106,15 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
     });
   }
 
-  function fetchCollaborationProbe(accessToken: string, fullName: string): Promise<CollaborationProbe | null> {
-    return client.request(accessToken, `${repositoryPath(fullName)}/issues?state=all&sort=updated&direction=desc&per_page=1`, (json) => {
+  function fetchCollaborationProbe(accessToken: string, fullName: string, capabilities: RepositoryCapabilities): Promise<CollaborationProbe | null> {
+    if (capabilities.issues === 'disabled' && capabilities.pullRequests === 'disabled') return Promise.resolve(null);
+    const pullsOnly = capabilities.issues === 'disabled';
+    return client.request(accessToken, `${repositoryPath(fullName)}/${pullsOnly ? 'pulls' : 'issues'}?state=all&sort=updated&direction=desc&per_page=1`, (json) => {
       if (!Array.isArray(json)) throw new TypeError('Issue 响应格式无效');
       const first = json[0] as RawIssue | undefined;
       if (!first || typeof first.updated_at !== 'string') return null; // 成功确认没有协作活动
       return {
-        at: first.updated_at, state: first.state === 'closed' ? 'closed' : 'open', pullRequest: first.pull_request !== undefined,
+        at: first.updated_at, state: first.state === 'closed' ? 'closed' : 'open', pullRequest: pullsOnly || first.pull_request !== undefined,
         ...(typeof first.number === 'number' ? { sourceId: String(first.number) } : {}),
         ...(typeof first.title === 'string' ? { contentRevision: JSON.stringify([first.title, first.state, first.body ?? null]) } : {}),
         createdAt: typeof first.created_at === 'string' ? first.created_at : null,
@@ -138,6 +144,7 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
           homepage: typeof repo.homepage === 'string' ? repo.homepage : null,
           license: repo.license && typeof repo.license.spdx_id === 'string' ? repo.license.spdx_id : null,
           defaultBranch: typeof repo.default_branch === 'string' ? repo.default_branch : null,
+          capabilities: repositoryCapabilities(repo),
         };
       });
     },
@@ -164,7 +171,7 @@ export function createGitHubRepositoryAdapter(client: GitHubHttpClient) {
         checked<{ tagName: string; title: string; publishedAt: string | null } | null>(() => fetchRelease(accessToken, fullName), observedAt, onFailure),
         checked<{ name: string; commitSha: string | null } | null>(() => fetchLatestTag(accessToken, fullName), observedAt, onFailure),
       ]);
-      const collaboration = await checked<CollaborationProbe | null>(() => fetchCollaborationProbe(accessToken, fullName), observedAt, onFailure);
+      const collaboration = await checked<CollaborationProbe | null>(() => fetchCollaborationProbe(accessToken, fullName, meta.capabilities), observedAt, onFailure);
 
       const releaseValue = release.state === 'known' ? release.value : null;
       const tagValue = tag.state === 'known' ? tag.value : null;

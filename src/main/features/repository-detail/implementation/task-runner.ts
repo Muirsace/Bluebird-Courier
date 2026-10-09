@@ -1,20 +1,20 @@
 import { PortFailure, type AccessContextPort, type GitHubPort, type RepositoryRefPort, type ScopeFetchPort, type ScopeVerificationPort } from '../../../../domain/ports';
-import type { BuildItem, CacheStatus, DetailScope, Glance, ScopeSyncState, TaskContext } from '../../../../domain/types';
+import type { BuildItem, CacheStatus, ContentVersion, DetailScope, Glance, RepositoryCapabilities, ScopeSyncState, TaskContext } from '../../../../domain/types';
 import type { Clock } from '../../../core/infra/clock';
 import type { LocalDatabase } from '../../../core/infra/database';
 import { BUILD_SCOPE_GROUP, planSync } from '../../../../domain/rules/sync-plan';
 import { DETAIL_SYNC_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
-import { isVerificationExpired } from '../../../../domain/rules/refresh-window';
+import { DETAIL_VERIFICATION_TTL_MS, isVerificationExpired } from '../../../../domain/rules/refresh-window';
+import { coversSourceTarget } from '../../../../domain/rules/source-coverage';
 import { canCommitTaskResult, deriveFreshness, hasUnsyncedChanges, ledgerOf } from '../../../../domain/rules/scope-ledger';
 import { applyScopeObservation, applyScopeVerification, initialScopeState, verificationChangeScopes } from '../../../../domain/rules/observation-application';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
 import type { DetailCache, DetailObservation, SyncTaskState } from '../contract';
-import { DETAIL_CACHE_SCHEMA_VERSION, bumpViewVersion, readDetailMeta, readScopeState, readScopeStatesFull, writeBuildsScope, writeScopeContents, writeSyncedDetail, writeScopeState, readDetail, readCachedBranch, hasColumnData, type ScopeConfirmationWrite } from './detail-store';
-import { hasReadableDetail } from './local-detail-store';
+import { DETAIL_CACHE_SCHEMA_VERSION, bumpViewVersion, readDetailMeta, readScopeState, readScopeStatesFull, writeBuildsScope, writeScopeContents, writeSyncedDetail, writeScopeState, readCachedBranch, hasColumnData, type ScopeConfirmationWrite, type ScopeContentWrite } from './detail-store';
+import { hasReadableDetail, readLocalColumns } from './local-detail-store';
 import { clearStagedScope, pendingStagedScopes, pruneForeignStagedScopes, pruneStagedQueries, readStagedScope, writeStagedScope } from './staged-scope';
 import { collectScope, loadFullDetail, type OpenScopeStaging, type ScopeStaging } from './refresh-detail';
 
-const DETAIL_VERIFICATION_TTL_MS = 30 * 60_000;
 export interface SyncTaskOutcome { ok: boolean; error: unknown; stored?: boolean; /** 验证发现变化时，同一次打开流程内需要安排的后继同步。 */ followUp?: boolean; }
 export interface ScheduledSyncTask { snapshot: SyncTaskState; settled: Promise<SyncTaskOutcome>; }
 export interface SyncTaskRunner {
@@ -34,6 +34,15 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
   const active = new Map<string, ActiveTask>();
   const versions = new Map<number, number>();
   const attempts = new Map<string, string>();
+  function cachedCapabilities(repositoryId: number, revision: number): RepositoryCapabilities | undefined {
+    const row = db.prepare("SELECT json_extract(payload, '$.values.metadata.capabilities') AS capabilities FROM detail_cache WHERE repository_id = ? AND access_context_revision = ? AND schema_version = ? AND json_valid(payload)")
+      .get(repositoryId, revision, DETAIL_CACHE_SCHEMA_VERSION) as { capabilities: string | null } | undefined;
+    if (!row?.capabilities) return undefined;
+    try {
+      const parsed = JSON.parse(row.capabilities) as RepositoryCapabilities;
+      return parsed && ['enabled', 'disabled', 'unknown'].includes(parsed.issues) && ['enabled', 'disabled', 'unknown'].includes(parsed.pullRequests) ? parsed : undefined;
+    } catch { return undefined; }
+  }
   function writable(context: TaskContext, fullName: string): boolean {
     return repositoryById(context.repoId)?.fullName === fullName && canCommitTaskResult(context, {
       repositoryExists: true, accessContextRevision: accessContext.currentRevision(),
@@ -63,8 +72,9 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     })();
   }
   /** 按范围给出暂存句柄：身份含仓库、默认分支、每页上限、访问上下文与 schema，参数漂移即不可接续。 */
-  function scopeStaging(repositoryId: number, context: TaskContext, scope: DetailScope, params: { fullName: string; defaultBranch: string | null; limit: number }): ScopeStaging {
+  function scopeStaging(repositoryId: number, context: TaskContext, scope: DetailScope, params: { fullName: string; defaultBranch: string | null; limit: number; targetVersion?: Partial<ContentVersion> }): ScopeStaging {
     const query = { scope, fullName: params.fullName, defaultBranch: params.defaultBranch, limit: params.limit,
+      targetVersion: params.targetVersion,
       accessContextRevision: context.accessContextRevision, schemaVersion: DETAIL_CACHE_SCHEMA_VERSION };
     pruneStagedQueries(db, repositoryId, query);
     return {
@@ -77,9 +87,12 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     // Token 更换或 schema 升级后旧上下文的暂存不得回填。
     pruneForeignStagedScopes(db, repository.id, context.accessContextRevision, DETAIL_CACHE_SCHEMA_VERSION);
     const openStaging: OpenScopeStaging = (scope, params) => scopeStaging(repository.id, context, scope, params);
+    const states = readScopeStatesFull(db, repository.id, context.accessContextRevision);
     const loaded = await loadFullDetail(scopeFetch, token, repository, readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null,
       context.accessContextRevision, () => clock.now().toISOString(), () => writable(context, repository.fullName), openStaging,
-      observation => onObserved?.({ observationId: `detail:${context.taskId}:overview`, repositoryId: repository.id, accessContextRevision: context.accessContextRevision, ...observation }));
+      observation => onObserved?.({ observationId: `detail:${context.taskId}:overview`, repositoryId: repository.id, accessContextRevision: context.accessContextRevision, ...observation }), context.targets,
+      DETAIL_SYNC_SCOPES.filter(scope => (context.targets[scope]?.targetRevision ?? 0) > (states[scope]?.syncedRevision ?? 0)),
+      Object.fromEntries(DETAIL_SYNC_SCOPES.flatMap(scope => states[scope]?.verificationProgress !== undefined ? [[scope, states[scope]!.verificationProgress]] : [])));
     if (!writable(context, repository.fullName)) throw new Error('任务结果已过期，放弃写入');
     const cache: DetailCache = { repositoryId: repository.id, fullName: repository.fullName,
       values: loaded.values, columns: loaded.columns, fetchedAt: clock.now().toISOString(), source: 'fresh' };
@@ -94,14 +107,23 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     // 成功范围（含来源级成功栏目）与失败错误在同一事务提交；失败范围保留旧值、旧成功时间与 dirty。
     const write = db.transaction(() => {
       if (validCache) {
-        writeScopeContents(db, repository.id, context.accessContextRevision,
-          loaded.deliveries.filter(delivery => Object.keys(delivery.values).length > 0).map(delivery => ({
+        const writes: ScopeContentWrite[] = loaded.deliveries.filter(delivery => Object.keys(delivery.values).length > 0).map(delivery => ({
             scope: delivery.scope,
             values: delivery.values,
             columns: delivery.columns,
             ...(delivery.complete && delivery.fingerprint !== undefined ? { confirmation: confirmation(context, delivery.scope, delivery.fingerprint) } : {}),
-          })),
-          syncedAt, complete);
+          }));
+        const previousColumns = readLocalColumns(db, repository.id);
+        // 本轮权威能力已不再禁用的失败来源，不能继续沿用旧unsupported标签；内容与基线仍保留。
+        for (const name of ['issues', 'pullRequests'] as const) {
+          const availability = loaded.values.metadata?.capabilities?.[name];
+          const failedColumn = loaded.columns[name];
+          if (availability === undefined || availability === 'disabled' || previousColumns[name]?.status !== 'unsupported' || failedColumn?.status !== 'failed') continue;
+          let entry = writes.find(value => value.scope === 'issuesAndPr');
+          if (!entry) { entry = { scope: 'issuesAndPr', values: {}, columns: {} }; writes.push(entry); }
+          entry.columns[name] = failedColumn;
+        }
+        writeScopeContents(db, repository.id, context.accessContextRevision, writes, syncedAt, complete);
       } else if (hasContent) {
         // 无有效旧缓存但取得部分内容：建立缓存；失败范围明示错误，不确认其覆盖。
         writeSyncedDetail(db, cache, context.accessContextRevision,
@@ -118,21 +140,27 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
   }
   async function executeBuilds(repository: Glance, token: string, context: TaskContext): Promise<void> {
     pruneForeignStagedScopes(db, repository.id, context.accessContextRevision, DETAIL_CACHE_SCHEMA_VERSION);
-    const defaultBranch = readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null;
+    const sourceVersion = context.targets.builds?.sourceVersion;
+    const defaultBranch = sourceVersion?.defaultBranch !== undefined ? sourceVersion.defaultBranch : readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null;
     const collected = await collectScope(scopeFetch, token, { fullName: repository.fullName, scope: 'builds', defaultBranch, cursor: null, limit: 30,
+      targetVersion: sourceVersion, capabilities: cachedCapabilities(repository.id, context.accessContextRevision),
+      baselineFingerprint: context.targets.builds?.baselineFingerprint ?? null,
+      verificationProgress: readScopeState(db, repository.id, 'builds', context.accessContextRevision)?.verificationProgress,
       accessContextRevision: context.accessContextRevision, observedAt: clock.now().toISOString() },
-      () => writable(context, repository.fullName), scopeStaging(repository.id, context, 'builds', { fullName: repository.fullName, defaultBranch, limit: 30 }));
+      () => writable(context, repository.fullName), scopeStaging(repository.id, context, 'builds', { fullName: repository.fullName, defaultBranch, limit: 30, targetVersion: sourceVersion }));
     // 本轮未完成但有可续读暂存：保持 dirty，下一批继续；不记录错误、不触碰旧构建内容。
     if (collected.staged) return;
     if (collected.blocked) throw new PortFailure(collected.blocked.kind, collected.blocked.message, collected.blocked.resetAt);
     const outcome = collected.outcome;
     if (!outcome.coverageComplete || !outcome.fingerprint) throw new Error('构建范围覆盖未完成，保留旧内容和dirty');
+    if (!coversSourceTarget('builds', sourceVersion, outcome.version, (context.targets.builds?.targetRevision ?? 0) > (readScopeState(db, repository.id, 'builds', context.accessContextRevision)?.syncedRevision ?? 0))) throw new Error('构建默认分支未覆盖任务目标，保留旧内容和dirty');
     const items = outcome.items as BuildItem[];
     writeBuildsScope(db, repository.id, items, items[0] ?? emptyLocalBuild(), context.accessContextRevision,
       [confirmation(context, 'builds', outcome.fingerprint), confirmation(context, 'overview')], outcome.observedAt);
   }
   async function executeCheck(repository: Glance, token: string, context: TaskContext): Promise<SyncTaskOutcome> {
     const failures: Array<{ scope: DetailScope; error: unknown }> = [];
+    const capabilities = cachedCapabilities(repository.id, context.accessContextRevision);
     let blocked = false;
     for (const scope of Object.keys(context.targets) as DetailScope[]) {
       if (!writable(context, repository.fullName)) throw new Error('任务结果已过期，停止验证');
@@ -142,6 +170,8 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
         const result = await scopeVerify.verifyScopes(token, { fullName: repository.fullName, scope,
           defaultBranch: readCachedBranch(db, repository.id, context.accessContextRevision) ?? repositoryRef.findById(repository.id)?.defaultBranch ?? null,
           accessContextRevision: context.accessContextRevision, mode: 'reread',
+          verificationProgress: readScopeState(db, repository.id, scope, context.accessContextRevision)?.verificationProgress,
+          capabilities,
           maxPages: 3, checkedAt, baselineFingerprint: context.targets[scope]?.baselineFingerprint ?? null });
         if (result.scope !== scope || result.accessContextRevision !== context.accessContextRevision) throw new Error('验证结果身份不匹配');
         if (!writable(context, repository.fullName)) throw new Error('任务结果已过期，放弃验证结果');
@@ -150,7 +180,9 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
           if (!base) return;
           const change = verificationChangeScopes(scope);
           const newEvidence = result.changed && (result.fingerprint === undefined ? !base.dirtyReasons.includes(change.reason) : result.fingerprint !== base.observedFingerprint);
-          writeScopeState(db, context.repoId, scope, applyScopeVerification(base, { ...result, changedReason: change.reason }), context.accessContextRevision);
+          const verified = applyScopeVerification(base, { ...result, changedReason: change.reason });
+          const next = result.verificationProgress === undefined ? verified : { ...verified, verificationProgress: result.verificationProgress ?? undefined };
+          writeScopeState(db, context.repoId, scope, next, context.accessContextRevision);
           // 关联范围只得到变化证据，不能接收来源范围的指纹或检查时间。
           if (newEvidence) for (const related of change.scopes.filter(value => value !== scope)) {
             const state = readScopeState(db, context.repoId, related, context.accessContextRevision) ?? initialScopeState();
@@ -212,8 +244,9 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
       versions.set(repositoryId, taskVersion);
       const targets: TaskContext['targets'] = {};
       const currentStates = readScopeStatesFull(db, repositoryId, revision);
+      const sourceVersion = repositoryRef.findById(repositoryId)?.contentVersion;
       for (const scope of targetScopes) {
-        targets[scope] = { targetRevision: currentStates[scope]?.detectedRevision ?? 0, baselineFingerprint: currentStates[scope]?.syncedFingerprint ?? null };
+        targets[scope] = { targetRevision: currentStates[scope]?.detectedRevision ?? 0, baselineFingerprint: currentStates[scope]?.syncedFingerprint ?? null, ...(sourceVersion !== undefined ? { sourceVersion: { ...sourceVersion } } : {}) };
         snapshot.targetRevisions[scope] = targets[scope]!.targetRevision;
       }
       const context: TaskContext = { taskId: snapshot.taskId, repoId: repositoryId, kind, targets, accessContextRevision: revision, taskVersion, startedAt: clock.now().toISOString() };

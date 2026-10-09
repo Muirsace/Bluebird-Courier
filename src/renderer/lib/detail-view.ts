@@ -291,7 +291,8 @@ function scopeDelivery(result: Pick<DetailResult, 'detail' | 'columns' | 'syncSt
     const names = (Object.keys(COLUMN_SCOPE_NAMES) as ColumnName[]).filter(name => COLUMN_SCOPE_NAMES[name] === scope);
     const delivered = names.filter(name => {
       const column = result.columns?.[name];
-      return column?.status === 'success' || column?.status === 'empty';
+      return column?.status === 'success' || column?.status === 'empty'
+        || (column?.status === 'unsupported' && (name === 'issues' || name === 'pullRequests'));
     });
     for (const name of delivered) for (const field of COLUMN_FIELDS[name] ?? []) fields.add(field);
     // 概览可由旧库元数据证明交付；缺元信息的旧完整成功结果仍兼容，错误结果不走此回退。

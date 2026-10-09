@@ -1,5 +1,5 @@
 import type { LocalDatabase } from '../../../core/infra/database';
-import type { DetailScope, PaginationCursor } from '../../../../domain/types';
+import type { ContentVersion, DetailScope, PaginationCursor } from '../../../../domain/types';
 import { isLocalColumnItemValid } from './local-detail-store';
 
 /**
@@ -13,6 +13,7 @@ export interface StagedScopeQuery {
   limit: number;
   accessContextRevision: number;
   schemaVersion: number;
+  targetVersion?: Partial<ContentVersion>;
 }
 
 /**
@@ -23,6 +24,7 @@ export interface StagedScopeState {
   items: unknown[];
   cursor: PaginationCursor;
   fingerprint?: string;
+  version?: Partial<ContentVersion>;
   pages: number;
   bytes: number;
 }
@@ -31,8 +33,14 @@ export interface StagedScopeState {
 export const MAX_STAGED_BYTES = 2 * 1024 * 1024;
 
 /** 查询身份：参数变化就是新查询，旧游标与旧片段都不能接续。 */
-export function stagedQueryKey(query: Pick<StagedScopeQuery, 'fullName' | 'defaultBranch' | 'limit'>): string {
-  return JSON.stringify([query.fullName, query.defaultBranch, query.limit]);
+export function stagedQueryKey(query: Pick<StagedScopeQuery, 'fullName' | 'defaultBranch' | 'limit' | 'targetVersion'>): string {
+  const identity: unknown[] = [query.fullName, query.defaultBranch, query.limit];
+  if (query.targetVersion && Object.keys(query.targetVersion).length > 0) identity.push(
+    ['defaultBranch', 'headRevision', 'releaseRevision', 'tagRevision'].map(field => {
+      const value = query.targetVersion![field as keyof ContentVersion];
+      return value === undefined ? ['unknown'] : ['known', value];
+    }));
+  return JSON.stringify(identity);
 }
 
 interface StagedRow { payload: string | null; cursor: string | null }
@@ -73,15 +81,18 @@ function validStagedItem(scope: DetailScope, value: unknown): boolean {
 function decodeStaged(row: StagedRow, scope: DetailScope): StagedScopeState | null {
   if (row.cursor === null || row.payload === null) return null;
   try {
-    const parsed = JSON.parse(row.payload) as { items?: unknown; fingerprint?: unknown; pages?: unknown; bytes?: unknown };
+    const parsed = JSON.parse(row.payload) as { items?: unknown; fingerprint?: unknown; version?: unknown; pages?: unknown; bytes?: unknown };
     if (!Array.isArray(parsed.items) || !parsed.items.every(item => validStagedItem(scope, item))) return null;
     if (parsed.fingerprint !== undefined && typeof parsed.fingerprint !== 'string') return null;
+    if (parsed.version !== undefined && (typeof parsed.version !== 'object' || parsed.version === null || Array.isArray(parsed.version) ||
+      !Object.entries(parsed.version).every(([field, value]) => ['defaultBranch', 'headRevision', 'releaseRevision', 'tagRevision'].includes(field) && (value === null || typeof value === 'string')))) return null;
     if (typeof parsed.pages !== 'number' || !Number.isSafeInteger(parsed.pages) || parsed.pages < 0) return null;
     if (typeof parsed.bytes !== 'number' || !Number.isFinite(parsed.bytes) || parsed.bytes < 0 || parsed.bytes > MAX_STAGED_BYTES) return null;
     return {
       items: parsed.items,
       cursor: row.cursor,
       ...(typeof parsed.fingerprint === 'string' ? { fingerprint: parsed.fingerprint } : {}),
+      ...(parsed.version !== undefined ? { version: parsed.version as Partial<ContentVersion> } : {}),
       pages: parsed.pages,
       bytes: stagedItemsBytes(parsed.items),
     };
@@ -91,7 +102,7 @@ function decodeStaged(row: StagedRow, scope: DetailScope): StagedScopeState | nu
 /** 保存/覆盖本批进度；超出暂存预算时返回 false（调用方按未完成处理并清理）。 */
 export function writeStagedScope(db: LocalDatabase, repositoryId: number, query: StagedScopeQuery, state: StagedScopeState, savedAt: string): boolean {
   if (state.cursor === null || state.bytes > MAX_STAGED_BYTES) return false;
-  const payload = JSON.stringify({ ...(state.fingerprint !== undefined ? { fingerprint: state.fingerprint } : {}), pages: state.pages, bytes: state.bytes, items: state.items });
+  const payload = JSON.stringify({ ...(state.fingerprint !== undefined ? { fingerprint: state.fingerprint } : {}), ...(state.version !== undefined ? { version: state.version } : {}), pages: state.pages, bytes: state.bytes, items: state.items });
   if (new TextEncoder().encode(payload).byteLength > MAX_STAGED_BYTES) return false;
   db.prepare(
     `INSERT INTO cache_query_page (repository_id, scope, query_key, access_context_revision, schema_version, payload, cursor, next_cursor, has_more, saved_at)

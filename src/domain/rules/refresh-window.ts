@@ -1,4 +1,6 @@
 export const REFRESH_WINDOW_MS = 60_000;
+/** 详情范围验证有效期；任务计划与只读视图使用同一规则。 */
+export const DETAIL_VERIFICATION_TTL_MS = 30 * 60_000;
 function time(value: string | Date): number { return value instanceof Date ? value.getTime() : Date.parse(value); }
 /** 判断两个时间点是否仍处于 60 秒普通回访窗口。 */
 export function isWithinRefreshWindow(lastRefreshAt: string | Date, now: string | Date, windowMs = REFRESH_WINDOW_MS): boolean {

@@ -64,10 +64,14 @@ function TabPanel({
   tab,
   detail,
   incompleteIssueScope,
+  issuesDisabled,
+  pullsDisabled,
 }: {
   tab: DetailTabId;
   detail: Detail;
   incompleteIssueScope: boolean;
+  issuesDisabled: boolean;
+  pullsDisabled: boolean;
 }) {
   // 外链目标只需要 owner/name，一律取自接口回来的规范值
   const { owner, name } = detail.repository;
@@ -79,14 +83,14 @@ function TabPanel({
     case 'issues':
       return (
         <IssuesTab issues={detail.issues} pullRequests={detail.pullRequests} owner={owner} name={name}
-          incomplete={incompleteIssueScope} />
+          incomplete={incompleteIssueScope} issuesDisabled={issuesDisabled} pullsDisabled={pullsDisabled} />
       );
     case 'build':
       return <BuildTab build={detail.build} owner={owner} name={name} />;
     case 'trend':
       return <TrendTab trend={detail.trend} />;
     default:
-      return <OverviewTab detail={detail} incompleteIssueScope={incompleteIssueScope} />;
+      return <OverviewTab detail={detail} incompleteIssueScope={incompleteIssueScope} issuesDisabled={issuesDisabled} pullsDisabled={pullsDisabled} />;
   }
 }
 
@@ -357,7 +361,8 @@ export function DetailPage({
                 aria-labelledby={`detail-tab-${activeTab}`}
                 className={tabContentSwitched === activeTab ? 'tab-panel-enter' : undefined}
               >
-                <TabPanel tab={activeTab} detail={detail} incompleteIssueScope={view.partial.issuesAndPr === true} />
+                <TabPanel tab={activeTab} detail={detail} incompleteIssueScope={view.partial.issuesAndPr === true}
+                  issuesDisabled={view.columns.issues?.status === 'unsupported'} pullsDisabled={view.columns.pullRequests?.status === 'unsupported'} />
               </div>
               {/* 有界本地读取只覆盖了若干页：给出上一页 / 下一页，不把当前一页当成完整列表。 */}
               {paging.length > 0 ? (

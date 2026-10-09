@@ -204,7 +204,7 @@ describe('后台同步审查回归', () => {
     expect(result.error).toBeNull();
     for (const scope of DETAIL_SYNC_SCOPES) {
       expect(row(id, scope).synced_fingerprint).toEqual(expect.any(String));
-      expect(JSON.parse(row(id, scope).synced_fingerprint as string).v).toBe(1);
+      expect(JSON.parse(row(id, scope).synced_fingerprint as string).v).toBe(scope === 'builds' ? 2 : 1);
     }
     remote.calls.length = 0;
     h().clock.advanceMs(31 * 60_000);

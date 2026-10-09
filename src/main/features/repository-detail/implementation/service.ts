@@ -67,7 +67,7 @@ export function createRepositoryDetailService(dependencies: RepositoryDetailDepe
       columns: validMeta ? readLocalColumns(db, repositoryId) : {},
       task: taskRunner.snapshot(repositoryId),
       readScope: (scope, offset, limit) => readLocalScopePage(db, repositoryId, scope, offset, limit),
-    }, request);
+    }, request, dependencies.clock.now());
   }
 
   function requireRepository(repositoryId: number): Glance {

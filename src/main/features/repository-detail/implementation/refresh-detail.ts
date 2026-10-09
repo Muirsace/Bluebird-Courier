@@ -1,6 +1,7 @@
 import { PortFailure } from '../../../../domain/ports';
 import type { OverviewContent, ScopeFetchOutcome, ScopeFetchPort, ScopePartName, ScopePartResult } from '../../../../domain/ports';
-import type { BuildItem, CommitItem, DetailScope, DetailValues, Glance, GlanceValues, NormalizedError, ReadmeDocument, ReleaseItem, RepositoryMetadata, TagItem } from '../../../../domain/types';
+import type { BuildItem, CommitItem, ContentVersion, DetailScope, DetailValues, Glance, GlanceValues, NormalizedError, ReadmeDocument, ReleaseItem, RepositoryCapabilities, RepositoryMetadata, TagItem, TaskContext } from '../../../../domain/types';
+import { coversSourceTarget } from '../../../../domain/rules/source-coverage';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
 import { DETAIL_SYNC_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
 import type { ColumnName, ColumnResult } from '../contract';
@@ -50,6 +51,7 @@ export async function collectScope(port: ScopeFetchPort, token: string, request:
   let cursor = resumed?.cursor ?? request.cursor;
   let items: unknown[] = resumed?.items ?? [];
   let fingerprint = resumed?.fingerprint;
+  let version = resumed?.version;
   let pages = resumed?.pages ?? 0;
   let bytes = resumed?.bytes ?? 0;
   const resumeCursor = cursor;
@@ -68,7 +70,7 @@ export async function collectScope(port: ScopeFetchPort, token: string, request:
     }
     // 窗口变化/重启：丢弃旧窗口已读片段（含既有暂存）与指纹，按新游标重读同一稳定窗口。
     if (result.windowRestarted) {
-      items = []; fingerprint = undefined; pages = 0; bytes = 0;
+      items = []; fingerprint = undefined; version = undefined; pages = 0; bytes = 0;
       cursor = result.nextCursor;
       if (cursor === null) break;
       continue;
@@ -78,7 +80,13 @@ export async function collectScope(port: ScopeFetchPort, token: string, request:
       staging?.clear();
       return { outcome: { ...result, items: [...items, ...result.items], coverageComplete: false, fingerprint: undefined }, staged: false };
     }
+    // 单来源错误同样终止本批；不能把失败游标当成正常分页连续重试。
+    if (result.errors?.length && result.parts === undefined) {
+      staging?.clear();
+      return { outcome: { ...result, items: [...items, ...result.items], coverageComplete: false, fingerprint: undefined }, staged: false };
+    }
     items.push(...result.items);
+    if (pages === 0) version = result.version;
     bytes += stagedItemsBytes(result.items);
     pages += 1;
     fingerprint ??= result.fingerprint;
@@ -88,7 +96,7 @@ export async function collectScope(port: ScopeFetchPort, token: string, request:
         return { outcome: { ...result, items, coverageComplete: false, fingerprint: undefined }, staged: false };
       }
       staging?.clear();
-      return { outcome: { ...result, items, fingerprint }, staged: false };
+      return { outcome: { ...result, items, fingerprint, version }, staged: false };
     }
     const next = result.nextCursor;
     // 游标未前进（异常适配器）：停止续读，不保留无法推进的暂存。
@@ -97,10 +105,10 @@ export async function collectScope(port: ScopeFetchPort, token: string, request:
     cursor = next;
   }
   if (!last) throw new Error(request.scope + ' 未取得任何范围内容');
-  const partial: ScopeFetchOutcome = { ...last, items, coverageComplete: false, fingerprint: undefined };
+  const partial: ScopeFetchOutcome = { ...last, items, coverageComplete: false, fingerprint: undefined, version };
   // 仍可从续读点继续、且本轮确实前进过：保存进度供下一批接续（不是失败）。
   const canContinue = last.nextCursor !== null && cursor !== null && cursor !== resumeCursor;
-  if (staging && canContinue && staging.save({ items, cursor, ...(fingerprint !== undefined ? { fingerprint } : {}), pages, bytes }, last.observedAt)) {
+  if (staging && canContinue && staging.save({ items, cursor, ...(fingerprint !== undefined ? { fingerprint } : {}), ...(version !== undefined ? { version } : {}), pages, bytes }, last.observedAt)) {
     return { outcome: partial, staged: true };
   }
   staging?.clear();
@@ -118,6 +126,7 @@ export interface ScopeDelivery {
   scope: DetailScope;
   complete: boolean;
   fingerprint?: string;
+  version?: Partial<ContentVersion>;
   values: Partial<DetailValues>;
   columns: Partial<Record<ColumnName, ColumnResult>>;
 }
@@ -137,7 +146,7 @@ export interface LoadedFullDetail {
 }
 
 /** 按范围给出暂存句柄；参数变化时返回的句柄自带身份校验。 */
-export type OpenScopeStaging = (scope: DetailScope, params: { fullName: string; defaultBranch: string | null; limit: number }) => ScopeStaging | undefined;
+export type OpenScopeStaging = (scope: DetailScope, params: { fullName: string; defaultBranch: string | null; limit: number; targetVersion?: Partial<ContentVersion> }) => ScopeStaging | undefined;
 
 function sourceDelivered(outcome: ScopeFetchOutcome, name: ScopePartName): boolean {
   const part = outcome.parts?.[name];
@@ -155,15 +164,24 @@ function scopeFullyCovered(outcome: ScopeFetchOutcome): boolean {
  * 上下文变化、仓库删除与任务过期是整批放弃条件；限流/令牌失败只停止后续 HTTP，
  * 已取得的可信范围仍返回给调用方原子提交，未完成范围保留旧值与 dirty。
  */
-export async function loadFullDetail(port: ScopeFetchPort, token: string, repository: Glance, defaultBranch: string | null, revision: number, now: () => string, writable: () => boolean, openStaging?: OpenScopeStaging, onObserved?: (observation: NonNullable<LoadedFullDetail['observation']>) => void): Promise<LoadedFullDetail> {
+export async function loadFullDetail(port: ScopeFetchPort, token: string, repository: Glance, defaultBranch: string | null, revision: number, now: () => string, writable: () => boolean, openStaging?: OpenScopeStaging, onObserved?: (observation: NonNullable<LoadedFullDetail['observation']>) => void, targets: TaskContext['targets'] = {}, knownDirtyScopes: readonly DetailScope[] = [], verificationProgress: Partial<Record<DetailScope, string>> = {}): Promise<LoadedFullDetail> {
   const limit = 50;
-  const request = (scope: DetailScope) => ({ scope, fullName: repository.fullName, defaultBranch, accessContextRevision: revision, observedAt: now(), cursor: null, limit });
+  let capabilities: RepositoryCapabilities | undefined;
+  const branchFor = (scope: DetailScope) => targets[scope]?.sourceVersion?.defaultBranch !== undefined ? targets[scope]!.sourceVersion!.defaultBranch! : defaultBranch;
+  const request = (scope: DetailScope) => ({ scope, fullName: repository.fullName, defaultBranch: branchFor(scope), targetVersion: targets[scope]?.sourceVersion,
+    baselineFingerprint: targets[scope]?.baselineFingerprint ?? null, verificationProgress: verificationProgress[scope], capabilities, accessContextRevision: revision, observedAt: now(), cursor: null, limit });
+  const matches = (outcome: ScopeFetchOutcome, fields?: readonly (keyof ContentVersion)[]) => coversSourceTarget(outcome.scope, targets[outcome.scope]?.sourceVersion, outcome.version, knownDirtyScopes.includes(outcome.scope), fields);
+  // 组合范围不完整时，未知源目标仍允许保存成功来源；这不确认组合目标或成功基线。
+  const sourceMatchesForDelivery = (outcome: ScopeFetchOutcome, fields: readonly (keyof ContentVersion)[]) => outcome.version === undefined
+    ? fields.every(field => targets[outcome.scope]?.sourceVersion?.[field] === undefined)
+    : coversSourceTarget(outcome.scope, targets[outcome.scope]?.sourceVersion, outcome.version, false, fields);
+  const covered = (outcome: ScopeFetchOutcome) => scopeFullyCovered(outcome) && matches(outcome);
   const failures: Partial<Record<DetailScope, string>> = {};
   const failureErrors: Partial<Record<DetailScope, unknown>> = {};
   const stagedScopes: DetailScope[] = [];
   const outcomes = new Map<DetailScope, ScopeFetchOutcome>();
   const failedOutcome = (scope: DetailScope): ScopeFetchOutcome => ({ scope, items: [], coverageComplete: false, hasMore: false, nextCursor: null, accessContextRevision: revision, observedAt: now() });
-  const stagingFor = (scope: DetailScope) => openStaging?.(scope, { fullName: repository.fullName, defaultBranch, limit });
+  const stagingFor = (scope: DetailScope) => openStaging?.(scope, { fullName: repository.fullName, defaultBranch: branchFor(scope), limit, targetVersion: targets[scope]?.sourceVersion });
   let blocked: NormalizedError | undefined;
   let content: OverviewContent | undefined;
 
@@ -179,6 +197,8 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
       failures[scope] = incompleteReason(scope, collected.outcome);
       const sourceError = collected.outcome.errors?.[0];
       if (sourceError) failureErrors[scope] = new PortFailure(sourceError.kind, sourceError.message, sourceError.resetAt);
+    } else if (!matches(collected.outcome)) {
+      failures[scope] = scope + ' 实际源版本未覆盖任务目标，保留旧内容与未确认状态';
     }
     return collected.outcome;
   };
@@ -190,7 +210,7 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
     const candidate = outcome.items[0] as OverviewContent | undefined;
     // 只有完整取得的概览才能作为摘要观察与默认分支来源；暂存/阻塞/缺失都不冒充。
     if (!collected.blocked && !collected.staged) {
-      if (candidate?.values && candidate.metadata) { content = candidate; defaultBranch = candidate.metadata.defaultBranch ?? defaultBranch; }
+      if (candidate?.values && candidate.metadata) { content = candidate; defaultBranch = candidate.metadata.defaultBranch ?? defaultBranch; capabilities = candidate.metadata.capabilities; }
       else if (failures.overview === undefined) failures.overview = '概览内容缺失，不能确认覆盖';
       // 摘要独立于后续内容范围，取得真实概览即通知；监听器失败不改变采集或提交算法。
       if (outcome.coverageComplete && content && writable()) {
@@ -248,14 +268,27 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
   const issues = collaboration.filter(item => item.kind === 'issue').map(({ kind: _kind, ...item }) => item);
   const pullRequests = collaboration.filter(item => item.kind === 'pull').map(({ kind: _kind, ...item }) => item);
   const readmes = outcomes.get('readme')!.items as ReadmeDocument[];
+  const overviewComplete = covered(overviewOutcome);
+  const commitsComplete = covered(outcomes.get('commits')!);
+  const buildsComplete = covered(outcomes.get('builds')!);
+  const readmeComplete = covered(outcomes.get('readme')!);
+  const releasesOutcome = outcomes.get('releases')!;
+  const issuesOutcome = outcomes.get('issuesAndPr')!;
+  const releasesDelivered = sourceDelivered(releasesOutcome, 'releases') && sourceMatchesForDelivery(releasesOutcome, ['releaseRevision']);
+  const tagsDelivered = sourceDelivered(releasesOutcome, 'tags') && sourceMatchesForDelivery(releasesOutcome, ['tagRevision']);
+  const issuesDelivered = sourceDelivered(issuesOutcome, 'issues');
+  const pullsDelivered = sourceDelivered(issuesOutcome, 'pullRequests');
   const values: DetailValues = {
-    ...(content?.metadata ? { metadata: content.metadata as RepositoryMetadata } : {}),
-    releases, tags, commits, issues, pullRequests,
-    builds, build: builds[0] ?? emptyLocalBuild(),
-    readmes,
+    ...(overviewComplete && content?.metadata ? { metadata: content.metadata as RepositoryMetadata } : {}),
+    releases: releasesDelivered ? releases : [], tags: tagsDelivered ? tags : [], commits: commitsComplete ? commits : [], issues: issuesDelivered ? issues : [], pullRequests: pullsDelivered ? pullRequests : [],
+    builds: buildsComplete ? builds : [], build: buildsComplete ? builds[0] ?? emptyLocalBuild() : emptyLocalBuild(),
+    readmes: readmeComplete ? readmes : [],
   };
   const columns = aggregateColumns({ overview: { ...repository, ...(content?.values ?? {}) }, releases, tags, commits, issues, pullRequests, builds, readme: readmes, tree: null });
   columns.tree = { status: 'unsupported', value: null, error: null };
+  for (const [part, column] of [['issues', 'issues'], ['pullRequests', 'pullRequests']] as const) {
+    if (issuesOutcome.parts?.[part]?.availability === 'disabled' && sourceDelivered(issuesOutcome, part)) columns[column] = { status: 'unsupported', value: null, error: null };
+  }
 
   const pickColumns = (names: readonly ColumnName[]): Partial<Record<ColumnName, ColumnResult>> => {
     const picked: Partial<Record<ColumnName, ColumnResult>> = {};
@@ -264,22 +297,13 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
   };
   const delivery = (outcome: ScopeFetchOutcome, write: { values: Partial<DetailValues>; names: readonly ColumnName[] }): ScopeDelivery => ({
     scope: outcome.scope,
-    complete: scopeFullyCovered(outcome),
+    complete: covered(outcome),
     ...(outcome.fingerprint !== undefined ? { fingerprint: outcome.fingerprint } : {}),
+    ...(outcome.version !== undefined ? { version: outcome.version } : {}),
     values: write.values,
     columns: pickColumns(write.names),
   });
 
-  const releasesOutcome = outcomes.get('releases')!;
-  const issuesOutcome = outcomes.get('issuesAndPr')!;
-  const overviewComplete = scopeFullyCovered(overviewOutcome);
-  const commitsComplete = scopeFullyCovered(outcomes.get('commits')!);
-  const buildsComplete = scopeFullyCovered(outcomes.get('builds')!);
-  const readmeComplete = scopeFullyCovered(outcomes.get('readme')!);
-  const releasesDelivered = sourceDelivered(releasesOutcome, 'releases');
-  const tagsDelivered = sourceDelivered(releasesOutcome, 'tags');
-  const issuesDelivered = sourceDelivered(issuesOutcome, 'issues');
-  const pullsDelivered = sourceDelivered(issuesOutcome, 'pullRequests');
   const deliveries: ScopeDelivery[] = [
     delivery(overviewOutcome, { values: overviewComplete && content?.metadata ? { metadata: content.metadata as RepositoryMetadata } : {}, names: overviewComplete ? SCOPE_COLUMNS.overview ?? [] : [] }),
     delivery(releasesOutcome, {

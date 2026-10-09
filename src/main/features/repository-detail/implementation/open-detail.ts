@@ -2,6 +2,8 @@ import type { DetailScope, DetailValues, Glance, NormalizedError, ScopeSyncState
 import { COLUMN_SCOPE, SCOPE_ORDER } from '../../../../domain/rules/detail-scope';
 import { emptyLocalBuild, localReadCursor, localReadLimit, localReadOffset, selectedLocalScopes } from '../../../../domain/rules/local-read';
 import { initialScopeState } from '../../../../domain/rules/observation-application';
+import { deriveFreshness, ledgerOf } from '../../../../domain/rules/scope-ledger';
+import { DETAIL_VERIFICATION_TTL_MS, isVerificationExpired } from '../../../../domain/rules/refresh-window';
 import type { LocalDetailView, LocalReadRequest, SyncTaskState } from '../contract';
 import { DETAIL_CACHE_SCHEMA_VERSION, type DetailCacheMeta } from './detail-store';
 import type { LocalScopePage } from './local-detail-store';
@@ -19,7 +21,7 @@ export interface LocalViewInput {
 }
 
 /** 组装有界本地视图；每个范围独立失败，状态读取不触碰任何内容。 */
-export function buildLocalView(repository: Glance, input: LocalViewInput, request: LocalReadRequest): LocalDetailView {
+export function buildLocalView(repository: Glance, input: LocalViewInput, request: LocalReadRequest, now: Date = new Date()): LocalDetailView {
   const mode = request.mode === 'status' ? 'status' : 'view';
   let error: NormalizedError | null = null;
   let cacheStatus: ScopeSyncState['cacheStatus'] = input.cacheMeta ? 'valid' : 'missing';
@@ -37,7 +39,15 @@ export function buildLocalView(repository: Glance, input: LocalViewInput, reques
   for (const scope of SCOPE_ORDER) {
     const present = Object.entries(input.columns).some(([name, column]) => COLUMN_SCOPE[name as keyof typeof COLUMN_SCOPE] === scope && (column?.status === 'success' || column?.status === 'empty'));
     const base = input.scopeStates[scope] ?? initialScopeState(present ? 'valid' : 'missing');
-    scopes[scope] = { ...base, cacheStatus: cacheStatus === 'valid' ? base.cacheStatus : cacheStatus };
+    const rangeCacheStatus = cacheStatus === 'valid' ? base.cacheStatus : cacheStatus;
+    const nowIsValid = Number.isFinite(now.getTime());
+    const verificationFresh = base.freshness === 'fresh' && base.checkStatus !== 'error' && rangeCacheStatus === 'valid' && nowIsValid
+      && !isVerificationExpired(base.lastCheckedAt, now, DETAIL_VERIFICATION_TTL_MS);
+    scopes[scope] = {
+      ...base,
+      cacheStatus: rangeCacheStatus,
+      freshness: deriveFreshness(ledgerOf(base), verificationFresh),
+    };
   }
   for (const scope of input.task?.targetScopes ?? []) {
     scopes[scope] = { ...scopes[scope]!, ...(input.task?.kind === 'check' ? { checkStatus: input.task.status } : { syncStatus: input.task!.status }) };
@@ -74,7 +84,8 @@ export function buildLocalView(repository: Glance, input: LocalViewInput, reques
     try {
       const page = input.readScope(scope, offset, limit);
       Object.assign(values, page.values);
-      scopes[scope] = { ...scopes[scope]!, cacheStatus: page.missing ? 'missing' : 'valid' };
+      scopes[scope] = { ...scopes[scope]!, cacheStatus: page.missing ? 'missing' : 'valid',
+        freshness: deriveFreshness(ledgerOf(scopes[scope]!), !page.missing && scopes[scope]!.freshness === 'fresh') };
       if (page.hasMore) { truncated = true; cursors[scope] = localReadCursor(scope, offset + page.count, identity); }
       for (const [name, column] of Object.entries(input.columns)) {
         if (COLUMN_SCOPE[name as keyof typeof COLUMN_SCOPE] === scope) columns[name as keyof typeof columns] = column;
@@ -82,7 +93,7 @@ export function buildLocalView(repository: Glance, input: LocalViewInput, reques
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : '内容不可用';
       error ??= failure(scope + ' 缓存损坏：' + message);
-      scopes[scope] = { ...scopes[scope]!, cacheStatus: 'invalid' };
+      scopes[scope] = { ...scopes[scope]!, cacheStatus: 'invalid', freshness: deriveFreshness(ledgerOf(scopes[scope]!), false) };
     }
   }
   return { ...base, values, columns, truncated, error,

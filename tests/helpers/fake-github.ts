@@ -18,7 +18,7 @@ export interface FakeRepoData {
   commits: CommitItem[];
   issuesAndPullRequests: IssueOrPullRequest[];
   build: BuildInfo | null;
-  /** 归一化观察的信号配置；缺省 head 为 null、release/tag 为 null。 */
+  /** 归一化观察的信号配置；缺省从实际详情派生，显式配置用于模拟源差异或已知空值。 */
   observation?: FakeObservationConfig;
 }
 
@@ -70,7 +70,7 @@ export const fixtures = {
 };
 
 export function makeRepoData(overrides: Partial<FakeRepoData> = {}): FakeRepoData {
-  return {
+  const data: FakeRepoData = {
     meta: {
       fullName: 'octo-demo/hello-world',
       stars: 1284,
@@ -114,6 +114,11 @@ export function makeRepoData(overrides: Partial<FakeRepoData> = {}): FakeRepoDat
     },
     ...overrides,
   };
+  // 初始源信号与内容一致；后续手动只改观察信号仍可模拟接口陈旧，不能自动修饰回包。
+  if (typeof overrides.observation?.head === 'string' && overrides.commits === undefined) {
+    data.commits = data.commits.map((commit, index) => index === 0 ? { ...commit, sha: overrides.observation!.head! } : commit);
+  }
+  return data;
 }
 
 /**
@@ -294,9 +299,9 @@ export class FakeGitHub implements GitHubPort {
       },
       signals: {
         defaultBranch: known(config.defaultBranch === undefined ? 'main' : config.defaultBranch),
-        headRevision: maybe('head', config.head === undefined ? null : config.head),
-        releaseRevision: maybe('release', config.release === undefined ? null : config.release),
-        tagRevision: maybe('tag', tagName),
+        headRevision: maybe('head', config.head === undefined ? data.commits[0]?.sha ?? null : config.head),
+        releaseRevision: maybe('release', config.release === undefined ? data.latestRelease === null ? null : JSON.stringify([data.latestRelease.tagName, data.latestRelease.title, data.latestRelease.publishedAt]) : config.release),
+        tagRevision: maybe('tag', tagName === null ? null : JSON.stringify([tagName, null])),
       },
       activity: {
         // 与真实适配器一致：只保留源信息与检查结果，重要性由 domain/feature 判定
@@ -348,6 +353,9 @@ export class FakeGitHub implements GitHubPort {
     return { scope: request.scope, items: copy.slice(offset, end), coverageComplete: !remaining, hasMore: remaining, nextCursor: remaining ? String(end) : null,
       accessContextRevision: request.accessContextRevision, observedAt: request.observedAt,
       ...(offset === 0 ? { fingerprint: JSON.stringify({ scope: request.scope, items: copy }) } : {}),
-      version: { defaultBranch: data.observation?.defaultBranch ?? 'main', headRevision: data.commits[0]?.sha ?? null, releaseRevision: null, tagRevision: null } };
+      version: { defaultBranch: data.observation?.defaultBranch === undefined ? 'main' : data.observation.defaultBranch,
+        headRevision: request.scope === 'overview' && data.observation?.head !== undefined ? data.observation.head : data.commits[0]?.sha ?? null,
+        releaseRevision: data.latestRelease === null ? null : JSON.stringify([data.latestRelease.tagName, data.latestRelease.title, data.latestRelease.publishedAt]),
+        tagRevision: data.observation?.tag ? JSON.stringify([data.observation.tag, null]) : null } };
   }
 }

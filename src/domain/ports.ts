@@ -14,6 +14,8 @@ import type {
   ReadmeDocument,
   ReleaseItem,
   RepositoryMetadata,
+  RepositoryCapabilities,
+  ResourceAvailability,
   Snapshot,
   SummaryObservation,
   TagItem,
@@ -117,6 +119,8 @@ export interface RepositoryRef {
   id: number;
   fullName: string;
   defaultBranch: string | null;
+  /** 最近一次已知观察的源信号；未知字段不出现。 */
+  contentVersion?: Partial<ContentVersion>;
 }
 
 export interface RepositoryRefPort {
@@ -150,6 +154,8 @@ export interface ScopeVerifyRequest {
   checkedAt: string;
   /** 上次成功同步的指纹；null 表示没有可用基线，只能按完整检查判定。 */
   baselineFingerprint: string | null;
+  verificationProgress?: string;
+  capabilities?: RepositoryCapabilities;
 }
 
 /** 范围验证结果：checkComplete=false 表示检查区间未完成，不得宣布无变化。 */
@@ -161,8 +167,10 @@ export interface ScopeVerification {
   checkComplete: boolean;
   changed: boolean;
   fingerprint?: string;
-  version?: ContentVersion;
+  version?: Partial<ContentVersion>;
   accessContextRevision: number;
+  /** 不完整时持久保存；完整轮次显式null清除。 */
+  verificationProgress?: string | null;
 }
 
 export interface ScopeFetchRequest {
@@ -176,6 +184,12 @@ export interface ScopeFetchRequest {
   accessContextRevision: number;
   /** 本次抓取的观察时间；由调用链传入（adapter 不读时钟）。 */
   observedAt: string;
+  capabilities?: RepositoryCapabilities;
+  /** 捕获的已知源目标；代码和README可绑定到该不可变HEAD。 */
+  targetVersion?: Partial<ContentVersion>;
+  /** 构建采集保留离开近期页的已知追踪对象；不能把验证进度冒充成功基线。 */
+  baselineFingerprint?: string | null;
+  verificationProgress?: string;
 }
 
 /**
@@ -196,7 +210,7 @@ export interface ScopeFetchOutcome<T = unknown> {
   /** 目标范围是否完整覆盖；未完成时不得推进同步基线，也不能宣布区间已验证。 */
   coverageComplete: boolean;
   observedAt: string;
-  version?: ContentVersion;
+  version?: Partial<ContentVersion>;
   accessContextRevision: number;
   /**
    * 适配器生成的不透明指纹：本次采集可作为后续验证基线（feature 原样保存）。
@@ -219,6 +233,8 @@ export interface ScopePartResult {
   nextCursor: PaginationCursor;
   /** 该来源本次覆盖窗口的不透明指纹；失败或未在窗口起点读取时不提供。 */
   fingerprint?: string;
+  /** 只有权威元信息明确disabled才可作为未启用的已交付终态。 */
+  availability?: ResourceAvailability;
 }
 
 /** overview 范围的归一化内容：摘要值与元数据；不含平台原始字段。 */

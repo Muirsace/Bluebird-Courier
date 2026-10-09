@@ -19,6 +19,8 @@ interface OverviewTabProps {
   detail: Detail;
   /** 议题 / 合并请求范围本地读取被截断：不把"这一段里没有"当成"确认没有"。 */
   incompleteIssueScope?: boolean;
+  issuesDisabled?: boolean;
+  pullsDisabled?: boolean;
 }
 
 function byUpdatedDesc(a: IssueItem | PullRequestItem, b: IssueItem | PullRequestItem): number {
@@ -31,17 +33,19 @@ function RecentList({
   items,
   owner,
   name,
+  disabled = false,
 }: {
   title: string;
   kind: 'issue' | 'pull';
   items: (IssueItem | PullRequestItem)[];
   owner: string;
   name: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
       <h3 className="mb-1 text-xs font-medium text-secondary">{title}</h3>
-      {items.length === 0 ? (
+      {disabled ? <SectionMessage>此仓库未启用 {kind === 'issue' ? 'Issue' : 'Pull Request'}</SectionMessage> : items.length === 0 ? (
         <SectionMessage>{kind === 'issue' ? '暂无议题' : '暂无合并请求'}</SectionMessage>
       ) : (
         <ul className="divide-y divide-subtle">
@@ -62,7 +66,7 @@ function RecentList({
 }
 
 /** 概览：第一屏回答"这个仓库最近怎么样"——构建是否正常、最近发了什么、最近在改什么。 */
-export function OverviewTab({ detail, incompleteIssueScope = false }: OverviewTabProps) {
+export function OverviewTab({ detail, incompleteIssueScope = false, issuesDisabled = false, pullsDisabled = false }: OverviewTabProps) {
   const { repository, build, releases, commits, issues, pullRequests, trend } = detail;
   const { owner, name } = repository;
   const openIssues = issues.filter((issue) => issue.state === 'open').length;
@@ -119,18 +123,18 @@ export function OverviewTab({ detail, incompleteIssueScope = false }: OverviewTa
         shiftPx={DETAIL_REVEAL_MOTION.sectionShiftPx}
       >
         <Section title="Issue & PR">
-          {noIssuesAtAll ? (
+          {noIssuesAtAll && !issuesDisabled && !pullsDisabled ? (
             incompleteIssueScope ? <SectionMessage>{UNREAD_GROUP_COPY}</SectionMessage> : <IssueEmptyState />
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
                 <GlanceFact
                   label="议题"
-                  value={`开启 ${openIssues} · 已关闭 ${issues.length - openIssues}`}
+                  value={issuesDisabled ? '未启用' : `开启 ${openIssues} · 已关闭 ${issues.length - openIssues}`}
                 />
                 <GlanceFact
                   label="合并请求"
-                  value={`开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
+                  value={pullsDisabled ? '未启用' : `开启 ${openPulls} · 已关闭 ${pullRequests.length - openPulls}`}
                 />
               </div>
               {incompleteIssueScope ? (
@@ -140,6 +144,7 @@ export function OverviewTab({ detail, incompleteIssueScope = false }: OverviewTa
                 <RecentList
                   title="最近更新的议题"
                   kind="issue"
+                  disabled={issuesDisabled}
                   items={[...issues].sort(byUpdatedDesc).slice(0, RECENT_LIMIT)}
                   owner={owner}
                   name={name}
@@ -147,6 +152,7 @@ export function OverviewTab({ detail, incompleteIssueScope = false }: OverviewTa
                 <RecentList
                   title="最近更新的合并请求"
                   kind="pull"
+                  disabled={pullsDisabled}
                   items={[...pullRequests].sort(byUpdatedDesc).slice(0, RECENT_LIMIT)}
                   owner={owner}
                   name={name}

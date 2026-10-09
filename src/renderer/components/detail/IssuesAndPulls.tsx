@@ -122,30 +122,32 @@ interface IssuesAndPullsProps {
   name: string;
   /** 该范围本地读取被截断：空的一侧不能显示成"确认没有"。 */
   incomplete?: boolean;
+  issuesDisabled?: boolean;
+  pullsDisabled?: boolean;
 }
 
 /** 议题与合并请求的完整列表（「Issue & PR」Tab）：先给计数摘要，再分区展示。 */
-export function IssuesAndPulls({ issues, pullRequests, owner, name, incomplete = false }: IssuesAndPullsProps) {
-  if (issues.length === 0 && pullRequests.length === 0) {
+export function IssuesAndPulls({ issues, pullRequests, owner, name, incomplete = false, issuesDisabled = false, pullsDisabled = false }: IssuesAndPullsProps) {
+  if (issues.length === 0 && pullRequests.length === 0 && !issuesDisabled && !pullsDisabled) {
     return incomplete ? <SectionMessage>{UNREAD_GROUP_COPY}</SectionMessage> : <IssueEmptyState />;
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-        <GlanceFact label="议题" value={`${issues.length} 条`} />
-        <GlanceFact label="合并请求" value={`${pullRequests.length} 条`} />
+        <GlanceFact label="议题" value={issuesDisabled ? '未启用' : `${issues.length} 条`} />
+        <GlanceFact label="合并请求" value={pullsDisabled ? '未启用' : `${pullRequests.length} 条`} />
       </div>
 
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">议题</h3>
-          {issues.length > 0 ? <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
+          {issuesDisabled ? <SectionMessage>此仓库未启用 Issue</SectionMessage> : issues.length > 0 ? <NumberedItemList items={issues} kind="issue" owner={owner} name={name} />
             : <SectionMessage>{incomplete ? UNREAD_GROUP_COPY : '暂无议题'}</SectionMessage>}
         </div>
 
         <div>
           <h3 className="mb-1 text-xs font-medium text-secondary">合并请求</h3>
-          {pullRequests.length > 0 ? <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
+          {pullsDisabled ? <SectionMessage>此仓库未启用 Pull Request</SectionMessage> : pullRequests.length > 0 ? <NumberedItemList items={pullRequests} kind="pull" owner={owner} name={name} />
             : <SectionMessage>{incomplete ? UNREAD_GROUP_COPY : '暂无合并请求'}</SectionMessage>}
         </div>
     </div>

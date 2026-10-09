@@ -213,6 +213,7 @@ interface ScopeStateRow {
   last_synced_at: string | null;
   last_check_error: string | null;
   last_sync_error: string | null;
+  verification_progress?: string | null;
 }
 
 function decodeFailure(value: string | null): import('../../../../domain/types').NormalizedError | undefined {
@@ -246,6 +247,7 @@ function rowToScopeState(row: ScopeStateRow): ScopeSyncState {
     ...(row.last_synced_at !== null ? { lastSyncedAt: row.last_synced_at } : {}),
     ...(row.last_check_error !== null ? { lastCheckError: checkFailure?.message ?? row.last_check_error, ...(checkFailure ? { lastCheckFailure: checkFailure } : {}) } : {}),
     ...(row.last_sync_error !== null ? { lastSyncError: syncFailure?.message ?? row.last_sync_error, ...(syncFailure ? { lastSyncFailure: syncFailure } : {}) } : {}),
+    ...(typeof row.verification_progress === 'string' ? { verificationProgress: row.verification_progress } : {}),
   };
 }
 
@@ -274,8 +276,8 @@ export function writeScopeState(db: LocalDatabase, repositoryId: number, scope: 
     `INSERT INTO detail_scope_state (
        repository_id, scope, cache_status, freshness, check_status, sync_status,
        detected_revision, synced_revision, important_revision, viewed_revision, dirty_reasons,
-       observed_fingerprint, synced_fingerprint, last_checked_at, last_synced_at, last_check_error, last_sync_error, access_context_revision
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       observed_fingerprint, synced_fingerprint, last_checked_at, last_synced_at, last_check_error, last_sync_error, access_context_revision, verification_progress
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(repository_id, scope) DO UPDATE SET
        cache_status = excluded.cache_status, freshness = excluded.freshness,
        check_status = excluded.check_status, sync_status = excluded.sync_status,
@@ -284,12 +286,13 @@ export function writeScopeState(db: LocalDatabase, repositoryId: number, scope: 
        dirty_reasons = excluded.dirty_reasons, observed_fingerprint = excluded.observed_fingerprint,
        synced_fingerprint = excluded.synced_fingerprint, last_checked_at = excluded.last_checked_at,
        last_synced_at = excluded.last_synced_at, last_check_error = excluded.last_check_error,
-       last_sync_error = excluded.last_sync_error, access_context_revision = excluded.access_context_revision`,
+       last_sync_error = excluded.last_sync_error, access_context_revision = excluded.access_context_revision,
+       verification_progress = excluded.verification_progress`,
   ).run(
     repositoryId, scope, state.cacheStatus, state.freshness, state.checkStatus, state.syncStatus,
     state.detectedRevision, state.syncedRevision, state.importantRevision, state.viewedRevision, JSON.stringify(state.dirtyReasons),
     state.observedFingerprint ?? null, state.syncedFingerprint ?? null, state.lastCheckedAt ?? null,
-    state.lastSyncedAt ?? null, state.lastCheckFailure ? JSON.stringify(state.lastCheckFailure) : state.lastCheckError ?? null, state.lastSyncFailure ? JSON.stringify(state.lastSyncFailure) : state.lastSyncError ?? null, accessContextRevision,
+    state.lastSyncedAt ?? null, state.lastCheckFailure ? JSON.stringify(state.lastCheckFailure) : state.lastCheckError ?? null, state.lastSyncFailure ? JSON.stringify(state.lastSyncFailure) : state.lastSyncError ?? null, accessContextRevision, state.verificationProgress ?? null,
   );
 }
 
