@@ -1,7 +1,7 @@
 import { PortFailure } from '../../../../domain/ports';
 import type { OverviewContent, ScopeFetchOutcome, ScopeFetchPort, ScopePartName, ScopePartResult } from '../../../../domain/ports';
 import type { BuildItem, CommitItem, ContentVersion, DetailScope, DetailValues, Glance, GlanceValues, NormalizedError, ReadmeDocument, ReleaseItem, RepositoryCapabilities, RepositoryMetadata, TagItem, TaskContext } from '../../../../domain/types';
-import { coversSourceTarget } from '../../../../domain/rules/source-coverage';
+import { coversSourceTarget, sourceTargetConflicts } from '../../../../domain/rules/source-coverage';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
 import { DETAIL_SYNC_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
 import type { ColumnName, ColumnResult } from '../contract';
@@ -132,6 +132,8 @@ export interface ScopeDelivery {
 }
 
 export interface LoadedFullDetail {
+  /** 完整概览与已知目标的明确冲突；缺少实际版本、暂存或网络失败不产生此信号。 */
+  sourceTargetMismatch?: Partial<ContentVersion>;
   /** 建立缓存所需的完整 payload 视图；失败来源是空数组，失败范围由栏目状态另行标记。 */
   values: DetailValues;
   columns: Partial<Record<ColumnName, ColumnResult>>;
@@ -336,5 +338,7 @@ export async function loadFullDetail(port: ScopeFetchPort, token: string, reposi
   }
   return { values, columns, deliveries, failures, failureErrors, stagedScopes,
     ...(blocked ? { blocked } : {}),
+    ...(content && scopeFullyCovered(overviewOutcome) && sourceTargetConflicts('overview', targets.overview?.sourceVersion, overviewOutcome.version).length > 0
+      ? { sourceTargetMismatch: overviewOutcome.version } : {}),
     ...(overviewOutcome.coverageComplete && content ? { observation: { values: content.values, observedAt: overviewOutcome.observedAt } } : {}) };
 }

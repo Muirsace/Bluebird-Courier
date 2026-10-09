@@ -5,17 +5,17 @@ import type { LocalDatabase } from '../../../core/infra/database';
 import { BUILD_SCOPE_GROUP, planSync } from '../../../../domain/rules/sync-plan';
 import { DETAIL_SYNC_SCOPES, SCOPE_COLUMNS } from '../../../../domain/rules/detail-scope';
 import { DETAIL_VERIFICATION_TTL_MS, isVerificationExpired } from '../../../../domain/rules/refresh-window';
-import { coversSourceTarget } from '../../../../domain/rules/source-coverage';
+import { coversSourceTarget, sourceTargetConflicts } from '../../../../domain/rules/source-coverage';
 import { canCommitTaskResult, deriveFreshness, hasUnsyncedChanges, ledgerOf } from '../../../../domain/rules/scope-ledger';
 import { applyScopeObservation, applyScopeVerification, initialScopeState, verificationChangeScopes } from '../../../../domain/rules/observation-application';
 import { emptyLocalBuild } from '../../../../domain/rules/local-read';
-import type { DetailCache, DetailObservation, SyncTaskState } from '../contract';
+import type { DetailCache, DetailObservation, SourceTargetMismatch, SourceTargetRecoveryOutcome, SyncTaskState } from '../contract';
 import { DETAIL_CACHE_SCHEMA_VERSION, bumpViewVersion, readDetailMeta, readScopeState, readScopeStatesFull, writeBuildsScope, writeScopeContents, writeSyncedDetail, writeScopeState, readCachedBranch, hasColumnData, type ScopeConfirmationWrite, type ScopeContentWrite } from './detail-store';
 import { hasReadableDetail, readLocalColumns } from './local-detail-store';
 import { clearStagedScope, pendingStagedScopes, pruneForeignStagedScopes, pruneStagedQueries, readStagedScope, writeStagedScope } from './staged-scope';
 import { collectScope, loadFullDetail, type OpenScopeStaging, type ScopeStaging } from './refresh-detail';
 
-export interface SyncTaskOutcome { ok: boolean; error: unknown; stored?: boolean; /** 验证发现变化时，同一次打开流程内需要安排的后继同步。 */ followUp?: boolean; }
+export interface SyncTaskOutcome { ok: boolean; error: unknown; stored?: boolean; sourceTargetMismatch?: Partial<ContentVersion>; /** 验证发现变化时，同一次打开流程内需要安排的后继同步。 */ followUp?: boolean; }
 export interface ScheduledSyncTask { snapshot: SyncTaskState; settled: Promise<SyncTaskOutcome>; }
 export interface SyncTaskRunner {
   schedule(repositoryId: number, token: string, intent: 'open' | 'force'): ScheduledSyncTask | null;
@@ -27,10 +27,11 @@ export interface SyncTaskDependencies {
   repositoryRef: RepositoryRefPort; accessContext: AccessContextPort;
   scopeVerify: ScopeVerificationPort; scopeFetch: ScopeFetchPort; nextTaskId(): string;
   onObserved?(observation: DetailObservation): void;
+  recoverSourceTarget?(mismatch: SourceTargetMismatch): Promise<SourceTargetRecoveryOutcome>;
 }
 interface ActiveTask extends ScheduledSyncTask { repoId: number; revision: number; key: string; }
 
-export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef, accessContext, scopeVerify, scopeFetch, nextTaskId, onObserved }: SyncTaskDependencies): SyncTaskRunner {
+export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef, accessContext, scopeVerify, scopeFetch, nextTaskId, onObserved, recoverSourceTarget }: SyncTaskDependencies): SyncTaskRunner {
   const active = new Map<string, ActiveTask>();
   const versions = new Map<number, number>();
   const attempts = new Map<string, string>();
@@ -136,6 +137,7 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
     const blockingError = loaded.blocked ? new PortFailure(loaded.blocked.kind, loaded.blocked.message, loaded.blocked.resetAt) : null;
     const first = failedScopes[0];
     return { ok: failedScopes.length === 0, stored: hasContent,
+      ...(!blockingError && loaded.sourceTargetMismatch ? { sourceTargetMismatch: loaded.sourceTargetMismatch } : {}),
       error: blockingError ?? (first ? loaded.failureErrors[first] ?? new Error(loaded.failures[first]) : null) };
   }
   async function executeBuilds(repository: Glance, token: string, context: TaskContext): Promise<void> {
@@ -242,20 +244,42 @@ export function createSyncTaskRunner({ db, clock, repositoryById, repositoryRef,
       if (blocked) { active.delete(key); snapshot.status = 'error'; return blocked; }
       const taskVersion = (versions.get(repositoryId) ?? 0) + 1;
       versions.set(repositoryId, taskVersion);
-      const targets: TaskContext['targets'] = {};
-      const currentStates = readScopeStatesFull(db, repositoryId, revision);
-      const sourceVersion = repositoryRef.findById(repositoryId)?.contentVersion;
-      for (const scope of targetScopes) {
-        targets[scope] = { targetRevision: currentStates[scope]?.detectedRevision ?? 0, baselineFingerprint: currentStates[scope]?.syncedFingerprint ?? null, ...(sourceVersion !== undefined ? { sourceVersion: { ...sourceVersion } } : {}) };
-        snapshot.targetRevisions[scope] = targets[scope]!.targetRevision;
-      }
-      const context: TaskContext = { taskId: snapshot.taskId, repoId: repositoryId, kind, targets, accessContextRevision: revision, taskVersion, startedAt: clock.now().toISOString() };
+      const captureTargets = (): TaskContext['targets'] => {
+        const targets: TaskContext['targets'] = {};
+        const currentStates = readScopeStatesFull(db, repositoryId, revision);
+        const sourceVersion = repositoryRef.findById(repositoryId)?.contentVersion;
+        for (const scope of targetScopes) {
+          targets[scope] = { targetRevision: currentStates[scope]?.detectedRevision ?? 0, baselineFingerprint: currentStates[scope]?.syncedFingerprint ?? null, ...(sourceVersion !== undefined ? { sourceVersion: { ...sourceVersion } } : {}) };
+          snapshot.targetRevisions[scope] = targets[scope]!.targetRevision;
+        }
+        return targets;
+      };
+      let context: TaskContext = { taskId: snapshot.taskId, repoId: repositoryId, kind, targets: captureTargets(), accessContextRevision: revision, taskVersion, startedAt: clock.now().toISOString() };
       try {
         if (!writable(context, repository.fullName)) throw new Error('任务上下文已变化，放弃执行');
         snapshot.status = 'running';
         snapshot.startedAt = context.startedAt;
-        const outcome = kind === 'open' || kind === 'force' ? await executeFull(repository, token, context)
+        let outcome: SyncTaskOutcome = kind === 'open' || kind === 'force' ? await executeFull(repository, token, context)
           : kind === 'scope' ? (await executeBuilds(repository, token, context), { ok: true, error: null }) : await executeCheck(repository, token, context);
+        if (outcome.sourceTargetMismatch && recoverSourceTarget && writable(context, repository.fullName)) {
+          const targetVersion = context.targets.overview?.sourceVersion ?? {};
+          const conflicts = sourceTargetConflicts('overview', targetVersion, outcome.sourceTargetMismatch);
+          const recovery = await recoverSourceTarget({ repositoryId, fullName: repository.fullName,
+            accessContextRevision: revision, targetVersion, actualVersion: outcome.sourceTargetMismatch });
+          if (!writable(context, repository.fullName)) throw new Error('源目标恢复期间仓库或访问上下文已变化，放弃重试');
+          const refreshedVersion = repositoryRef.findById(repositoryId)?.contentVersion;
+          const changed = conflicts.some(field => refreshedVersion?.[field] !== undefined && refreshedVersion[field] !== targetVersion[field]);
+          if (recovery.refreshed && changed && recovery.error?.kind !== 'access_token_invalid' && recovery.error?.kind !== 'rate_limited') {
+            // 保持原任务登记和写入版本，重读全部账本目标；第二轮观察使用独立身份，最多重抓一次。
+            context = { ...context, taskId: `${snapshot.taskId}:source-retry`, targets: captureTargets(), startedAt: clock.now().toISOString() };
+            const retried = await executeFull(repository, token, context);
+            outcome = { ...retried, stored: outcome.stored === true || retried.stored === true };
+          } else if (recovery.error) {
+            const error = new PortFailure(recovery.error.kind, recovery.error.message, recovery.error.resetAt);
+            recordFailure(context, repository.fullName, ['overview'], error);
+            outcome = { ...outcome, error };
+          }
+        }
         snapshot.status = outcome.ok ? 'idle' : 'error';
         // 验证发现变化：在释放本任务登记之前同步登记后继同步（重新读取账本目标、遵循 domain 计划），
         // 页面轮询不会看到任务快照间隙；上下文或仓库已变化时不再追加。

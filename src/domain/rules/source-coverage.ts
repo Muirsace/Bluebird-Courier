@@ -7,6 +7,12 @@ const SOURCE_FIELDS: Partial<Record<DetailScope, readonly (keyof ContentVersion)
   releases: ['releaseRevision', 'tagRevision'],
 };
 
+/** 只报告双方均已知且明确不同的源字段；缺少证据不能当成目标已过期。 */
+export function sourceTargetConflicts(scope: DetailScope, target: Partial<ContentVersion> | undefined,
+  actual: Partial<ContentVersion> | undefined): (keyof ContentVersion)[] {
+  return (SOURCE_FIELDS[scope] ?? []).filter(field => target?.[field] !== undefined && actual?.[field] !== undefined && target[field] !== actual[field]);
+}
+
 /** 源版本只按相等核验；SHA与供应商版本不具有可推断的先后顺序。 */
 export function coversSourceTarget(scope: DetailScope, target: Partial<ContentVersion> | undefined,
   actual: Partial<ContentVersion> | undefined, knownDirty: boolean, fields = SOURCE_FIELDS[scope] ?? []): boolean {

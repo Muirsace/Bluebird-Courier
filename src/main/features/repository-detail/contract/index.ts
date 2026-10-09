@@ -12,6 +12,8 @@ export type {
   RepositoryDetailService,
   ScopeSyncOutcome,
   ScopeSyncRequest,
+  SourceTargetMismatch,
+  SourceTargetRecoveryOutcome,
   SyncTaskState,
   ViewAcknowledgment,
 } from './types';

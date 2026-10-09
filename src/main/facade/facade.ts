@@ -206,6 +206,22 @@ export function createFacade(deps: FacadeDeps): BluebirdCourierFacade & FacadeLi
       if (applied) deps.snapshotTrend.recordObserved(observation.repositoryId, observation.values, observation.observedAt, observation.observationId);
     } catch (error) { logger.error('真实摘要观察保存或采样失败：' + observation.repositoryId, error); }
   });
+  deps.repositoryDetail.onSourceTargetMismatch(async mismatch => {
+    const isCurrent = () => !cleanupPending() && mismatch.accessContextRevision === deps.tokenSettings.accessContextRevision()
+      && find(mismatch.repositoryId)?.fullName === mismatch.fullName;
+    const accessToken = token();
+    if (!isCurrent() || !accessToken) return { refreshed: false };
+    // 重新检查权威摘要并完成持久交接；不递归启动详情任务，避免与当前去重任务自等待。
+    const checked = await deps.repositoryList.checkRepository(mismatch.repositoryId, accessToken, mismatch.accessContextRevision);
+    if (!isCurrent()) return { refreshed: false };
+    if (checked.error?.kind === 'access_token_invalid' || checked.error?.kind === 'rate_limited') return { refreshed: false, error: checked.error };
+    if (!checked.observed) return { refreshed: false, ...(checked.error ? { error: checked.error } : {}) };
+    replayPendingObservations(mismatch.repositoryId);
+    if (deps.repositoryList.pendingObservations(1, { repositoryId: mismatch.repositoryId, accessContextRevision: mismatch.accessContextRevision }).length > 0) {
+      return { refreshed: false, error: { kind: 'unknown', message: '新源观察尚未完成交接，保留旧内容与未确认状态' } };
+    }
+    return { refreshed: true, ...(checked.error ? { error: checked.error } : {}) };
+  });
 
   /** 打开 / 强制同步的失败优先级：等待的获取失败 > 无可展示内容（无令牌或缺失）> 本地视图错误。 */
   function accessError(repository: Glance, access: DetailAccessResult): NormalizedError | null {

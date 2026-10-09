@@ -1,5 +1,6 @@
 import type {
   BuildInfo,
+  ContentVersion,
   DetailScope,
   DetailValues,
   Glance,
@@ -101,6 +102,21 @@ export interface ObservationApplyOutcome {
 /** 真实远端摘要观察；由 facade 协调清单写回与趋势采样。 */
 export interface DetailObservation { observationId: string; repositoryId: number; accessContextRevision: number; observedAt: string; values: import('../../../../domain/types').GlanceValues; }
 
+/** 概览已取得完整证据，但任务目标与当前源冲突；交由 facade 重新检查权威摘要。 */
+export interface SourceTargetMismatch {
+  repositoryId: number;
+  fullName: string;
+  accessContextRevision: number;
+  targetVersion: Partial<ContentVersion>;
+  actualVersion: Partial<ContentVersion>;
+}
+
+export interface SourceTargetRecoveryOutcome {
+  /** 新观察已经持久化并完成向详情的变化交接；是否重试仍由任务核对目标决定。 */
+  refreshed: boolean;
+  error?: NormalizedError;
+}
+
 export interface DetailAccessResult {
   view: LocalDetailView;
   /** true = 本次调用等待的网络获取已提交内容；部分覆盖仍通过 error 与范围账本明示。 */
@@ -123,6 +139,8 @@ export interface RepositoryDetailService {
   getCached(repositoryId: number): DetailCache | null;
   /** 真正取得远端摘要后通知 facade；缓存读取和仅内容抓取不产生采样。 */
   onObservation(listener: (observation: DetailObservation) => void): void;
+  /** 同一任务内至多请求一次源目标恢复；监听器不得回调 refresh/open 形成自等待。 */
+  onSourceTargetMismatch(listener: (mismatch: SourceTargetMismatch) => Promise<SourceTargetRecoveryOutcome>): void;
   /**
    * 打开用例：先读本地视图；有可展示缓存立即返回并按需安排后台任务（不等待网络），
    * 无有效缓存时等待必要的首次获取。token 为 null 时只读本地、不安排网络计划。

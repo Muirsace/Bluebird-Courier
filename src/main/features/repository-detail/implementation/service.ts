@@ -9,6 +9,8 @@ import type {
   LocalReadRequest,
   ObservationApplyOutcome,
   RepositoryDetailService,
+  SourceTargetMismatch,
+  SourceTargetRecoveryOutcome,
 } from '../contract';
 import { applyScopeObservation, initialScopeState, observationReasons } from '../../../../domain/rules/observation-application';
 import { SCOPE_ORDER } from '../../../../domain/rules/detail-scope';
@@ -49,7 +51,11 @@ export interface RepositoryDetailDependencies {
 export function createRepositoryDetailService(dependencies: RepositoryDetailDependencies): RepositoryDetailService {
   const { db, repositoryById, accessContext } = dependencies;
   let observationListener: ((observation: DetailObservation) => void) | undefined;
-  const taskRunner = createSyncTaskRunner({ ...dependencies, onObserved: observation => observationListener?.(observation) });
+  let sourceRecoveryListener: ((mismatch: SourceTargetMismatch) => Promise<SourceTargetRecoveryOutcome>) | undefined;
+  const taskRunner = createSyncTaskRunner({ ...dependencies,
+    onObserved: observation => observationListener?.(observation),
+    recoverSourceTarget: mismatch => sourceRecoveryListener?.(mismatch) ?? Promise.resolve({ refreshed: false }),
+  });
 
   /** 本地视图：读取路径共用；不启动任务、不写库、不刷新任何时间。 */
   function localView(repositoryId: number, request: LocalReadRequest = {}): LocalDetailView | null {
@@ -102,6 +108,7 @@ export function createRepositoryDetailService(dependencies: RepositoryDetailDepe
   return {
     getCached: (repositoryId) => readDetail(db, repositoryId),
     onObservation: listener => { observationListener = listener; },
+    onSourceTargetMismatch: listener => { sourceRecoveryListener = listener; },
     open,
     refresh,
     async loadHistory(repositoryId, _token, kind, cursor) {
