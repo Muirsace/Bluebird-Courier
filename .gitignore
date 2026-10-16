@@ -32,3 +32,5 @@ REPORT-PHASE2-SHELL-SEPARATION.md
 Thumbs.db
 Desktop.ini
 .DS_Store
+docs/repository-sync-implementation.md
+docs/repository-sync-design.md
